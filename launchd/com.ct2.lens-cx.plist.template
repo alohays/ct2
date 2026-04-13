@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  CT2 lens-cx launchd daemon template.
+
+  Usage:
+    1. Copy this file to ~/Library/LaunchAgents/com.ct2.lens-cx.{project}.plist
+    2. Replace PROJECT_NAME and PROJECT_DIR with your actual values
+    3. Load: launchctl load ~/Library/LaunchAgents/com.ct2.lens-cx.{project}.plist
+    4. Unload: launchctl unload ~/Library/LaunchAgents/com.ct2.lens-cx.{project}.plist
+
+  Requires:
+    - codex CLI available at the path specified in ProgramArguments
+    - ct2-lens-cx-daemon installed in ~/.ct2/bin/
+    - .ct2/ initialized in the project directory (ct2-init)
+-->
+<plist version="1.0">
+<dict>
+
+  <!-- Unique label: replace {project} with your project slug (e.g. "myapp") -->
+  <key>Label</key>
+  <string>com.ct2.lens-cx.{project}</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <!-- Full path to ct2-lens-cx-daemon -->
+    <string>/Users/{username}/.ct2/bin/ct2-lens-cx-daemon</string>
+    <!-- Full path to your project directory -->
+    <string>/Users/{username}/projects/{project-dir}</string>
+  </array>
+
+  <!-- Environment variables passed to the daemon -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- Override poll interval (seconds). Default reads from harness.yaml. -->
+    <!-- <key>CT2_POLL_INTERVAL</key> <string>300</string> -->
+
+    <!-- Override codex CLI path if not in the default PATH -->
+    <!-- <key>CT2_CODEX_CMD</key> <string>/usr/local/bin/codex</string> -->
+
+    <!-- Ensure PATH includes common tool locations -->
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+
+  <!-- Start at load time -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Do not restart automatically if it exits (daemon manages its own loop) -->
+  <key>KeepAlive</key>
+  <false/>
+
+  <!-- Standard output log -->
+  <key>StandardOutPath</key>
+  <string>/Users/{username}/projects/{project-dir}/.ct2/logs/ct2-lens-cx.stdout.log</string>
+
+  <!-- Standard error log -->
+  <key>StandardErrorPath</key>
+  <string>/Users/{username}/projects/{project-dir}/.ct2/logs/ct2-lens-cx.stderr.log</string>
+
+  <!-- Working directory -->
+  <key>WorkingDirectory</key>
+  <string>/Users/{username}/projects/{project-dir}</string>
+
+</dict>
+</plist>
