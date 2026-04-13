@@ -31,7 +31,10 @@ def read_frontmatter(path: Path) -> dict:
         for line in m.group(1).splitlines():
             kv = re.match(r'^(\w[\w-]*):\s*(.+)$', line)
             if kv:
-                fm[kv.group(1)] = kv.group(2).strip().strip('"')
+                val = kv.group(2).strip()
+                # Strip inline YAML comments (e.g. "medium  # critical | high | ...")
+                val = re.sub(r'\s+#.*$', '', val)
+                fm[kv.group(1)] = val.strip('"')
         return fm
     except Exception:
         return {}
