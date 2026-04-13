@@ -39,6 +39,7 @@ mkdir -p "${CT2_DIR}/.tmp"
 cp "${CT2_REPO_DIR}/config/harness.yaml"           "${CT2_DIR}/config/harness.yaml"
 cp "${CT2_REPO_DIR}/config/ct2-lens-cc-role.md"    "${CT2_DIR}/config/ct2-lens-cc-role.md"
 cp "${CT2_REPO_DIR}/config/ct2-lens-cx-role.md"    "${CT2_DIR}/config/ct2-lens-cx-role.md"
+cp "${CT2_REPO_DIR}/config/ct2-reconciler-ref.md"  "${CT2_DIR}/config/ct2-reconciler-ref.md"
 
 # ── Copy ticket template ───────────────────────────────────────────────────────
 cp "${CT2_REPO_DIR}/templates/ticket.md" "${CT2_DIR}/ticket.template.md"
