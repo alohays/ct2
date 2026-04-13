@@ -43,18 +43,18 @@ except: print('3')" ".ct2/config/harness.yaml")
 
   if [[ "$cc_v" == "approved" && "$cx_v" == "approved" ]]; then
     _update_verdict "$ticket_file" "approved" "$ticket_id" "$round"
-    mv ".ct2/in-review/${ticket_file}" ".ct2/done/${ticket_file}"
+    mv -n ".ct2/in-review/${ticket_file}" ".ct2/done/${ticket_file}"
     echo "Reconciler: ${ticket_file} -> done (cc=approved, cx=approved)"
 
   elif (( round + 1 >= max_rounds )); then
     _update_verdict "$ticket_file" "escalated" "$ticket_id" "$round"
-    mv ".ct2/in-review/${ticket_file}" ".ct2/escalated/${ticket_file}"
+    mv -n ".ct2/in-review/${ticket_file}" ".ct2/escalated/${ticket_file}"
     echo "Reconciler: ${ticket_file} -> escalated (max rounds)"
     _send_escalation "${ticket_file}" "${round}" "${max_rounds}"
 
   else
     _update_verdict "$ticket_file" "rejected" "$ticket_id" "$round"
-    mv ".ct2/in-review/${ticket_file}" ".ct2/rejected/${ticket_file}"
+    mv -n ".ct2/in-review/${ticket_file}" ".ct2/rejected/${ticket_file}"
     echo "Reconciler: ${ticket_file} -> rejected (cc=${cc_v}, cx=${cx_v})"
   fi
 
@@ -80,7 +80,9 @@ def get_v(p):
 c = open(path).read()
 c = re.sub(r'^(verdict:\s*).*$', rf'\g<1>{verdict}', c, flags=re.MULTILINE)
 c = re.sub(r'(lens-claude:\n\s*status:\s*).*', rf'\g<1>{get_v(cc_sc)}', c)
+c = re.sub(r'(lens-claude:\n\s*sidecar:\s*).*', rf'\g<1>{cc_sc}', c)
 c = re.sub(r'(lens-codex:\n\s*status:\s*).*', rf'\g<1>{get_v(cx_sc)}', c)
+c = re.sub(r'(lens-codex:\n\s*sidecar:\s*).*', rf'\g<1>{cx_sc}', c)
 from datetime import datetime, timezone
 c = re.sub(r'^(updated:\s*).*$', rf'\g<1>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}', c, flags=re.MULTILINE)
 open(path, 'w').write(c)

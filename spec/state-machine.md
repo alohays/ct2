@@ -53,7 +53,7 @@ version: "0.1.0"
 | `in-review → done`            | reconciler verdict   | reconciler    | `cc sidecar = approved` AND `cx sidecar = approved`                        |
 | `in-review → rejected`        | reconciler verdict   | reconciler    | `cc sidecar = rejected` OR `cx sidecar = rejected`                         |
 | `rejected → in-progress`      | Automatic pickup     | ct2-forge     | `review-round < max_review_rounds`                                         |
-| `in-review → escalated`       | Circuit breaker      | reconciler    | `review-round ≥ max_review_rounds`; also sends escalation to helm inbox    |
+| `in-review → escalated`       | Circuit breaker      | reconciler    | `review-round + 1 ≥ max_review_rounds`; also sends escalation to helm inbox |
 
 > **Invariant**: `done` is reachable **only** when both reviewers have verdict `approved`.
 > No automation — including the circuit breaker — may place a ticket into `done` without satisfying this condition.
@@ -90,6 +90,6 @@ The reconciler is the **sole writer** of `review-status` and `verdict` fields in
 
 | Condition                                      | Action                                                                 |
 |------------------------------------------------|------------------------------------------------------------------------|
-| `review-round ≥ max_review_rounds`             | Move to `escalated/`; send `escalation` message to ct2-helm inbox     |
+| `review-round + 1 ≥ max_review_rounds`         | Move to `escalated/`; send `escalation` message to ct2-helm inbox     |
 | Ticket processing time > `max_ticket_duration_min` | Abort forge work; return ticket to `backlog/`; log event          |
 | No heartbeat for > `heartbeat_timeout_min`     | Session declared dead; warning shown in `ct2-status` output           |

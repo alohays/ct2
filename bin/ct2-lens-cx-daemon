@@ -225,7 +225,9 @@ def extract_verdict(p):
 cc_v = extract_verdict(cc_sc)
 cx_v = extract_verdict(cx_sc)
 c = re.sub(r'(lens-claude:\s*\n\s*status:\s*).*', rf'\g<1>{cc_v}', c)
+c = re.sub(r'(lens-claude:\s*\n\s*sidecar:\s*).*', rf'\g<1>{cc_sc}', c)
 c = re.sub(r'(lens-codex:\s*\n\s*status:\s*).*', rf'\g<1>{cx_v}', c)
+c = re.sub(r'(lens-codex:\s*\n\s*sidecar:\s*).*', rf'\g<1>{cx_sc}', c)
 from datetime import datetime, timezone
 c = re.sub(r'^(updated:\s*).*$', rf'\g<1>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}', c, flags=re.MULTILINE)
 open(path, 'w').write(c)
@@ -234,16 +236,16 @@ PYEOF
 
   if [[ "$cc_v" == "approved" && "$cx_v" == "approved" ]]; then
     update_ticket_verdict "approved"
-    mv "${CT2_DIR}/in-review/${ticket_file}" "${CT2_DIR}/done/${ticket_file}"
+    mv -n "${CT2_DIR}/in-review/${ticket_file}" "${CT2_DIR}/done/${ticket_file}"
     log "✓ ${ticket_file} → done"
   elif (( round + 1 >= MAX_REVIEW_ROUNDS )); then
     update_ticket_verdict "escalated"
-    mv "${CT2_DIR}/in-review/${ticket_file}" "${CT2_DIR}/escalated/${ticket_file}"
+    mv -n "${CT2_DIR}/in-review/${ticket_file}" "${CT2_DIR}/escalated/${ticket_file}"
     log "⚡ ${ticket_file} → escalated (max rounds)"
     send_escalation_message "$ticket_file" "$round"
   else
     update_ticket_verdict "rejected"
-    mv "${CT2_DIR}/in-review/${ticket_file}" "${CT2_DIR}/rejected/${ticket_file}"
+    mv -n "${CT2_DIR}/in-review/${ticket_file}" "${CT2_DIR}/rejected/${ticket_file}"
     log "✗ ${ticket_file} → rejected"
   fi
 

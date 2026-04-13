@@ -52,7 +52,7 @@ verdict: pending         # pending | approved | rejected | escalated
 |----------------------------------------------------|-------------|
 | `lens-claude = approved` AND `lens-codex = approved` | `approved` |
 | `lens-claude = rejected` OR `lens-codex = rejected`  | `rejected` |
-| `review-round ≥ max_review_rounds`                 | `escalated` |
+| `review-round + 1 ≥ max_review_rounds`             | `escalated` |
 
 ### Writer Ownership
 
