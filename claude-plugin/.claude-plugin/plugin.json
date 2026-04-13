@@ -1,0 +1,11 @@
+{
+  "name": "ct2",
+  "version": "0.1.0",
+  "description": "CT2: Context Control Protocol — Multi-session AI orchestration harness",
+  "skills": [
+    "ct2-helm",
+    "ct2-forge",
+    "ct2-lens-cc",
+    "ct2-status"
+  ]
+}

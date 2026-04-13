@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -d \"${CT2_DIR:-.ct2}/.meta\" ] && [ -n \"${CT2_ROLE:-}\" ]; then date -u > \"${CT2_DIR:-.ct2}/.meta/ct2-${CT2_ROLE}.heartbeat\"; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
