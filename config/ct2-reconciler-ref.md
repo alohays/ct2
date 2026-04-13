@@ -10,7 +10,17 @@ perform_reconcile() {
 
   # O_EXCL lockfile — exactly one reconciler instance wins
   local lockfile=".ct2/.meta/${ticket_id}-r${round}-reconcile.lock"
-  ( set -C; echo "$$" > "$lockfile" ) 2>/dev/null || return 0
+  if ! ( set -C; echo "$$" > "$lockfile" ) 2>/dev/null; then
+    # Lock exists — check if owner is still alive
+    local lock_pid
+    lock_pid=$(cat "$lockfile" 2>/dev/null || echo "")
+    if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
+      return 0  # Owner alive, skip
+    fi
+    # Stale lock — remove and retry
+    rm -f "$lockfile"
+    ( set -C; echo "$$" > "$lockfile" ) 2>/dev/null || return 0
+  fi
 
   local cc_v; cc_v=$(python3 -c "
 import re; c=open('.ct2/reviews/${ticket_id}-cc-r${round}.md').read()

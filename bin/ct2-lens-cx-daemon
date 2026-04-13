@@ -16,6 +16,7 @@ PROJECT_DIR="${1:-$(pwd)}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 CT2_DIR="${PROJECT_DIR}/.ct2"
 CODEX_CMD="${CT2_CODEX_CMD:-codex}"
+CODEX_TIMEOUT="${CT2_CODEX_TIMEOUT:-600}"  # 10 min default
 DAEMON_LOG="${CT2_DIR}/logs/ct2-lens-cx.log"
 
 # ── Validate .ct2/ ────────────────────────────────────────────────────────────
@@ -41,25 +42,25 @@ log() {
 POLL_INTERVAL="${CT2_POLL_INTERVAL:-}"
 if [[ -z "$POLL_INTERVAL" ]]; then
   POLL_INTERVAL=$(python3 -c "
-import re
+import re, sys
 try:
-    c = open('${CT2_DIR}/config/harness.yaml').read()
+    c = open(sys.argv[1]).read()
     m = re.search(r'poll_interval_sec:\s*(\d+)', c)
     print(m.group(1) if m else '300')
 except Exception:
     print('300')
-")
+" "${CT2_DIR}/config/harness.yaml")
 fi
 
 MAX_REVIEW_ROUNDS=$(python3 -c "
-import re
+import re, sys
 try:
-    c = open('${CT2_DIR}/config/harness.yaml').read()
+    c = open(sys.argv[1]).read()
     m = re.search(r'max_review_rounds:\s*(\d+)', c)
     print(m.group(1) if m else '3')
 except Exception:
     print('3')
-")
+" "${CT2_DIR}/config/harness.yaml")
 
 ROLE_FILE="${CT2_DIR}/config/ct2-lens-cx-role.md"
 
@@ -71,7 +72,7 @@ update_heartbeat() {
 # ── Inbox polling ─────────────────────────────────────────────────────────────
 poll_inbox() {
   local inbox_dir="${CT2_DIR}/inbox/ct2-lens-cx"
-  for msg in "${inbox_dir}"/*.md 2>/dev/null; do
+  for msg in "${inbox_dir}"/*.md; do
     [[ -f "$msg" ]] || continue
     local msgfile; msgfile=$(basename "$msg")
     local claimed
@@ -93,11 +94,11 @@ review_ticket() {
   local ticket_id; ticket_id=$(echo "$ticket_stem" | grep -oE '^[0-9]+')
 
   local round; round=$(python3 -c "
-import re
-c = open('${ticket_path}').read()
+import re, sys
+c = open(sys.argv[1]).read()
 m = re.search(r'review-round:\s*(\d+)', c)
 print(m.group(1) if m else '0')
-")
+" "$ticket_path")
 
   local cx_sidecar="${CT2_DIR}/reviews/${ticket_id}-cx-r${round}.md"
 
@@ -149,7 +150,7 @@ PROMPT
 
   # Invoke codex to produce the review
   local tmp_review; tmp_review=$(mktemp "${CT2_DIR}/.tmp/cx-review-XXXXXX.md")
-  if echo "$review_prompt" | "$CODEX_CMD" --quiet --output-file "$tmp_review" 2>>"$DAEMON_LOG"; then
+  if (cd "$PROJECT_DIR" && echo "$review_prompt" | timeout "$CODEX_TIMEOUT" "$CODEX_CMD" --quiet --output-file "$tmp_review") 2>>"$DAEMON_LOG"; then
     # Validate verdict field in output
     if grep -qE '^verdict:\s*(approved|rejected)' "$tmp_review"; then
       mv -n "$tmp_review" "$cx_sidecar"
@@ -177,19 +178,29 @@ reconcile_ticket() {
   [[ -f "$cc_sidecar" && -f "$cx_sidecar" ]] || return 0
 
   local lockfile="${CT2_DIR}/.meta/${ticket_id}-r${round}-reconcile.lock"
-  ( set -C; echo "$$" > "$lockfile" ) 2>/dev/null || return 0
+  if ! ( set -C; echo "$$" > "$lockfile" ) 2>/dev/null; then
+    # Lock exists — check if owner is still alive
+    local lock_pid
+    lock_pid=$(cat "$lockfile" 2>/dev/null || echo "")
+    if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
+      return 0  # Owner alive, skip
+    fi
+    # Stale lock — remove and retry
+    rm -f "$lockfile"
+    ( set -C; echo "$$" > "$lockfile" ) 2>/dev/null || return 0
+  fi
 
   local cc_v; cc_v=$(python3 -c "
-import re
-c = open('${cc_sidecar}').read()
+import re, sys
+c = open(sys.argv[1]).read()
 m = re.search(r'verdict:\s*(\w+)', c)
-print(m.group(1) if m else 'pending')")
+print(m.group(1) if m else 'pending')" "$cc_sidecar")
 
   local cx_v; cx_v=$(python3 -c "
-import re
-c = open('${cx_sidecar}').read()
+import re, sys
+c = open(sys.argv[1]).read()
 m = re.search(r'verdict:\s*(\w+)', c)
-print(m.group(1) if m else 'pending')")
+print(m.group(1) if m else 'pending')" "$cx_sidecar")
 
   log "reconcile: cc=${cc_v} cx=${cx_v}"
 
@@ -272,6 +283,7 @@ log "ct2-lens-cx-daemon started (poll interval: ${POLL_INTERVAL}s)"
 log "project: ${PROJECT_DIR}"
 
 while true; do
+  find "${CT2_DIR}/.tmp" -type f -mmin +60 -delete 2>/dev/null || true
   update_heartbeat
 
   poll_inbox
