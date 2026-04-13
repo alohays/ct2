@@ -1,0 +1,20 @@
+# CT2 Harness Configuration
+# Copy this file to .ct2/config/harness.yaml during ct2-init.
+# All values here are project-overridable defaults.
+
+circuit_breaker:
+  max_review_rounds: 3          # Force escalation beyond this many rejection rounds
+  max_ticket_duration_min: 120  # Maximum processing time for a single ticket (minutes)
+  heartbeat_timeout_min: 15     # Session declared dead after this interval without heartbeat
+  max_concurrent_worktrees: 1   # Maximum simultaneous git worktrees (serial by default)
+
+forge:
+  loop_interval_active_sec: 60    # Polling interval when actively working a ticket
+  loop_interval_idle_sec: 120     # Polling interval when backlog is empty
+  loop_interval_dormant_sec: 300  # Polling interval when no tickets exist anywhere
+
+lens_cc:
+  loop_interval_sec: 60           # How often lens-cc scans in-review/
+
+lens_cx:
+  poll_interval_sec: 300          # How often the lens-cx daemon polls in-review/
