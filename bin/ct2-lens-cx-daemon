@@ -1,0 +1,285 @@
+#!/usr/bin/env bash
+# ct2-lens-cx-daemon — Bash polling daemon for the Codex CLI-based lens-cx reviewer.
+# Runs continuously, scanning .ct2/in-review/ every POLL_INTERVAL seconds.
+# Invokes `codex` CLI to perform the review and writes sidecar files.
+#
+# Usage: ct2-lens-cx-daemon [project-dir]
+#   project-dir defaults to $PWD
+#
+# Environment variables:
+#   CT2_POLL_INTERVAL  Override polling interval (seconds). Default: 300.
+#   CT2_CODEX_CMD      Override the codex CLI command. Default: codex.
+
+set -euo pipefail
+
+PROJECT_DIR="${1:-$(pwd)}"
+PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+CT2_DIR="${PROJECT_DIR}/.ct2"
+CODEX_CMD="${CT2_CODEX_CMD:-codex}"
+DAEMON_LOG="${CT2_DIR}/logs/ct2-lens-cx.log"
+
+# ── Validate .ct2/ ────────────────────────────────────────────────────────────
+if [[ ! -d "$CT2_DIR" ]]; then
+  echo "ct2-lens-cx-daemon: .ct2/ not found in ${PROJECT_DIR}" >&2
+  echo "Run 'ct2-init' first." >&2
+  exit 1
+fi
+
+if ! command -v "$CODEX_CMD" &>/dev/null; then
+  echo "ct2-lens-cx-daemon: '${CODEX_CMD}' not found. Install the Codex CLI and retry." >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname "$DAEMON_LOG")"
+
+log() {
+  local ts; ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  echo "[${ts}] lens-cx: $*" | tee -a "$DAEMON_LOG"
+}
+
+# ── Read harness config ───────────────────────────────────────────────────────
+POLL_INTERVAL="${CT2_POLL_INTERVAL:-}"
+if [[ -z "$POLL_INTERVAL" ]]; then
+  POLL_INTERVAL=$(python3 -c "
+import re
+try:
+    c = open('${CT2_DIR}/config/harness.yaml').read()
+    m = re.search(r'poll_interval_sec:\s*(\d+)', c)
+    print(m.group(1) if m else '300')
+except Exception:
+    print('300')
+")
+fi
+
+MAX_REVIEW_ROUNDS=$(python3 -c "
+import re
+try:
+    c = open('${CT2_DIR}/config/harness.yaml').read()
+    m = re.search(r'max_review_rounds:\s*(\d+)', c)
+    print(m.group(1) if m else '3')
+except Exception:
+    print('3')
+")
+
+ROLE_FILE="${CT2_DIR}/config/ct2-lens-cx-role.md"
+
+# ── Heartbeat update ──────────────────────────────────────────────────────────
+update_heartbeat() {
+  date -u > "${CT2_DIR}/.meta/ct2-lens-cx.heartbeat"
+}
+
+# ── Inbox polling ─────────────────────────────────────────────────────────────
+poll_inbox() {
+  local inbox_dir="${CT2_DIR}/inbox/ct2-lens-cx"
+  for msg in "${inbox_dir}"/*.md 2>/dev/null; do
+    [[ -f "$msg" ]] || continue
+    local msgfile; msgfile=$(basename "$msg")
+    local claimed
+    claimed=$(mv -n "$msg" "${inbox_dir}/processing/${msgfile}" 2>/dev/null && \
+              echo "${inbox_dir}/processing/${msgfile}" || echo "")
+    if [[ -n "$claimed" ]]; then
+      log "inbox: processing ${msgfile}"
+      # For now, log and acknowledge (helm handles escalation responses)
+      mv -n "$claimed" "${inbox_dir}/done/${msgfile}" 2>/dev/null || true
+    fi
+  done
+}
+
+# ── Core review logic ─────────────────────────────────────────────────────────
+review_ticket() {
+  local ticket_path="$1"
+  local ticket_file; ticket_file=$(basename "$ticket_path")
+  local ticket_stem="${ticket_file%.md}"
+  local ticket_id; ticket_id=$(echo "$ticket_stem" | grep -oE '^[0-9]+')
+
+  local round; round=$(python3 -c "
+import re
+c = open('${ticket_path}').read()
+m = re.search(r'review-round:\s*(\d+)', c)
+print(m.group(1) if m else '0')
+")
+
+  local cx_sidecar="${CT2_DIR}/reviews/${ticket_id}-cx-r${round}.md"
+
+  if [[ -f "$cx_sidecar" ]]; then
+    return 0  # Already reviewed this round — idempotent
+  fi
+
+  log "reviewing ${ticket_file} (round ${round})"
+
+  # Build the review prompt
+  local ticket_content; ticket_content=$(cat "$ticket_path")
+  local role_content; role_content=$(cat "$ROLE_FILE")
+
+  local review_prompt
+  read -r -d '' review_prompt <<PROMPT || true
+${role_content}
+
+---
+
+You are reviewing the following CT2 ticket. The implementation has been completed by ct2-forge.
+
+Review the changes in the working directory relative to the base branch, then produce a structured review sidecar in exactly this format:
+
+---
+ticket: ${ticket_stem}
+reviewer: ct2-lens-cx
+round: ${round}
+verdict: <approved|rejected>
+timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+---
+
+## Summary
+<one-paragraph summary>
+
+## Acceptance Criteria Check
+<copy each AC item from the ticket and mark [x] or [ ] based on what you observe>
+
+## Issues Found
+<[BLOCKING] or [WARNING] items, or "(none)" if approved>
+
+## Recommendation
+<approved — reason> or <rejected — reason and remediation>
+
+---
+
+TICKET CONTENT:
+${ticket_content}
+PROMPT
+
+  # Invoke codex to produce the review
+  local tmp_review; tmp_review=$(mktemp "${CT2_DIR}/.tmp/cx-review-XXXXXX.md")
+  if echo "$review_prompt" | "$CODEX_CMD" --quiet --output-file "$tmp_review" 2>>"$DAEMON_LOG"; then
+    # Validate verdict field in output
+    if grep -qE '^verdict:\s*(approved|rejected)' "$tmp_review"; then
+      mv -n "$tmp_review" "$cx_sidecar"
+      log "sidecar written: $(basename "$cx_sidecar")"
+      reconcile_ticket "$ticket_path" "$ticket_id" "$round"
+    else
+      log "warning: codex output missing verdict field; retrying next cycle"
+      rm -f "$tmp_review"
+    fi
+  else
+    log "error: codex invocation failed for ${ticket_file}"
+    rm -f "$tmp_review"
+  fi
+}
+
+# ── Reconciler ────────────────────────────────────────────────────────────────
+reconcile_ticket() {
+  local ticket_path="$1"
+  local ticket_id="$2"
+  local round="$3"
+
+  local cc_sidecar="${CT2_DIR}/reviews/${ticket_id}-cc-r${round}.md"
+  local cx_sidecar="${CT2_DIR}/reviews/${ticket_id}-cx-r${round}.md"
+
+  [[ -f "$cc_sidecar" && -f "$cx_sidecar" ]] || return 0
+
+  local lockfile="${CT2_DIR}/.meta/${ticket_id}-r${round}-reconcile.lock"
+  ( set -C; echo "$$" > "$lockfile" ) 2>/dev/null || return 0
+
+  local cc_v; cc_v=$(python3 -c "
+import re
+c = open('${cc_sidecar}').read()
+m = re.search(r'verdict:\s*(\w+)', c)
+print(m.group(1) if m else 'pending')")
+
+  local cx_v; cx_v=$(python3 -c "
+import re
+c = open('${cx_sidecar}').read()
+m = re.search(r'verdict:\s*(\w+)', c)
+print(m.group(1) if m else 'pending')")
+
+  log "reconcile: cc=${cc_v} cx=${cx_v}"
+
+  local ticket_file; ticket_file=$(basename "$ticket_path")
+
+  update_ticket_verdict() {
+    local v="$1"
+    python3 - "${ticket_path}" "$v" "$cc_sidecar" "$cx_sidecar" <<'PYEOF'
+import sys, re
+path, verdict, cc_sc, cx_sc = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+c = open(path).read()
+c = re.sub(r'^(verdict:\s*).*$', rf'\g<1>{verdict}', c, flags=re.MULTILINE)
+
+def extract_verdict(p):
+    try:
+        m = re.search(r'verdict:\s*(\w+)', open(p).read())
+        return m.group(1) if m else 'pending'
+    except Exception:
+        return 'pending'
+
+# Update review-status
+cc_v = extract_verdict(cc_sc)
+cx_v = extract_verdict(cx_sc)
+c = re.sub(r'(lens-claude:\s*\n\s*status:\s*).*', rf'\g<1>{cc_v}', c)
+c = re.sub(r'(lens-codex:\s*\n\s*status:\s*).*', rf'\g<1>{cx_v}', c)
+open(path, 'w').write(c)
+PYEOF
+  }
+
+  if [[ "$cc_v" == "approved" && "$cx_v" == "approved" ]]; then
+    update_ticket_verdict "approved"
+    mv "${CT2_DIR}/in-review/${ticket_file}" "${CT2_DIR}/done/${ticket_file}"
+    log "✓ ${ticket_file} → done"
+  elif (( round + 1 >= MAX_REVIEW_ROUNDS )); then
+    update_ticket_verdict "escalated"
+    mv "${CT2_DIR}/in-review/${ticket_file}" "${CT2_DIR}/escalated/${ticket_file}"
+    log "⚡ ${ticket_file} → escalated (max rounds)"
+    send_escalation_message "$ticket_file" "$round"
+  else
+    update_ticket_verdict "rejected"
+    mv "${CT2_DIR}/in-review/${ticket_file}" "${CT2_DIR}/rejected/${ticket_file}"
+    log "✗ ${ticket_file} → rejected"
+  fi
+
+  rm -f "$lockfile"
+}
+
+# ── Inbox message sender ───────────────────────────────────────────────────────
+send_escalation_message() {
+  local ticket="$1" round="$2"
+  local ts; ts=$(date -u +%Y%m%dT%H%M%S%3NZ 2>/dev/null || date -u +%Y%m%dT%H%M%SZ)
+  local uid; uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || \
+                   head -c 8 /dev/urandom | xxd -p | head -c 8)
+  local msgid="msg-${ts}-$$-${uid}"
+  local tmp; tmp=$(mktemp "${CT2_DIR}/.tmp/${msgid}.XXXXXX")
+  cat > "$tmp" <<MSGEOF
+---
+id: $msgid
+from: ct2-lens-cx
+to: ct2-helm
+type: escalation
+ticket: $ticket
+timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+---
+
+## Subject
+Ticket ${ticket} — Circuit Breaker Triggered (max_review_rounds=${MAX_REVIEW_ROUNDS})
+
+## Body
+Ticket ${ticket} failed to pass review after ${MAX_REVIEW_ROUNDS} rounds.
+Please inspect the ticket manually and either revise or close it.
+MSGEOF
+  mv -n "$tmp" "${CT2_DIR}/inbox/ct2-helm/${msgid}.md" || { rm -f "$tmp"; log "error: failed to send escalation message"; }
+}
+
+# ── Main loop ─────────────────────────────────────────────────────────────────
+log "ct2-lens-cx-daemon started (poll interval: ${POLL_INTERVAL}s)"
+log "project: ${PROJECT_DIR}"
+
+while true; do
+  update_heartbeat
+
+  poll_inbox
+
+  # Scan in-review/ for tickets needing cx review
+  for ticket in "${CT2_DIR}/in-review/"*.md; do
+    [[ -f "$ticket" ]] || continue
+    review_ticket "$ticket"
+    update_heartbeat
+  done
+
+  sleep "$POLL_INTERVAL"
+done

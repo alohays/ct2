@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# ct2-init — Initialize the CT2 harness in a project directory.
+# Usage: ct2-init [project-dir]
+# If project-dir is omitted, uses the current working directory.
+
+set -euo pipefail
+
+CT2_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# ── Resolve target project directory ──────────────────────────────────────────
+PROJECT_DIR="${1:-$(pwd)}"
+PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+CT2_DIR="${PROJECT_DIR}/.ct2"
+
+if [[ -d "$CT2_DIR" ]]; then
+  echo "ct2: .ct2/ already exists in ${PROJECT_DIR}. Nothing to do." >&2
+  exit 0
+fi
+
+echo "ct2-init: initializing ${PROJECT_DIR}"
+
+# ── Create Kanban directories ──────────────────────────────────────────────────
+for dir in draft backlog in-progress in-review rejected escalated done reviews worktrees logs; do
+  mkdir -p "${CT2_DIR}/${dir}"
+done
+
+# ── Create inbox per-role directories ─────────────────────────────────────────
+for role in ct2-helm ct2-forge ct2-lens-cc ct2-lens-cx; do
+  mkdir -p "${CT2_DIR}/inbox/${role}/processing"
+  mkdir -p "${CT2_DIR}/inbox/${role}/done"
+done
+
+# ── Create support directories ─────────────────────────────────────────────────
+mkdir -p "${CT2_DIR}/config"
+mkdir -p "${CT2_DIR}/.meta"
+mkdir -p "${CT2_DIR}/.tmp"
+
+# ── Copy default config files ─────────────────────────────────────────────────
+cp "${CT2_REPO_DIR}/config/harness.yaml"           "${CT2_DIR}/config/harness.yaml"
+cp "${CT2_REPO_DIR}/config/ct2-lens-cc-role.md"    "${CT2_DIR}/config/ct2-lens-cc-role.md"
+cp "${CT2_REPO_DIR}/config/ct2-lens-cx-role.md"    "${CT2_DIR}/config/ct2-lens-cx-role.md"
+
+# ── Copy ticket template ───────────────────────────────────────────────────────
+cp "${CT2_REPO_DIR}/templates/ticket.md" "${CT2_DIR}/config/ticket.template.md"
+
+# ── Initialize circuit-breaker state file ────────────────────────────────────
+cat > "${CT2_DIR}/.meta/circuit-breaker.json" <<'EOF'
+{
+  "tripped": false,
+  "tripped_tickets": []
+}
+EOF
+
+# ── Exclude .ct2/ from git (without modifying .gitignore) ────────────────────
+GIT_DIR_PATH="${PROJECT_DIR}/.git"
+if [[ -d "$GIT_DIR_PATH" ]]; then
+  GIT_EXCLUDE="${GIT_DIR_PATH}/info/exclude"
+  mkdir -p "$(dirname "$GIT_EXCLUDE")"
+  if ! grep -qxF '.ct2/' "$GIT_EXCLUDE" 2>/dev/null; then
+    echo '.ct2/' >> "$GIT_EXCLUDE"
+    echo "ct2-init: added .ct2/ to .git/info/exclude"
+  fi
+else
+  echo "ct2-init: warning — no .git directory found; .ct2/ not excluded from git" >&2
+fi
+
+# ── Done ──────────────────────────────────────────────────────────────────────
+echo ""
+echo "✓ ct2 initialized at ${CT2_DIR}"
+echo ""
+echo "Next steps:"
+echo "  1. Open a Claude Code session:   claude"
+echo "  2. Enter the planner role:       /ct2:helm"
+echo "  3. Author a ticket and seal it:  /ct2:helm → ct2-seal {ticket}"
+echo "  4. Start the engineer loop:      claude → /ct2:forge"
+echo "  5. Start the reviewer loop:      claude → /ct2:lens-cc"
+echo ""
+echo "Run 'ct2-status' at any time to check the current state."

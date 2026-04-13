@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+# ct2-status — Display current CT2 state for the project.
+# Usage: ct2-status [project-dir]
+
+import sys
+import os
+import re
+import time
+from pathlib import Path
+from datetime import datetime, timezone
+
+# ── Resolve project dir ───────────────────────────────────────────────────────
+project_dir = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
+ct2_dir = project_dir / ".ct2"
+
+if not ct2_dir.is_dir():
+    print(f"ct2-status: .ct2/ not found in {project_dir}", file=sys.stderr)
+    print("Run 'ct2-init' first.", file=sys.stderr)
+    sys.exit(1)
+
+SEP = "─" * 57
+
+def read_frontmatter(path: Path) -> dict:
+    """Extract YAML frontmatter key-value pairs as strings."""
+    try:
+        content = path.read_text()
+        m = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
+        if not m:
+            return {}
+        fm = {}
+        for line in m.group(1).splitlines():
+            kv = re.match(r'^(\w[\w-]*):\s*(.+)$', line)
+            if kv:
+                fm[kv.group(1)] = kv.group(2).strip().strip('"')
+        return fm
+    except Exception:
+        return {}
+
+def age_str(path: Path) -> str:
+    """Return human-readable age of a file."""
+    try:
+        mtime = path.stat().st_mtime
+        elapsed = time.time() - mtime
+        if elapsed < 90:
+            return f"{int(elapsed)}s ago"
+        elif elapsed < 3600:
+            return f"{int(elapsed // 60)}m ago"
+        else:
+            return f"{elapsed / 3600:.1f}h ago"
+    except Exception:
+        return "unknown"
+
+def elapsed_str(path: Path) -> str:
+    """Return elapsed time since file was last modified (for in-progress)."""
+    try:
+        mtime = path.stat().st_mtime
+        elapsed = time.time() - mtime
+        if elapsed < 3600:
+            return f"{int(elapsed // 60)}m elapsed"
+        else:
+            return f"{elapsed / 3600:.1f}h elapsed"
+    except Exception:
+        return ""
+
+def get_review_status(ticket_path: Path, reviews_dir: Path) -> str:
+    """Return review status string for in-review tickets."""
+    fm = read_frontmatter(ticket_path)
+    ticket_id = re.match(r'^(\d+)', ticket_path.stem)
+    if not ticket_id:
+        return ""
+    tid = ticket_id.group(1)
+    round_num = fm.get("review-round", "0")
+
+    cc_sidecar = reviews_dir / f"{tid}-cc-r{round_num}.md"
+    cx_sidecar = reviews_dir / f"{tid}-cx-r{round_num}.md"
+
+    def verdict(p: Path) -> str:
+        if not p.exists():
+            return "pending"
+        v = read_frontmatter(p).get("verdict", "pending")
+        return v
+
+    cc_v = verdict(cc_sidecar)
+    cx_v = verdict(cx_sidecar)
+    return f"(r{round_num}: cc={cc_v}, cx={cx_v})"
+
+def list_state(state_dir: Path, state_label: str, extra_fn=None):
+    """Print one Kanban row."""
+    if not state_dir.is_dir():
+        print(f"{state_label:<10} 0")
+        return
+
+    tickets = sorted(state_dir.glob("*.md"), key=lambda p: p.name)
+    count = len(tickets)
+
+    if count == 0:
+        print(f"{state_label:<10} 0")
+        return
+
+    reviews_dir = ct2_dir / "reviews"
+    for i, t in enumerate(tickets):
+        fm = read_frontmatter(t)
+        prio = fm.get("priority", "")
+        prio_tag = f" [{prio}]" if prio and state_label in ("BACKLOG",) else ""
+
+        extra = ""
+        if extra_fn:
+            extra = extra_fn(t)
+
+        if i == 0:
+            marker = "●" if state_label == "IN-PROG" else " "
+            elapsed = f" [{elapsed_str(t)}]" if state_label == "IN-PROG" else ""
+            review_info = f" {get_review_status(t, reviews_dir)}" if state_label == "IN-REVIEW" else ""
+            print(f"{state_label:<10} {count} {marker} {t.name}{prio_tag}{elapsed}{review_info}")
+        else:
+            review_info = f" {get_review_status(t, reviews_dir)}" if state_label == "IN-REVIEW" else ""
+            print(f"{'':>13}  {t.name}{prio_tag}{review_info}")
+
+def heartbeat_status(role: str) -> str:
+    hb_path = ct2_dir / ".meta" / f"ct2-{role}.heartbeat"
+    timeout_path = ct2_dir / "config" / "harness.yaml"
+
+    timeout_min = 15
+    try:
+        cfg = timeout_path.read_text()
+        m = re.search(r'heartbeat_timeout_min:\s*(\d+)', cfg)
+        if m:
+            timeout_min = int(m.group(1))
+    except Exception:
+        pass
+
+    if not hb_path.exists():
+        return "IDLE"
+    elapsed = time.time() - hb_path.stat().st_mtime
+    if elapsed > timeout_min * 60:
+        return f"DEAD (last seen {age_str(hb_path)})"
+    return f"ACTIVE (heartbeat {age_str(hb_path)})"
+
+def inbox_summary():
+    inbox_dir = ct2_dir / "inbox"
+    if not inbox_dir.is_dir():
+        return
+
+    has_unread = False
+    for role_dir in sorted(inbox_dir.iterdir()):
+        if not role_dir.is_dir():
+            continue
+        role = role_dir.name
+        # Count messages not in processing/ or done/
+        msgs = [f for f in role_dir.glob("*.md") if f.is_file()]
+        count = len(msgs)
+        if not has_unread and count > 0:
+            has_unread = True
+
+        if count > 0:
+            print(f"  {role:<14} {count} unread", end="")
+            # Show first two message subjects
+            for i, msg in enumerate(sorted(msgs)[:2]):
+                fm = read_frontmatter(msg)
+                msg_type = fm.get("type", "info")
+                from_role = fm.get("from", "?")
+                ticket = fm.get("ticket", "?")
+                m_id = re.match(r'(\d+)', ticket)
+                ticket_ref = f"[{m_id.group(1)}]" if m_id else f"[{ticket}]"
+                if i == 0:
+                    print(f"   {msg_type} from {from_role} {ticket_ref}")
+                else:
+                    print(f"{'':>31}{msg_type} from {from_role} {ticket_ref}")
+        else:
+            print(f"  {role:<14} 0 unread")
+
+    if not has_unread:
+        print("  (no unread messages)")
+
+# ── Output ────────────────────────────────────────────────────────────────────
+print(f"CT2 Status: {project_dir}")
+print(SEP)
+
+list_state(ct2_dir / "draft",       "DRAFT")
+list_state(ct2_dir / "backlog",     "BACKLOG")
+list_state(ct2_dir / "in-progress", "IN-PROG")
+list_state(ct2_dir / "in-review",   "IN-REVIEW")
+list_state(ct2_dir / "rejected",    "REJECTED")
+list_state(ct2_dir / "escalated",   "ESCALATED")
+list_state(ct2_dir / "done",        "DONE")
+
+print(SEP)
+print(f"Forge:    {heartbeat_status('forge')}")
+print(f"Lens-CC:  {heartbeat_status('lens-cc')}")
+print(f"Lens-CX:  {heartbeat_status('lens-cx')}")
+print(SEP)
+print("INBOX")
+inbox_summary()
+print(SEP)

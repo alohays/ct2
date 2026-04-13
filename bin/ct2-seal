@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# ct2-seal — Validate and move a draft ticket to backlog.
+# Usage: ct2-seal <ticket-id-or-filename>
+#
+# Accepts:
+#   ct2-seal 003
+#   ct2-seal 003-refactor-db-pool
+#   ct2-seal 003-refactor-db-pool.md
+
+set -euo pipefail
+
+CT2_DIR="${PWD}/.ct2"
+
+# ── Locate .ct2/ ──────────────────────────────────────────────────────────────
+if [[ ! -d "$CT2_DIR" ]]; then
+  echo "ct2-seal: error — .ct2/ not found in ${PWD}" >&2
+  echo "Run 'ct2-init' first." >&2
+  exit 1
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: ct2-seal <ticket-id-or-filename>" >&2
+  exit 1
+fi
+
+ARG="$1"
+
+# ── Resolve ticket filename ────────────────────────────────────────────────────
+# Accept: "003", "003-refactor-db-pool", "003-refactor-db-pool.md"
+find_ticket() {
+  local draft_dir="${CT2_DIR}/draft"
+  local arg="$1"
+
+  # Exact match with .md
+  if [[ -f "${draft_dir}/${arg}" ]]; then echo "${draft_dir}/${arg}"; return; fi
+  # Add .md
+  if [[ -f "${draft_dir}/${arg}.md" ]]; then echo "${draft_dir}/${arg}.md"; return; fi
+  # Glob by numeric prefix
+  local matches; matches=$(ls "${draft_dir}/${arg}"-*.md 2>/dev/null | head -1)
+  if [[ -n "$matches" ]]; then echo "$matches"; return; fi
+  # Already in backlog?
+  if [[ -f "${CT2_DIR}/backlog/${arg}.md" || -f "${CT2_DIR}/backlog/${arg}" ]]; then
+    echo "ct2-seal: warning — $(basename "${arg}" .md) is already in backlog/" >&2
+    exit 0
+  fi
+}
+
+TICKET_PATH=$(find_ticket "$ARG")
+
+if [[ -z "$TICKET_PATH" ]]; then
+  echo "ct2-seal: error — ticket '${ARG}' not found in .ct2/draft/" >&2
+  exit 1
+fi
+
+TICKET_FILE=$(basename "$TICKET_PATH")
+echo "ct2-seal: sealing ${TICKET_FILE}"
+
+# ── Validate required fields (Python for YAML parsing) ───────────────────────
+python3 - "$TICKET_PATH" <<'PYEOF'
+import sys, re
+
+path = sys.argv[1]
+content = open(path).read()
+
+# Extract YAML frontmatter (between first pair of ---)
+fm_match = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
+if not fm_match:
+    print("ct2-seal: error — no YAML frontmatter found", file=sys.stderr)
+    sys.exit(1)
+
+fm = fm_match.group(1)
+
+errors = []
+
+# Required frontmatter fields
+for field in ('title', 'priority'):
+    m = re.search(rf'^{field}:\s*"?(.+?)"?\s*$', fm, re.MULTILINE)
+    if not m or not m.group(1).strip():
+        errors.append(f"  - missing or empty field: {field}")
+
+# touched-files must have at least one entry
+if not re.search(r'^touched-files:\s*\n(\s+-\s+\S)', fm, re.MULTILINE):
+    errors.append("  - touched-files: must have at least one entry")
+
+# Body must contain ## Acceptance Criteria with at least one checkbox
+if '## Acceptance Criteria' not in content:
+    errors.append("  - missing section: ## Acceptance Criteria")
+else:
+    ac_section = content.split('## Acceptance Criteria', 1)[1]
+    if not re.search(r'- \[[ x]\]', ac_section):
+        errors.append("  - ## Acceptance Criteria has no checklist items")
+
+if errors:
+    print("ct2-seal: validation failed — the following fields are required:", file=sys.stderr)
+    for e in errors:
+        print(e, file=sys.stderr)
+    sys.exit(1)
+
+print("OK")
+PYEOF
+
+VALIDATION=$?
+if [[ $VALIDATION -ne 0 ]]; then
+  exit 1
+fi
+
+# ── Update frontmatter: status → backlog, sealed → now ───────────────────────
+SEALED_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+python3 - "$TICKET_PATH" "$SEALED_TS" <<'PYEOF'
+import sys, re
+
+path = sys.argv[1]
+sealed_ts = sys.argv[2]
+content = open(path).read()
+
+# Update status field
+content = re.sub(r'^(status:\s*).*$', r'\g<1>backlog', content, flags=re.MULTILINE)
+# Update sealed field (null → timestamp)
+content = re.sub(r'^(sealed:\s*)null.*$', rf'\g<1>{sealed_ts}', content, flags=re.MULTILINE)
+# Update updated field
+updated_ts = sealed_ts
+content = re.sub(r'^(updated:\s*).*$', rf'\g<1>{updated_ts}', content, flags=re.MULTILINE)
+
+open(path, 'w').write(content)
+print("OK")
+PYEOF
+
+# ── Atomic move to backlog/ ───────────────────────────────────────────────────
+DEST="${CT2_DIR}/backlog/${TICKET_FILE}"
+mv "$TICKET_PATH" "$DEST"
+
+echo "✓ ${TICKET_FILE} sealed and moved to backlog/"
+echo "  Run 'ct2-status' to verify, or start ct2-forge to begin processing."
