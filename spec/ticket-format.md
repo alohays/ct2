@@ -56,15 +56,16 @@ verdict: pending         # pending | approved | rejected | escalated
 
 ### Writer Ownership
 
-| Field               | Written by          |
-|---------------------|---------------------|
-| All metadata fields | ct2-helm (creation) |
-| `status`            | reconciler only (after creation) |
-| `sealed`            | ct2-seal            |
-| `review-round`      | ct2-forge (on rejected pickup) |
-| `review-status.*`   | reconciler only     |
-| `verdict`           | reconciler only     |
-| `branch`, `pr`      | ct2-forge           |
+| Field               | Written by                                                                        |
+|---------------------|-----------------------------------------------------------------------------------|
+| All metadata fields | ct2-helm (at ticket creation)                                                     |
+| `status`            | ct2-seal (`draft→backlog`), ct2-forge (`→in-progress`, `→in-review`), reconciler (`→done/rejected/escalated`) |
+| `sealed`            | ct2-seal                                                                          |
+| `review-round`      | ct2-forge (incremented on rejected pickup)                                        |
+| `review-status.*`   | reconciler only                                                                   |
+| `verdict`           | reconciler only                                                                   |
+| `branch`, `pr`      | ct2-forge                                                                         |
+| `updated`           | any actor that modifies the ticket                                                |
 
 ## Ticket Body Structure
 

@@ -108,10 +108,15 @@ if [[ $VALIDATION -ne 0 ]]; then
   exit 1
 fi
 
-# ── Update frontmatter: status → backlog, sealed → now ───────────────────────
+# ── Atomic seal: copy to tmp, mutate, then mv -n to backlog ──────────────────
 SEALED_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+DEST="${CT2_DIR}/backlog/${TICKET_FILE}"
+TMP_COPY=$(mktemp "${CT2_DIR}/.tmp/seal-XXXXXX.md")
 
-python3 - "$TICKET_PATH" "$SEALED_TS" <<'PYEOF'
+# Copy original to tmp (draft file stays untouched until final mv)
+cp "$TICKET_PATH" "$TMP_COPY"
+
+python3 - "$TMP_COPY" "$SEALED_TS" <<'PYEOF'
 import sys, re
 
 path = sys.argv[1]
@@ -127,12 +132,17 @@ updated_ts = sealed_ts
 content = re.sub(r'^(updated:\s*).*$', rf'\g<1>{updated_ts}', content, flags=re.MULTILINE)
 
 open(path, 'w').write(content)
-print("OK")
 PYEOF
 
-# ── Atomic move to backlog/ ───────────────────────────────────────────────────
-DEST="${CT2_DIR}/backlog/${TICKET_FILE}"
-mv "$TICKET_PATH" "$DEST"
+# Atomic no-clobber move to backlog — if another session won the race, fail cleanly
+if ! mv -n "$TMP_COPY" "$DEST"; then
+  rm -f "$TMP_COPY"
+  echo "ct2-seal: error — ${TICKET_FILE} already exists in backlog/ (concurrent seal?)" >&2
+  exit 1
+fi
+
+# Remove original draft only after backlog copy is confirmed
+rm -f "$TICKET_PATH"
 
 echo "✓ ${TICKET_FILE} sealed and moved to backlog/"
 echo "  Run 'ct2-status' to verify, or start ct2-forge to begin processing."
