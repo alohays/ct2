@@ -215,6 +215,8 @@ cc_v = extract_verdict(cc_sc)
 cx_v = extract_verdict(cx_sc)
 c = re.sub(r'(lens-claude:\s*\n\s*status:\s*).*', rf'\g<1>{cc_v}', c)
 c = re.sub(r'(lens-codex:\s*\n\s*status:\s*).*', rf'\g<1>{cx_v}', c)
+from datetime import datetime, timezone
+c = re.sub(r'^(updated:\s*).*$', rf'\g<1>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}', c, flags=re.MULTILINE)
 open(path, 'w').write(c)
 PYEOF
   }

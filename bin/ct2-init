@@ -41,7 +41,11 @@ cp "${CT2_REPO_DIR}/config/ct2-lens-cc-role.md"    "${CT2_DIR}/config/ct2-lens-c
 cp "${CT2_REPO_DIR}/config/ct2-lens-cx-role.md"    "${CT2_DIR}/config/ct2-lens-cx-role.md"
 
 # ── Copy ticket template ───────────────────────────────────────────────────────
-cp "${CT2_REPO_DIR}/templates/ticket.md" "${CT2_DIR}/config/ticket.template.md"
+cp "${CT2_REPO_DIR}/templates/ticket.md" "${CT2_DIR}/ticket.template.md"
+
+# ── Create stub log files ─────────────────────────────────────────────────────
+touch "${CT2_DIR}/logs/ct2-forge.log"
+touch "${CT2_DIR}/logs/ct2-lens-cx.log"
 
 # ── Initialize circuit-breaker state file ────────────────────────────────────
 cat > "${CT2_DIR}/.meta/circuit-breaker.json" <<'EOF'
