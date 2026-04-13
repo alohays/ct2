@@ -83,8 +83,8 @@ for ticket in .ct2/in-review/*.md; do
   # Check if my sidecar already exists for this round
   ticket_id=$(basename "$ticket" .md | grep -oE '^[0-9]+')
   round=$(python3 -c "
-import re; c=open('$ticket').read()
-m=re.search(r'review-round:\s*(\d+)', c); print(m.group(1) if m else '0')")
+import re, sys; c=open(sys.argv[1]).read()
+m=re.search(r'review-round:\s*(\d+)', c); print(m.group(1) if m else '0')" "$ticket")
   cc_sidecar=".ct2/reviews/${ticket_id}-cc-r${round}.md"
   if [ ! -f "$cc_sidecar" ]; then
     # This ticket needs my review

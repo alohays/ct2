@@ -23,19 +23,21 @@ perform_reconcile() {
   fi
 
   local cc_v; cc_v=$(python3 -c "
-import re; c=open('.ct2/reviews/${ticket_id}-cc-r${round}.md').read()
-m=re.search(r'verdict:\s*(\w+)', c); print(m.group(1) if m else 'pending')")
+import re, sys; c=open(sys.argv[1]).read()
+m=re.search(r'verdict:\s*(\w+)', c); print(m.group(1) if m else 'pending')" \
+    ".ct2/reviews/${ticket_id}-cc-r${round}.md")
 
   local cx_v; cx_v=$(python3 -c "
-import re; c=open('.ct2/reviews/${ticket_id}-cx-r${round}.md').read()
-m=re.search(r'verdict:\s*(\w+)', c); print(m.group(1) if m else 'pending')")
+import re, sys; c=open(sys.argv[1]).read()
+m=re.search(r'verdict:\s*(\w+)', c); print(m.group(1) if m else 'pending')" \
+    ".ct2/reviews/${ticket_id}-cx-r${round}.md")
 
   local max_rounds; max_rounds=$(python3 -c "
-import re
+import re, sys
 try:
-    c=open('.ct2/config/harness.yaml').read()
+    c=open(sys.argv[1]).read()
     m=re.search(r'max_review_rounds:\s*(\d+)', c); print(m.group(1) if m else '3')
-except: print('3')")
+except: print('3')" ".ct2/config/harness.yaml")
 
   local ticket_file; ticket_file=$(basename "$ticket")
 
@@ -79,7 +81,8 @@ c = open(path).read()
 c = re.sub(r'^(verdict:\s*).*$', rf'\g<1>{verdict}', c, flags=re.MULTILINE)
 c = re.sub(r'(lens-claude:\n\s*status:\s*).*', rf'\g<1>{get_v(cc_sc)}', c)
 c = re.sub(r'(lens-codex:\n\s*status:\s*).*', rf'\g<1>{get_v(cx_sc)}', c)
-c = re.sub(r'^(updated:\s*).*$', rf'\g<1>{__import__("datetime").datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}', c, flags=re.MULTILINE)
+from datetime import datetime, timezone
+c = re.sub(r'^(updated:\s*).*$', rf'\g<1>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}', c, flags=re.MULTILINE)
 open(path, 'w').write(c)
 PYEOF
 }

@@ -100,10 +100,9 @@ for ticket in .ct2/in-progress/*.md; do
     mv "$ticket" ".ct2/backlog/$(basename "$ticket")"
     python3 -c "
 import re, sys
-p = '.ct2/backlog/$(basename "$ticket")'
-c = open(p).read()
-c = re.sub(r'^(status:\s*).*$', r'\g<1>backlog', c, flags=re.MULTILINE)
-open(p, 'w').write(c)"
+c = open(sys.argv[1]).read()
+c = re.sub(r'^(status:\s*).*\$', r'\g<1>backlog', c, flags=re.MULTILINE)
+open(sys.argv[1], 'w').write(c)" ".ct2/backlog/$(basename "$ticket")"
     echo "Circuit breaker: ticket returned to backlog (duration exceeded)"
   fi
 done
