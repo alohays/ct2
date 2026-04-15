@@ -22,18 +22,32 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-info()    { echo -e "${GREEN}[ct2]${NC} $*"; }
-warning() { echo -e "${YELLOW}[ct2 warn]${NC} $*"; }
-error()   { echo -e "${RED}[ct2 error]${NC} $*" >&2; }
+info()    { printf '%b\n' "${GREEN}[ct2]${NC} $*"; }
+warning() { printf '%b\n' "${YELLOW}[ct2 warn]${NC} $*"; }
+error()   { printf '%b\n' "${RED}[ct2 error]${NC} $*" >&2; }
 
 # ── Check dependencies ────────────────────────────────────────────────────────
 if ! command -v git &>/dev/null; then
-  error "git is required but not found. Install Xcode Command Line Tools: xcode-select --install"
+  if [[ "$(uname)" == "Darwin" ]]; then
+    error "git is required but not found. Install Xcode Command Line Tools: xcode-select --install"
+  else
+    error "git is required but not found. Install with: sudo apt install git"
+  fi
   exit 1
 fi
 
 if ! command -v python3 &>/dev/null; then
-  error "python3 is required but not found."
+  if [[ "$(uname)" == "Darwin" ]]; then
+    error "python3 is required but not found. Install Xcode CLT (xcode-select --install) or Homebrew (brew install python3)."
+  else
+    error "python3 is required but not found. Install with: sudo apt install python3"
+  fi
+  exit 1
+fi
+
+# Verify minimum Python version (3.9+)
+if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)" 2>/dev/null; then
+  error "Python 3.9+ required. Current: $(python3 --version 2>&1). Please upgrade."
   exit 1
 fi
 
@@ -43,6 +57,11 @@ if [[ -d "$CT2_HOME/.git" ]]; then
   git -C "$CT2_HOME" pull --ff-only origin main || {
     warning "git pull failed; your local installation may be ahead of remote."
   }
+elif [[ -d "$CT2_HOME" ]]; then
+  error "${CT2_HOME} exists but is not a CT2 git repository."
+  error "Back up and remove it, then re-run install.sh:"
+  error "  mv ${CT2_HOME} ${CT2_HOME}.bak && bash install.sh"
+  exit 1
 else
   info "Installing CT2 to ${CT2_HOME}..."
   git clone "$CT2_REPO_URL" "$CT2_HOME"
@@ -69,25 +88,44 @@ for skill_dir in "${SKILLS_SRC}"/*/; do
   info "  linked: ${target} → ${skill_dir}"
 done
 
-# ── Add ~/.ct2/bin to PATH ─────────────────────────────────────────────────────
-PATH_LINE='export PATH="${HOME}/.ct2/bin:${PATH}"'
+# ── Create env.sh for PATH (rustup-style idempotent sourcing) ─────────────────
+ENV_FILE="${CT2_HOME}/env.sh"
+cat > "$ENV_FILE" << 'ENVEOF'
+# CT2: Context Control Protocol — PATH setup (sourced from shell RC)
+case ":${PATH}:" in
+  *:"${HOME}/.ct2/bin":*) ;;
+  *) export PATH="${HOME}/.ct2/bin:${PATH}" ;;
+esac
+ENVEOF
+info "Created ${ENV_FILE}"
 
-# Detect shell config file
-if [[ -n "${BASH_VERSION:-}" ]]; then
-  SHELL_RC="${HOME}/.bash_profile"
-elif [[ -n "${ZSH_VERSION:-}" ]]; then
-  SHELL_RC="${HOME}/.zshrc"
-else
-  SHELL_RC="${HOME}/.zshrc"  # Default to zsh on modern macOS
-fi
+# ── Add source line to shell RC ───────────────────────────────────────────────
+# Detect user's login shell (not the script's interpreter)
+LOGIN_SHELL="$(basename -- "${SHELL:-bash}")"
+case "$LOGIN_SHELL" in
+  zsh)
+    SHELL_RC="${ZDOTDIR:-${HOME}}/.zshrc"
+    ;;
+  bash)
+    if [[ "$(uname)" == "Darwin" ]]; then
+      SHELL_RC="${HOME}/.bash_profile"
+    else
+      SHELL_RC="${HOME}/.bashrc"
+    fi
+    ;;
+  *)
+    SHELL_RC="${ENV:-${HOME}/.profile}"
+    ;;
+esac
 
-if ! grep -qF '.ct2/bin' "$SHELL_RC" 2>/dev/null; then
+SOURCE_LINE='. "${HOME}/.ct2/env.sh"'
+if ! grep -qF '.ct2/env.sh' "$SHELL_RC" 2>/dev/null; then
   echo "" >> "$SHELL_RC"
   echo "# CT2: Context Control Protocol" >> "$SHELL_RC"
-  echo "$PATH_LINE" >> "$SHELL_RC"
-  info "Added ~/.ct2/bin to PATH in ${SHELL_RC}"
+  echo "$SOURCE_LINE" >> "$SHELL_RC"
+  info "Added CT2 PATH source to ${SHELL_RC}"
 else
-  info "PATH already contains ~/.ct2/bin (skipping)"
+  info "CT2 PATH already configured in ${SHELL_RC} (skipping)"
 fi
 
 # Make bin scripts executable
@@ -106,10 +144,17 @@ fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
-echo -e "${GREEN}✓ CT2 installed successfully.${NC}"
+printf '%b\n' "${GREEN}✓ CT2 installed successfully.${NC}"
 echo ""
 echo "Reload your shell or run:"
 echo "  source ${SHELL_RC}"
+
+# Warn if Claude Code is not detected
+if ! command -v claude &>/dev/null; then
+  echo ""
+  warning "Claude Code CLI not found. CT2 requires Claude Code to function."
+  warning "Install from: https://claude.ai/claude-code"
+fi
 echo ""
 echo "Then, in a project directory:"
 echo "  ct2-init          # Initialize .ct2/ in your project"

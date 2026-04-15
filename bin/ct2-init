@@ -7,17 +7,35 @@ set -euo pipefail
 
 CT2_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# ── Parse flags ───────────────────────────────────────────────────────────────
+REPAIR=false
+POSITIONAL=()
+for arg in "$@"; do
+  case "$arg" in
+    --repair) REPAIR=true ;;
+    --help|-h)
+      echo "Usage: ct2-init [--repair] [project-dir]"
+      echo "  --repair  Fill missing directories and config files without overwriting existing state"
+      exit 0 ;;
+    *) POSITIONAL+=("$arg") ;;
+  esac
+done
+
 # ── Resolve target project directory ──────────────────────────────────────────
-PROJECT_DIR="${1:-$(pwd)}"
+PROJECT_DIR="${POSITIONAL[0]:-$(pwd)}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 CT2_DIR="${PROJECT_DIR}/.ct2"
 
-if [[ -d "$CT2_DIR" ]]; then
-  echo "ct2: .ct2/ already exists in ${PROJECT_DIR}. Nothing to do." >&2
+if [[ -d "$CT2_DIR" ]] && [[ "$REPAIR" == false ]]; then
+  echo "ct2: .ct2/ already exists in ${PROJECT_DIR}. Use --repair to fill missing files." >&2
   exit 0
 fi
 
-echo "ct2-init: initializing ${PROJECT_DIR}"
+if [[ "$REPAIR" == true ]]; then
+  echo "ct2-init: repairing ${CT2_DIR}"
+else
+  echo "ct2-init: initializing ${PROJECT_DIR}"
+fi
 
 # ── Create Kanban directories ──────────────────────────────────────────────────
 for dir in draft backlog in-progress in-review rejected escalated done reviews worktrees logs; do
@@ -35,38 +53,51 @@ mkdir -p "${CT2_DIR}/config"
 mkdir -p "${CT2_DIR}/.meta"
 mkdir -p "${CT2_DIR}/.tmp"
 
-# ── Copy default config files ─────────────────────────────────────────────────
-cp "${CT2_REPO_DIR}/config/harness.yaml"           "${CT2_DIR}/config/harness.yaml"
-cp "${CT2_REPO_DIR}/config/ct2-lens-cc-role.md"    "${CT2_DIR}/config/ct2-lens-cc-role.md"
-cp "${CT2_REPO_DIR}/config/ct2-lens-cx-role.md"    "${CT2_DIR}/config/ct2-lens-cx-role.md"
-cp "${CT2_REPO_DIR}/config/ct2-reconciler-ref.md"  "${CT2_DIR}/config/ct2-reconciler-ref.md"
+# ── Copy default config files (skip existing to preserve project customization) ─
+_copy_if_missing() {
+  local src="$1" dst="$2"
+  if [[ ! -f "$dst" ]]; then
+    cp "$src" "$dst"
+    echo "  copied: $(basename "$dst")"
+  fi
+}
+_copy_if_missing "${CT2_REPO_DIR}/config/harness.yaml"          "${CT2_DIR}/config/harness.yaml"
+_copy_if_missing "${CT2_REPO_DIR}/config/ct2-lens-cc-role.md"   "${CT2_DIR}/config/ct2-lens-cc-role.md"
+_copy_if_missing "${CT2_REPO_DIR}/config/ct2-lens-cx-role.md"   "${CT2_DIR}/config/ct2-lens-cx-role.md"
+_copy_if_missing "${CT2_REPO_DIR}/config/ct2-reconciler-ref.md" "${CT2_DIR}/config/ct2-reconciler-ref.md"
 
 # ── Copy ticket template ───────────────────────────────────────────────────────
-cp "${CT2_REPO_DIR}/templates/ticket.md" "${CT2_DIR}/ticket.template.md"
+_copy_if_missing "${CT2_REPO_DIR}/templates/ticket.md" "${CT2_DIR}/ticket.template.md"
 
 # ── Create stub log files ─────────────────────────────────────────────────────
 touch "${CT2_DIR}/logs/ct2-forge.log"
 touch "${CT2_DIR}/logs/ct2-lens-cx.log"
 
-# ── Initialize circuit-breaker state file ────────────────────────────────────
-cat > "${CT2_DIR}/.meta/circuit-breaker.json" <<'EOF'
+# ── Initialize circuit-breaker state file (skip if exists) ───────────────────
+if [[ ! -f "${CT2_DIR}/.meta/circuit-breaker.json" ]]; then
+  cat > "${CT2_DIR}/.meta/circuit-breaker.json" <<'EOF'
 {
   "tripped": false,
   "tripped_tickets": []
 }
 EOF
+fi
 
 # ── Exclude .ct2/ from git (without modifying .gitignore) ────────────────────
-GIT_DIR_PATH="${PROJECT_DIR}/.git"
-if [[ -d "$GIT_DIR_PATH" ]]; then
-  GIT_EXCLUDE="${GIT_DIR_PATH}/info/exclude"
+# Use git rev-parse to handle both normal repos and worktrees (.git as file)
+if git -C "$PROJECT_DIR" rev-parse --git-common-dir &>/dev/null; then
+  GIT_DIR_RESOLVED="$(git -C "$PROJECT_DIR" rev-parse --git-common-dir)"
+  # Make absolute if relative
+  [[ "$GIT_DIR_RESOLVED" == /* ]] || GIT_DIR_RESOLVED="${PROJECT_DIR}/${GIT_DIR_RESOLVED}"
+  GIT_EXCLUDE="${GIT_DIR_RESOLVED}/info/exclude"
   mkdir -p "$(dirname "$GIT_EXCLUDE")"
   if ! grep -qxF '.ct2/' "$GIT_EXCLUDE" 2>/dev/null; then
     echo '.ct2/' >> "$GIT_EXCLUDE"
-    echo "ct2-init: added .ct2/ to .git/info/exclude"
+    echo "ct2-init: added .ct2/ to ${GIT_EXCLUDE}"
   fi
 else
-  echo "ct2-init: warning — no .git directory found; .ct2/ not excluded from git" >&2
+  echo "ct2-init: warning — not a git repository; .ct2/ will not be git-excluded" >&2
+  echo "  CT2 workflows (forge, lens) depend on git. Consider initializing git first." >&2
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
