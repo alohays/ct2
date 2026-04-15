@@ -41,21 +41,31 @@ except: print('3')" ".ct2/config/harness.yaml")
 
   local ticket_file; ticket_file=$(basename "$ticket")
 
+  # Guard: ticket may have been moved by the other reconciler
+  if [[ ! -f ".ct2/in-review/${ticket_file}" ]]; then
+    echo "Reconciler: ${ticket_file} already moved from in-review/; skipping"
+    rm -f "$lockfile"
+    return 0
+  fi
+
+  local src=".ct2/in-review/${ticket_file}"
   if [[ "$cc_v" == "approved" && "$cx_v" == "approved" ]]; then
     _update_verdict "$ticket_file" "approved" "$ticket_id" "$round"
-    mv -n ".ct2/in-review/${ticket_file}" ".ct2/done/${ticket_file}"
-    echo "Reconciler: ${ticket_file} -> done (cc=approved, cx=approved)"
+    mv -n "$src" ".ct2/done/${ticket_file}" 2>/dev/null
+    [[ -f "$src" ]] && echo "Reconciler: ERROR — failed to move ${ticket_file} to done/" >&2 \
+                     || echo "Reconciler: ${ticket_file} -> done (cc=approved, cx=approved)"
 
   elif (( round + 1 >= max_rounds )); then
     _update_verdict "$ticket_file" "escalated" "$ticket_id" "$round"
-    mv -n ".ct2/in-review/${ticket_file}" ".ct2/escalated/${ticket_file}"
-    echo "Reconciler: ${ticket_file} -> escalated (max rounds)"
-    _send_escalation "${ticket_file}" "${round}" "${max_rounds}"
+    mv -n "$src" ".ct2/escalated/${ticket_file}" 2>/dev/null
+    [[ -f "$src" ]] && echo "Reconciler: ERROR — failed to move ${ticket_file} to escalated/" >&2 \
+                     || { echo "Reconciler: ${ticket_file} -> escalated (max rounds)"; _send_escalation "${ticket_file}" "${round}" "${max_rounds}"; }
 
   else
     _update_verdict "$ticket_file" "rejected" "$ticket_id" "$round"
-    mv -n ".ct2/in-review/${ticket_file}" ".ct2/rejected/${ticket_file}"
-    echo "Reconciler: ${ticket_file} -> rejected (cc=${cc_v}, cx=${cx_v})"
+    mv -n "$src" ".ct2/rejected/${ticket_file}" 2>/dev/null
+    [[ -f "$src" ]] && echo "Reconciler: ERROR — failed to move ${ticket_file} to rejected/" >&2 \
+                     || echo "Reconciler: ${ticket_file} -> rejected (cc=${cc_v}, cx=${cx_v})"
   fi
 
   rm -f "$lockfile"
@@ -95,11 +105,13 @@ PYEOF
 ```bash
 _send_escalation() {
   local ticket="$1" round="$2" max="$3"
-  local ts; ts=$(date -u +%Y%m%dT%H%M%S%3NZ 2>/dev/null || date -u +%Y%m%dT%H%M%SZ)
-  local uid; uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || \
-                   head -c 8 /dev/urandom | xxd -p | head -c 8)
+  local ts; ts=$(date -u +%Y%m%dT%H%M%SZ)
+  local uid
+  uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || true)
+  [[ -z "$uid" ]] && uid=$(od -An -tx1 -N4 /dev/urandom 2>/dev/null | tr -d ' \n' || true)
+  [[ -z "$uid" ]] && uid=$(head -c 8 /dev/urandom | xxd -p | head -c 8 || true)
   local msgid="msg-${ts}-$$-${uid}"
-  local tmp; tmp=$(mktemp ".ct2/.tmp/${msgid}.XXXXXX")
+  local tmp; tmp=$(mktemp ".ct2/.tmp/${msgid}-XXXXXX")
   cat > "$tmp" <<MSGEOF
 ---
 id: $msgid
@@ -117,6 +129,7 @@ Ticket ${ticket} — Circuit Breaker Triggered (max_review_rounds=${max})
 Ticket ${ticket} failed to pass review after ${max} rounds.
 Please inspect the ticket manually and either revise requirements or close it.
 MSGEOF
-  mv -n "$tmp" ".ct2/inbox/ct2-helm/${msgid}.md"
+  mv -n "$tmp" ".ct2/inbox/ct2-helm/${msgid}.md" 2>/dev/null
+  if [[ -f "$tmp" ]]; then rm -f "$tmp"; echo "ERROR: escalation message send failed" >&2; fi
 }
 ```

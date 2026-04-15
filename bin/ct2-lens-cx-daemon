@@ -24,13 +24,13 @@ cleanup() {
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] lens-cx: shutting down (signal received)" \
     | tee -a "$DAEMON_LOG" 2>/dev/null
   # Remove lockfiles owned by this PID
-  find "${CT2_DIR}/.meta" -name '*-reconcile.lock' -newer /dev/null 2>/dev/null | while read -r lf; do
+  find "${CT2_DIR}/.meta" -name '*-reconcile.lock' -type f 2>/dev/null | while read -r lf; do
     if [[ "$(cat "$lf" 2>/dev/null)" == "$$" ]]; then
       rm -f "$lf"
     fi
   done
   # Remove temp files created by this process
-  find "${CT2_DIR}/.tmp" -name "cx-review-*" -newer /dev/null 2>/dev/null -delete
+  find "${CT2_DIR}/.tmp" -name "cx-review-*" -type f 2>/dev/null -delete
   exit 0
 }
 trap cleanup SIGTERM SIGINT EXIT
@@ -46,6 +46,39 @@ if ! command -v "$CODEX_CMD" &>/dev/null; then
   echo "ct2-lens-cx-daemon: '${CODEX_CMD}' not found. Install the Codex CLI and retry." >&2
   exit 1
 fi
+
+# ── Resolve timeout command (GNU coreutils; macOS needs Homebrew) ────────────
+if command -v timeout &>/dev/null; then
+  TIMEOUT_CMD="timeout"
+elif command -v gtimeout &>/dev/null; then
+  TIMEOUT_CMD="gtimeout"
+else
+  # Pure-bash fallback: run command with a background watchdog
+  _ct2_timeout() {
+    local secs="$1"; shift
+    "$@" &
+    local cmd_pid=$!
+    ( sleep "$secs" && kill "$cmd_pid" 2>/dev/null ) &
+    local watchdog_pid=$!
+    wait "$cmd_pid" 2>/dev/null
+    local ret=$?
+    kill "$watchdog_pid" 2>/dev/null; wait "$watchdog_pid" 2>/dev/null
+    return $ret
+  }
+  TIMEOUT_CMD="_ct2_timeout"
+fi
+
+# ── Portable compact timestamp (GNU date supports %3N; BSD does not) ─────────
+_ct2_compact_ts() {
+  local ts
+  ts=$(date -u +%Y%m%dT%H%M%S%NZ 2>/dev/null)
+  if [[ "$ts" =~ [0-9]{8}T[0-9]{6}[0-9]+Z ]]; then
+    # GNU date: truncate nanoseconds to 3 digits for millisecond precision
+    echo "${ts:0:18}Z"
+  else
+    date -u +%Y%m%dT%H%M%SZ
+  fi
+}
 
 mkdir -p "$(dirname "$DAEMON_LOG")"
 
@@ -91,10 +124,10 @@ poll_inbox() {
   for msg in "${inbox_dir}"/*.md; do
     [[ -f "$msg" ]] || continue
     local msgfile; msgfile=$(basename "$msg")
-    local claimed
-    claimed=$(mv -n "$msg" "${inbox_dir}/processing/${msgfile}" 2>/dev/null && \
-              echo "${inbox_dir}/processing/${msgfile}" || echo "")
-    if [[ -n "$claimed" ]]; then
+    # Atomic claim: mv -n then verify source is gone (macOS mv -n always returns 0)
+    mv -n "$msg" "${inbox_dir}/processing/${msgfile}" 2>/dev/null
+    if [[ ! -f "$msg" ]]; then
+      local claimed="${inbox_dir}/processing/${msgfile}"
       log "inbox: processing ${msgfile}"
       # For now, log and acknowledge (helm handles escalation responses)
       mv -n "$claimed" "${inbox_dir}/done/${msgfile}" 2>/dev/null || true
@@ -165,11 +198,16 @@ ${ticket_content}
 PROMPT
 
   # Invoke codex to produce the review
-  local tmp_review; tmp_review=$(mktemp "${CT2_DIR}/.tmp/cx-review-XXXXXX.md")
-  if (cd "$PROJECT_DIR" && echo "$review_prompt" | timeout "$CODEX_TIMEOUT" "$CODEX_CMD" --quiet --output-file "$tmp_review") 2>>"$DAEMON_LOG"; then
+  local tmp_review; tmp_review=$(mktemp "${CT2_DIR}/.tmp/cx-review-XXXXXX")
+  if (cd "$PROJECT_DIR" && echo "$review_prompt" | "$TIMEOUT_CMD" "$CODEX_TIMEOUT" "$CODEX_CMD" --quiet --output-file "$tmp_review") 2>>"$DAEMON_LOG"; then
     # Validate verdict field in output
     if grep -qE '^verdict:\s*(approved|rejected)' "$tmp_review"; then
-      mv -n "$tmp_review" "$cx_sidecar"
+      mv -n "$tmp_review" "$cx_sidecar" 2>/dev/null
+      if [[ -f "$tmp_review" ]]; then
+        log "warning: sidecar already exists for $(basename "$cx_sidecar"); skipping"
+        rm -f "$tmp_review"
+        return 0
+      fi
       log "sidecar written: $(basename "$cx_sidecar")"
       reconcile_ticket "$ticket_path" "$ticket_id" "$round"
     else
@@ -250,19 +288,29 @@ open(path, 'w').write(c)
 PYEOF
   }
 
+  # Guard: ticket may have been moved by a concurrent reconciler
+  if [[ ! -f "${CT2_DIR}/in-review/${ticket_file}" ]]; then
+    log "reconcile: ${ticket_file} already moved from in-review/; skipping"
+    rm -f "$lockfile"
+    return 0
+  fi
+
+  local src="${CT2_DIR}/in-review/${ticket_file}"
   if [[ "$cc_v" == "approved" && "$cx_v" == "approved" ]]; then
     update_ticket_verdict "approved"
-    mv -n "${CT2_DIR}/in-review/${ticket_file}" "${CT2_DIR}/done/${ticket_file}"
-    log "✓ ${ticket_file} → done"
+    mv -n "$src" "${CT2_DIR}/done/${ticket_file}" 2>/dev/null
+    [[ -f "$src" ]] && { log "error: failed to move ${ticket_file} to done/ (destination exists?)"; } \
+                     || log "✓ ${ticket_file} → done"
   elif (( round + 1 >= MAX_REVIEW_ROUNDS )); then
     update_ticket_verdict "escalated"
-    mv -n "${CT2_DIR}/in-review/${ticket_file}" "${CT2_DIR}/escalated/${ticket_file}"
-    log "⚡ ${ticket_file} → escalated (max rounds)"
-    send_escalation_message "$ticket_file" "$round"
+    mv -n "$src" "${CT2_DIR}/escalated/${ticket_file}" 2>/dev/null
+    [[ -f "$src" ]] && { log "error: failed to move ${ticket_file} to escalated/"; } \
+                     || { log "⚡ ${ticket_file} → escalated (max rounds)"; send_escalation_message "$ticket_file" "$round"; }
   else
     update_ticket_verdict "rejected"
-    mv -n "${CT2_DIR}/in-review/${ticket_file}" "${CT2_DIR}/rejected/${ticket_file}"
-    log "✗ ${ticket_file} → rejected"
+    mv -n "$src" "${CT2_DIR}/rejected/${ticket_file}" 2>/dev/null
+    [[ -f "$src" ]] && { log "error: failed to move ${ticket_file} to rejected/"; } \
+                     || log "✗ ${ticket_file} → rejected"
   fi
 
   rm -f "$lockfile"
@@ -271,11 +319,13 @@ PYEOF
 # ── Inbox message sender ───────────────────────────────────────────────────────
 send_escalation_message() {
   local ticket="$1" round="$2"
-  local ts; ts=$(date -u +%Y%m%dT%H%M%S%3NZ 2>/dev/null || date -u +%Y%m%dT%H%M%SZ)
-  local uid; uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || \
-                   head -c 8 /dev/urandom | xxd -p | head -c 8)
+  local ts; ts=$(_ct2_compact_ts)
+  local uid
+  uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || true)
+  [[ -z "$uid" ]] && uid=$(od -An -tx1 -N4 /dev/urandom 2>/dev/null | tr -d ' \n' || true)
+  [[ -z "$uid" ]] && uid=$(head -c 8 /dev/urandom | xxd -p | head -c 8 || true)
   local msgid="msg-${ts}-$$-${uid}"
-  local tmp; tmp=$(mktemp "${CT2_DIR}/.tmp/${msgid}.XXXXXX")
+  local tmp; tmp=$(mktemp "${CT2_DIR}/.tmp/${msgid}-XXXXXX")
   cat > "$tmp" <<MSGEOF
 ---
 id: $msgid
@@ -293,7 +343,8 @@ Ticket ${ticket} — Circuit Breaker Triggered (max_review_rounds=${MAX_REVIEW_R
 Ticket ${ticket} failed to pass review after ${MAX_REVIEW_ROUNDS} rounds.
 Please inspect the ticket manually and either revise or close it.
 MSGEOF
-  mv -n "$tmp" "${CT2_DIR}/inbox/ct2-helm/${msgid}.md" || { rm -f "$tmp"; log "error: failed to send escalation message"; }
+  mv -n "$tmp" "${CT2_DIR}/inbox/ct2-helm/${msgid}.md" 2>/dev/null
+  if [[ -f "$tmp" ]]; then rm -f "$tmp"; log "error: failed to send escalation message"; fi
 }
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
