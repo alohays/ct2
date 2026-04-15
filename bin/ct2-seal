@@ -111,7 +111,7 @@ fi
 # ── Atomic seal: copy to tmp, mutate, then mv -n to backlog ──────────────────
 SEALED_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 DEST="${CT2_DIR}/backlog/${TICKET_FILE}"
-TMP_COPY=$(mktemp "${CT2_DIR}/.tmp/seal-XXXXXX.md")
+TMP_COPY=$(mktemp "${CT2_DIR}/.tmp/seal-XXXXXX")
 
 # Copy original to tmp (draft file stays untouched until final mv)
 cp "$TICKET_PATH" "$TMP_COPY"
@@ -134,10 +134,13 @@ content = re.sub(r'^(updated:\s*).*$', rf'\g<1>{updated_ts}', content, flags=re.
 open(path, 'w').write(content)
 PYEOF
 
-# Atomic no-clobber move to backlog — if another session won the race, fail cleanly
-if ! mv -n "$TMP_COPY" "$DEST"; then
+# Atomic no-clobber move to backlog — verify source gone to confirm success (macOS
+# mv -n returns 0 even when the move is suppressed, so exit-code alone is unreliable).
+mv -n "$TMP_COPY" "$DEST" 2>/dev/null
+if [[ -f "$TMP_COPY" ]]; then
   rm -f "$TMP_COPY"
-  echo "ct2-seal: error — ${TICKET_FILE} already exists in backlog/ (concurrent seal?)" >&2
+  echo "ct2-seal: error — ${TICKET_FILE} already exists in backlog/. It was already sealed." >&2
+  echo "  Run 'ct2-status' to check its current state." >&2
   exit 1
 fi
 
