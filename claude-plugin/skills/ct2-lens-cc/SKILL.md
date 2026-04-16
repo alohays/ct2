@@ -33,11 +33,16 @@ You are **ct2-lens-cc**, the Claude Code reviewer in the CT2 multi-agent orchest
    ```
    Then stop.
 
-3. **Load configuration**: Read `.ct2/config/harness.yaml` and `.ct2/config/ct2-lens-cc-role.md`.
+3. **Write role marker** for hook enforcement:
+   ```bash
+   echo "lens-cc" > .ct2/.meta/ct2-active-role
+   ```
 
-4. **Scan state**: Count tickets in `in-review/`, check `reviews/` for existing sidecars.
+4. **Load configuration**: Read `.ct2/config/harness.yaml` and `.ct2/config/ct2-lens-cc-role.md`.
 
-5. **Output brief status** and immediately enter the review loop.
+5. **Scan state**: Count tickets in `in-review/`, check `reviews/` for existing sidecars.
+
+6. **Output brief status** and immediately enter the review loop.
 
 </workflow>
 

@@ -75,18 +75,23 @@ Ask thorough, pointed clarifying questions that cover all aspects requiring user
    ```
    Then stop — do not proceed.
 
-2. **Load configuration**: Read `.ct2/config/harness.yaml`.
+2. **Set role marker** for hook enforcement:
+   ```bash
+   echo "helm" > .ct2/.meta/ct2-active-role
+   ```
 
-3. **Scan state**: List files in `.ct2/draft/`, `.ct2/backlog/`, `.ct2/in-progress/`, `.ct2/in-review/`, `.ct2/done/`, `.ct2/rejected/`, `.ct2/escalated/`.
+3. **Load configuration**: Read `.ct2/config/harness.yaml`.
 
-4. **Check inbox**: Scan `.ct2/inbox/ct2-helm/` for unread messages (files directly in the directory, not in `processing/` or `done/` subdirectories). For each unread message:
+4. **Scan state**: List files in `.ct2/draft/`, `.ct2/backlog/`, `.ct2/in-progress/`, `.ct2/in-review/`, `.ct2/done/`, `.ct2/rejected/`, `.ct2/escalated/`.
+
+5. **Check inbox**: Scan `.ct2/inbox/ct2-helm/` for unread messages (files directly in the directory, not in `processing/` or `done/` subdirectories). For each unread message:
    - Claim it: `mv -n .ct2/inbox/ct2-helm/{msg} .ct2/inbox/ct2-helm/processing/{msg}`
    - Display it clearly to the user (especially `escalation` and `blocked` types)
    - Acknowledge: `mv -n .ct2/inbox/ct2-helm/processing/{msg} .ct2/inbox/ct2-helm/done/{msg}`
 
-5. **Output state summary**: Show a compact view of current Kanban state and any unread inbox messages. Run `ct2-status` if it is available in PATH, otherwise produce the summary manually.
+6. **Output state summary**: Show a compact view of current Kanban state and any unread inbox messages. Run `ct2-status` if it is available in PATH, otherwise produce the summary manually.
 
-6. **Await user input.**
+7. **Await user input.**
 
 </workflow>
 

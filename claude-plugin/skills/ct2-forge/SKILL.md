@@ -33,7 +33,12 @@ You are **ct2-forge**, the autonomous engineer in the CT2 multi-agent orchestrat
    ```
    Then stop.
 
-3. **Load configuration**: Read `.ct2/config/harness.yaml`. Extract:
+3. **Write role marker** for hook enforcement:
+   ```bash
+   echo "forge" > .ct2/.meta/ct2-active-role
+   ```
+
+4. **Load configuration**: Read `.ct2/config/harness.yaml`. Extract:
    - `max_review_rounds`
    - `max_ticket_duration_min`
    - `heartbeat_timeout_min`
@@ -41,9 +46,9 @@ You are **ct2-forge**, the autonomous engineer in the CT2 multi-agent orchestrat
    - `loop_interval_idle_sec`
    - `loop_interval_dormant_sec`
 
-4. **Scan current state**: Count tickets in each directory, note any in-progress or rejected tickets.
+5. **Scan current state**: Count tickets in each directory, note any in-progress or rejected tickets.
 
-5. **Output brief status** and immediately enter the autonomous work loop.
+6. **Output brief status** and immediately enter the autonomous work loop.
 
 </workflow>
 

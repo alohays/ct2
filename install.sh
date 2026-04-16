@@ -128,8 +128,9 @@ else
   info "CT2 PATH already configured in ${SHELL_RC} (skipping)"
 fi
 
-# Make bin scripts executable
+# Make bin scripts and hook scripts executable
 chmod +x "${CT2_HOME}/bin/"*
+chmod +x "${CT2_HOME}/claude-plugin/hooks/"*.sh 2>/dev/null || true
 
 # ── Copy launchd plist template (macOS only) ─────────────────────────────────
 if [[ "$(uname)" == "Darwin" ]]; then
