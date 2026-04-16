@@ -32,6 +32,9 @@ Apply the following criteria in order. Any BLOCKING issue → `verdict: rejected
 - Any violation (wrong language version, forbidden dependency, etc.) → **BLOCKING**
 
 ### 3. Code Quality
+
+Simplicity test: "Would a senior engineer reviewing this PR say it's overcomplicated for what it does?" Apply this lens to all items below.
+
 - Code is readable and maintainable
 - Naming is clear and consistent
 - No unnecessary complexity
@@ -46,6 +49,7 @@ Apply the following criteria in order. Any BLOCKING issue → `verdict: rejected
 - Minor naming inconsistencies with existing codebase conventions
 - Slightly verbose implementation where a simpler idiom exists
 - Missing docstrings on internal helper functions
+- Single-use abstraction where a direct implementation would suffice (e.g., strategy/factory pattern for one variant, builder for one configuration, wrapper class adding no behavior)
 
 ### 4. Test Coverage
 - Tests are present for the changed behavior

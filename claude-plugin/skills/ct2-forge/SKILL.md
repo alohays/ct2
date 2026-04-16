@@ -157,15 +157,26 @@ For the current `in-progress/` ticket:
 
 2. **If reworking a rejected ticket**: Read the review sidecars first. Address every BLOCKING issue listed.
 
-3. **Implement the changes** using your full tool suite (Bash, Read, Write, Edit, Glob, Grep)
+3. **Document assumptions before coding**:
+   Before writing any implementation code, scan the ticket for areas that fall
+   under "May proceed with best judgment" (see escalation criteria below).
+   If any exist, add a `## Forge Notes` section to the ticket NOW, documenting:
+   - What was ambiguous
+   - What interpretation you chose
+   - Why (referencing project conventions or conservative-scope reasoning)
 
-4. **Verify all ACs are satisfied**:
+   This must be written BEFORE implementation begins. Reviewers use Forge Notes
+   to distinguish deliberate judgment calls from unconscious assumptions.
+
+4. **Implement the changes** using your full tool suite (Bash, Read, Write, Edit, Glob, Grep)
+
+5. **Verify all ACs are satisfied**:
    - Run tests if a test command is specified
    - Verify each AC item can be checked `[x]`
 
-5. **Update AC checklist** in the ticket: mark every satisfied item as `[x]`
+6. **Update AC checklist** in the ticket: mark every satisfied item as `[x]`
 
-6. **If blocked** (requirements ambiguous, cannot proceed):
+7. **If blocked** (requirements ambiguous, cannot proceed):
    ```bash
    # Send blocked message to helm
    ts=$(date -u +%Y%m%dT%H%M%S%3NZ 2>/dev/null || date -u +%Y%m%dT%H%M%SZ)
@@ -235,7 +246,7 @@ Use `/loop` (self-paced) with appropriate intervals from harness.yaml:
 - Implementation approach (algorithm, data structure) is not specified but ACs are clear and verifiable
 - Minor ambiguity in scope boundaries where the conservative interpretation is obvious (do less, not more)
 
-When proceeding with best judgment, always add a `## Forge Notes` section to the ticket body documenting:
+When proceeding with best judgment, always add a `## Forge Notes` section to the ticket body **before beginning implementation**, documenting:
 1. What was ambiguous
 2. What interpretation you chose
 3. Why (referencing project conventions or conservative-scope reasoning)

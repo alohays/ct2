@@ -151,6 +151,8 @@ verdict: pending
 - `touched-files` must be as specific as possible — this drives conflict detection
 - Every AC item must be independently verifiable
 - Context must be sufficient for forge to work without asking questions
+- **Bug-fix tickets**: Include a regression-test AC (e.g., "A failing test reproducing the bug exists before the fix, and passes after")
+- **Feature tickets**: When the feature is testable, consider ordering ACs so test-creation precedes implementation (test-first)
 
 </workflow>
 

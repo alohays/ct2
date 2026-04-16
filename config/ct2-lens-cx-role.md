@@ -88,6 +88,9 @@ Apply the following criteria in order. Any BLOCKING issue → `verdict: rejected
 - Using older but not deprecated cryptographic defaults
 
 ### 6. Scope Creep
+
+Simplicity test: "Is this more complex than what the ticket actually requires?" Apply this lens to all items below.
+
 - Implementation does not exceed ticket scope
 - No over-engineering or speculative abstractions
 
@@ -100,6 +103,7 @@ Apply the following criteria in order. Any BLOCKING issue → `verdict: rejected
 - Minor reformatting of adjacent lines
 - Adding type annotations or docstrings to modified functions
 - Small helper extraction within the same file
+- Single-use abstraction where a direct implementation would suffice (e.g., strategy pattern for one variant)
 
 </review-criteria>
 
