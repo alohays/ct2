@@ -33,8 +33,8 @@
   <!-- Environment variables passed to the daemon -->
   <key>EnvironmentVariables</key>
   <dict>
-    <!-- Override poll interval (seconds). Default reads from harness.yaml. -->
-    <!-- <key>CT2_POLL_INTERVAL</key> <string>300</string> -->
+    <!-- Override poll interval (seconds). Default reads lens_cx.poll_interval_sec from harness.yaml; repo default is 180. -->
+    <!-- <key>CT2_POLL_INTERVAL</key> <string>180</string> -->
 
     <!-- Override codex CLI path if not in the default PATH -->
     <!-- <key>CT2_CODEX_CMD</key> <string>/usr/local/bin/codex</string> -->

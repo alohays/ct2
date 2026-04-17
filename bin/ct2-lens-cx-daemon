@@ -7,7 +7,7 @@
 #   project-dir defaults to $PWD
 #
 # Environment variables:
-#   CT2_POLL_INTERVAL  Override polling interval (seconds). Default: 300.
+#   CT2_POLL_INTERVAL  Override polling interval (seconds). Default: harness lens_cx.poll_interval_sec, fallback 180.
 #   CT2_CODEX_CMD      Override the codex CLI command. Default: codex.
 
 set -euo pipefail
@@ -95,9 +95,9 @@ import re, sys
 try:
     c = open(sys.argv[1]).read()
     m = re.search(r'poll_interval_sec:\s*(\d+)', c)
-    print(m.group(1) if m else '300')
+    print(m.group(1) if m else '180')
 except Exception:
-    print('300')
+    print('180')
 " "${CT2_DIR}/config/harness.yaml")
 fi
 
