@@ -54,6 +54,12 @@ fi
 # ── Clone or update CT2 repo ──────────────────────────────────────────────────
 if [[ -d "$CT2_HOME/.git" ]]; then
   info "Updating existing CT2 installation at ${CT2_HOME}..."
+  # Heartbeat files live inside each project's .ct2/.meta/, not inside $CT2_HOME,
+  # so we cannot scan for them reliably from here. Nudge the user to stop any
+  # active sessions first — mid-update drift can change SKILL.md semantics while
+  # a live forge/lens loop still references the old version in its context.
+  warning "If any CT2 sessions (forge, lens-cc, lens-cx daemon) are running,"
+  warning "stop them before this update to avoid mid-session semantic drift."
   git -C "$CT2_HOME" pull --ff-only origin main || {
     warning "git pull failed; your local installation may be ahead of remote."
   }
