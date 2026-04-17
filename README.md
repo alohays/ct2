@@ -93,7 +93,7 @@ ct2-lens-cx-tui /path/to/your/project
 `ct2-lens-cx-tui` opens a tmux session with Codex TUI in the main pane and a
 small scheduler pane below it. The scheduler reads
 `lens_cx.poll_interval_sec` from `.ct2/config/harness.yaml` (default: 180
-seconds) and injects a `/ct2:lens-cx` review tick into the visible Codex pane,
+seconds) and injects a `ct2:lens-cx` review tick into the visible Codex pane,
 so you can watch each scan and review iteration happen in the TUI.
 
 ### Workflow
@@ -122,7 +122,7 @@ so you can watch each scan and review iteration happen in the TUI.
 | `/ct2:helm` | Planner | OFF | Interactive ticket authoring and management |
 | `/ct2:forge` | Engineer | ON | Autonomous backlog processing |
 | `/ct2:lens-cc` | Reviewer | ON | Idempotent review scan and verdict writing |
-| `/ct2:lens-cx` | Reviewer | ON | Codex TUI review scan and verdict writing |
+| `ct2:lens-cx` | Reviewer | ON | Codex TUI review scan and verdict writing |
 | `/ct2:status` | Monitor | — | One-shot state query |
 
 ## State Machine

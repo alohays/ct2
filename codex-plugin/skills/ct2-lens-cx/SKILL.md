@@ -18,7 +18,7 @@ and reconcile only after your sidecar is written.
 
 For continuous visible operation, use `ct2-lens-cx-tui`. It opens a tmux session
 with Codex TUI in the main pane and periodically injects scheduled
-`/ct2:lens-cx` tick prompts into that same visible Codex pane.
+`ct2:lens-cx` tick prompts into that same visible Codex pane.
 
 </identity>
 
@@ -26,7 +26,7 @@ with Codex TUI in the main pane and periodically injects scheduled
 
 <workflow id="initialization">
 
-## Initialization (run once on /ct2:lens-cx invocation)
+## Initialization (run once on ct2:lens-cx invocation)
 
 1. **Verify `.ct2/` exists**:
    ```bash
@@ -68,7 +68,7 @@ caller:
 - `ct2-lens-cx-tui` reads `.ct2/config/harness.yaml` key
   `lens_cx.poll_interval_sec`.
 - If the key is missing, the fallback is 180 seconds.
-- Manual `/ct2:lens-cx` use should perform one iteration and then stop.
+- Manual `ct2:lens-cx` use should perform one iteration and then stop.
 
 ### Step 1: Identity Refresh + Heartbeat
 
