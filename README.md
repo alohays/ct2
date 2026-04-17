@@ -82,19 +82,17 @@ claude
 claude
 /ct2:forge
 
-# Session 3: Reviewer (autonomous)
+# Session 3: Claude reviewer (autonomous)
 claude
 /ct2:lens-cc
 
-# Session 4: Codex reviewer (visible TUI loop)
-ct2-lens-cx-tui /path/to/your/project
+# Session 4: Codex reviewer (visible TUI)
+cd /path/to/your/project
+ct2-lens-cx-tui
 ```
 
-`ct2-lens-cx-tui` opens a tmux session with Codex TUI in the main pane and a
-small scheduler pane below it. The scheduler reads
-`lens_cx.poll_interval_sec` from `.ct2/config/harness.yaml` (default: 180
-seconds) and injects a `ct2:lens-cx` review tick into the visible Codex pane,
-so you can watch each scan and review iteration happen in the TUI.
+See [Running the Codex TUI reviewer](#running-the-codex-tui-reviewer) below
+for attach/detach, tuning, and known Codex quirks.
 
 ### Workflow
 
@@ -103,6 +101,65 @@ so you can watch each scan and review iteration happen in the TUI.
 3. **Build** — `ct2-forge` picks up the ticket and implements it autonomously
 4. **Review** — `ct2-lens-cc` and `ct2-lens-cx` review independently
 5. **Reconcile** — when both approve, the ticket moves to `done/`
+
+### Running the Codex TUI reviewer
+
+`ct2-lens-cx-tui` is the primary lens-cx path. It launches a tmux session
+with two panes:
+
+- **Main pane** — interactive Codex TUI where reviews happen live
+- **Bottom pane (10 rows)** — scheduler log with tick timing, heartbeat
+  probes, and context resets
+
+The scheduler reads `lens_cx.poll_interval_sec` from
+`.ct2/config/harness.yaml` (default 180s) and injects a `ct2:lens-cx` review
+tick into the Codex pane every interval, so you can watch each scan and
+review iteration happen in real time.
+
+**Operational basics**
+
+```bash
+# Detach (leave the session running in the background)
+Ctrl-B d
+
+# Re-attach — the same command re-attaches an existing session
+ct2-lens-cx-tui /path/to/your/project
+
+# Stop cleanly (session name prints on startup; or use tmux ls)
+tmux kill-session -t ct2-lens-cx-<slug>-<hash>
+```
+
+**Tunable environment variables**
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CT2_LENS_CX_TUI_INTERVAL` | harness / `180` | Tick interval in seconds |
+| `CT2_LENS_CX_TUI_INITIAL_DELAY` | `8` | Wait before first tick (lets Codex TUI finish starting) |
+| `CT2_LENS_CX_TUI_MAX_TICKS` | `500` | Driver exits after N ticks to bound Codex context growth (`0` disables) |
+| `CT2_LENS_CX_TUI_CLEAR_EVERY` | `50` | Inject `/clear` every Nth tick to recycle context (`0` disables) |
+| `CT2_CODEX_CMD` | `codex` | Codex CLI executable |
+| `CT2_CODEX_ARGS` | `--sandbox workspace-write` | Codex startup flags |
+
+**Known limitations (Codex 0.121.0)**
+
+- `/ct2:lens-cx` is not a native Codex slash command. The driver pastes
+  `$ct2:lens-cx` as a skill mention plus inline fallback instructions, so
+  the reviewer works whether or not skill dispatch fires.
+- Codex rejects `--add-dir` under `--sandbox read-only`. The TUI defaults to
+  `workspace-write`; the reviewer role forbids source-file edits at the
+  text-policy level.
+- `ct2-lens-cx-daemon` remains available for unattended operation (launchd
+  or `nohup`) and invokes `codex exec` non-interactively.
+
+**Verify Codex skill installation**
+
+After `install.sh`, confirm the skill symlink:
+
+```bash
+ls -la ~/.codex/skills/ct2-lens-cx
+```
+
+If missing, re-run `bash ~/.ct2/install.sh` — it's idempotent.
 
 ## CLI Commands
 
