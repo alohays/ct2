@@ -2,7 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  CT2 lens-cx launchd daemon template.
+  CT2 lens-cx legacy headless daemon launchd template.
+
+  For the primary visible reviewer loop, run ct2-lens-cx-tui in an interactive
+  terminal. This launchd template intentionally runs the fixed legacy daemon for
+  unattended headless operation.
 
   Usage:
     1. Copy this file to ~/Library/LaunchAgents/com.ct2.lens-cx.{project}.plist
@@ -12,7 +16,7 @@
 
   Requires:
     - codex CLI available at the path specified in ProgramArguments
-    - ct2-lens-cx-daemon installed in ~/.ct2/bin/
+    - ct2-lens-cx-daemon legacy headless runner installed in ~/.ct2/bin/
     - .ct2/ initialized in the project directory (ct2-init)
 -->
 <plist version="1.0">
@@ -24,7 +28,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <!-- Full path to ct2-lens-cx-daemon -->
+    <!-- Full path to the legacy headless ct2-lens-cx-daemon -->
     <string>/Users/{username}/.ct2/bin/ct2-lens-cx-daemon</string>
     <!-- Full path to your project directory -->
     <string>/Users/{username}/projects/{project-dir}</string>

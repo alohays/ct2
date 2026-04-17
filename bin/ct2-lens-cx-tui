@@ -27,14 +27,14 @@ Usage: ct2-lens-cx-tui [options] [project-dir]
 Options:
   --interval SEC       Tick interval in seconds (default: .ct2/config/harness.yaml lens_cx.poll_interval_sec, fallback 180)
   --initial-delay SEC  Seconds to wait before the first tick (default: 8)
-  --session NAME       tmux session name (default: ct2-lens-cx-<project>)
+  --session NAME       tmux session name (default: ct2-lens-cx-<project>-<hash>)
   --no-attach          Start the tmux session without attaching
   --driver             Internal mode used by the tmux scheduler pane
   -h, --help           Show this help
 
 Environment:
   CT2_CODEX_CMD        Codex command to run (default: codex)
-  CT2_CODEX_ARGS       Extra args for Codex TUI (default: --full-auto)
+  CT2_CODEX_ARGS       Extra args for Codex TUI (default: --sandbox read-only --add-dir .ct2)
 EOF
 }
 
@@ -112,6 +112,15 @@ print(fallback)
 PY
 }
 
+file_mtime() {
+  local path="$1"
+  [[ -f "$path" ]] || { echo 0; return; }
+  case "$(uname -s)" in
+    Darwin|FreeBSD) stat -f %m "$path" ;;
+    *) stat -c %Y "$path" ;;
+  esac
+}
+
 driver_loop() {
   : "${CT2_PROJECT_DIR:?CT2_PROJECT_DIR is required in driver mode}"
   : "${CT2_CODEX_PANE:?CT2_CODEX_PANE is required in driver mode}"
@@ -122,6 +131,7 @@ driver_loop() {
   mkdir -p .ct2/.tmp .ct2/.meta
 
   local inflight=".ct2/.meta/ct2-lens-cx-tui.inflight"
+  local heartbeat=".ct2/.meta/ct2-lens-cx.heartbeat"
   local stale_after=$(( CT2_INTERVAL * 2 ))
   if (( stale_after < 600 )); then
     stale_after=600
@@ -135,35 +145,48 @@ driver_loop() {
   local tick=0
   while true; do
     tick=$((tick + 1))
-    local ts now mtime age
+    local ts now mtime age started
     ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
     if [[ -f "$inflight" ]]; then
       now="$(date +%s)"
-      mtime="$(stat -f %m "$inflight" 2>/dev/null || stat -c %Y "$inflight" 2>/dev/null || echo 0)"
+      mtime="$(file_mtime "$inflight")"
       age=$(( now - mtime ))
-      if (( age < stale_after )); then
+      started=false
+      if grep -q '^started=1$' "$inflight" 2>/dev/null; then
+        started=true
+      fi
+      if [[ "$started" == true ]] && (( age >= CT2_INTERVAL )); then
+        printf '[%s] clearing started in-flight marker still present after %ss\n' "$ts" "$age"
+        rm -f "$inflight"
+      elif (( age < stale_after )); then
         printf '[%s] previous tick still in flight (%ss old); skipping this tick\n' "$ts" "$age"
         date -u > .ct2/.meta/ct2-lens-cx-tui-driver.heartbeat
         sleep "$CT2_INTERVAL"
         continue
+      else
+        printf '[%s] clearing stale in-flight marker (%ss old)\n' "$ts" "$age"
+        rm -f "$inflight"
       fi
-      printf '[%s] clearing stale in-flight marker (%ss old)\n' "$ts" "$age"
-      rm -f "$inflight"
     fi
+
+    local pre_heartbeat_mtime
+    pre_heartbeat_mtime="$(file_mtime "$heartbeat")"
 
     printf '%s\n' "$ts tick=$tick pane=$CT2_CODEX_PANE" > "$inflight"
 
     local prompt_file
     prompt_file="$(mktemp ".ct2/.tmp/lens-cx-tui-tick-XXXXXX")"
     cat > "$prompt_file" <<EOF
+/ct2:lens-cx
+
 CT2 scheduled /ct2:lens-cx tick ${tick} at ${ts}.
 
 You are running inside the visible Codex TUI pane managed by ct2-lens-cx-tui.
 Process exactly one idempotent ct2-lens-cx review iteration now.
 
-Follow the installed ct2-lens-cx skill if available. If it is not available in
-this Codex build, use these instructions directly:
+The slash command above should load the installed ct2-lens-cx skill. If it is
+not available in this Codex build, use these instructions directly:
 
 1. Re-anchor as ct2-lens-cx and write .ct2/.meta/ct2-lens-cx.heartbeat.
 2. Poll .ct2/inbox/ct2-lens-cx/ and atomically claim/ack messages.
@@ -188,22 +211,56 @@ EOF
     tmux send-keys -t "$CT2_CODEX_PANE" C-m
     rm -f "$prompt_file"
 
+    local probe_timeout waited post_heartbeat_mtime
+    probe_timeout=$(( CT2_INTERVAL / 2 ))
+    if (( probe_timeout < 1 )); then
+      probe_timeout=1
+    fi
+
     date -u > .ct2/.meta/ct2-lens-cx-tui-driver.heartbeat
-    printf '[%s] sent lens-cx tick %s to %s; next tick in %ss\n' \
-      "$ts" "$tick" "$CT2_CODEX_PANE" "$CT2_INTERVAL"
+    printf '[%s] sent lens-cx tick %s to %s; watching for heartbeat up to %ss\n' \
+      "$ts" "$tick" "$CT2_CODEX_PANE" "$probe_timeout"
+
+    waited=0
+    while (( waited < probe_timeout )); do
+      sleep 1
+      waited=$((waited + 1))
+      post_heartbeat_mtime="$(file_mtime "$heartbeat")"
+      if (( post_heartbeat_mtime > pre_heartbeat_mtime )); then
+        if [[ -f "$inflight" ]]; then
+          printf 'started=1\nheartbeat_mtime=%s\n' "$post_heartbeat_mtime" >> "$inflight"
+        fi
+        printf '[%s] lens-cx heartbeat advanced after %ss\n' \
+          "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$waited"
+        break
+      fi
+    done
+
+    post_heartbeat_mtime="$(file_mtime "$heartbeat")"
+    if (( post_heartbeat_mtime <= pre_heartbeat_mtime )); then
+      printf '[%s] skill did not start within %ss; clearing in-flight marker\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$probe_timeout"
+      rm -f "$inflight"
+    fi
+
+    printf '[%s] next tick in %ss\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$CT2_INTERVAL"
     sleep "$CT2_INTERVAL"
   done
 }
 
 if [[ "$DRIVER" == true ]]; then
   driver_loop
+  exit 0
 fi
 
 PROJECT_DIR="${POSITIONAL[0]:-$(pwd)}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 CT2_DIR="${PROJECT_DIR}/.ct2"
 CODEX_CMD="${CT2_CODEX_CMD:-codex}"
-CODEX_ARGS="${CT2_CODEX_ARGS---full-auto}"
+CODEX_ARGS="${CT2_CODEX_ARGS:-}"
+if [[ -z "$CODEX_ARGS" ]]; then
+  CODEX_ARGS="--sandbox read-only --add-dir .ct2"
+fi
 
 if [[ ! -d "$CT2_DIR" ]]; then
   echo "ct2-lens-cx-tui: .ct2/ not found in ${PROJECT_DIR}" >&2
@@ -237,7 +294,14 @@ fi
 
 if [[ -z "$SESSION" ]]; then
   project_slug="$(basename "$PROJECT_DIR" | tr -cd '[:alnum:]_-')"
-  SESSION="ct2-lens-cx-${project_slug:-project}"
+  hash_suffix="$(python3 - "$PROJECT_DIR" <<'PY'
+import hashlib
+import sys
+
+print(hashlib.sha1(sys.argv[1].encode("utf-8")).hexdigest()[:6])
+PY
+)"
+  SESSION="ct2-lens-cx-${project_slug:-project}-${hash_suffix}"
 fi
 
 if tmux has-session -t "$SESSION" 2>/dev/null; then
