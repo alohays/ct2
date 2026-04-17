@@ -2,7 +2,7 @@
 # _ct2_update_verdict.py — Single source of truth for ticket frontmatter
 # updates performed by the reconciler.
 #
-# Callers: ct2-lens-cx-daemon (Bash) and ct2-lens-cc (via reconciler-ref).
+# Callers: ct2-lens-cx (TUI/daemon) and ct2-lens-cc (via reconciler-ref).
 # Keeping this logic in one place prevents the regex drift we hit when each
 # reconciler had its own copy (a subtle bug where the `sidecar:` nested key
 # was never updated because the pattern could not span the intermediate

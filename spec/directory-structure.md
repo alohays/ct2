@@ -16,7 +16,7 @@ This directory is excluded from git via `.git/info/exclude` (never via `.gitigno
 ├── config/
 │   ├── harness.yaml                   # Circuit breaker settings, per-project parameters
 │   ├── ct2-lens-cc-role.md            # Claude reviewer role definition (loaded by lens-cc skill)
-│   └── ct2-lens-cx-role.md            # Codex reviewer role definition (loaded by lens-cx daemon)
+│   └── ct2-lens-cx-role.md            # Codex reviewer role definition (loaded by lens-cx TUI/daemon)
 ├── draft/                             # WIP tickets being authored by ct2-helm
 ├── backlog/                           # Sealed tickets awaiting ct2-forge (priority-ordered)
 ├── in-progress/                       # Currently being worked on by ct2-forge (one at a time)

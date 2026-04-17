@@ -7,7 +7,8 @@
 # What this does:
 #   1. Clones or updates ~/.ct2 from GitHub
 #   2. Symlinks Claude Code skills into ~/.claude/skills/
-#   3. Adds ~/.ct2/bin to PATH in ~/.zshrc (or ~/.bash_profile)
+#   3. Symlinks Codex skills into ~/.codex/skills/
+#   4. Adds ~/.ct2/bin to PATH in ~/.zshrc (or ~/.bash_profile)
 
 set -euo pipefail
 
@@ -15,6 +16,8 @@ CT2_REPO_URL="https://github.com/alohays/ct2"
 CT2_HOME="${HOME}/.ct2"
 SKILLS_SRC="${CT2_HOME}/claude-plugin/skills"
 SKILLS_DST="${HOME}/.claude/skills"
+CODEX_SKILLS_SRC="${CT2_HOME}/codex-plugin/skills"
+CODEX_SKILLS_DST="${CODEX_HOME:-${HOME}/.codex}/skills"
 
 # ── Terminal colors ────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'
@@ -58,7 +61,7 @@ if [[ -d "$CT2_HOME/.git" ]]; then
   # so we cannot scan for them reliably from here. Nudge the user to stop any
   # active sessions first — mid-update drift can change SKILL.md semantics while
   # a live forge/lens loop still references the old version in its context.
-  warning "If any CT2 sessions (forge, lens-cc, lens-cx daemon) are running,"
+  warning "If any CT2 sessions (forge, lens-cc, lens-cx) are running,"
   warning "stop them before this update to avoid mid-session semantic drift."
   git -C "$CT2_HOME" pull --ff-only origin main || {
     warning "git pull failed; your local installation may be ahead of remote."
@@ -93,6 +96,28 @@ for skill_dir in "${SKILLS_SRC}"/*/; do
   ln -sfn "$skill_dir" "$target"
   info "  linked: ${target} → ${skill_dir}"
 done
+
+# ── Symlink skills into ~/.codex/skills/ ─────────────────────────────────────
+if [[ -d "$CODEX_SKILLS_SRC" ]]; then
+  info "Symlinking Codex skills..."
+  mkdir -p "$CODEX_SKILLS_DST"
+
+  for skill_dir in "${CODEX_SKILLS_SRC}"/*/; do
+    [[ -d "$skill_dir" ]] || continue
+    skill_name=$(basename "$skill_dir")
+    target="${CODEX_SKILLS_DST}/${skill_name}"
+
+    if [[ -L "$target" ]]; then
+      rm "$target"
+    elif [[ -d "$target" ]]; then
+      warning "${target} exists as a real directory; skipping (remove manually to update)"
+      continue
+    fi
+
+    ln -sfn "$skill_dir" "$target"
+    info "  linked: ${target} → ${skill_dir}"
+  done
+fi
 
 # ── Create env.sh for PATH (rustup-style idempotent sourcing) ─────────────────
 ENV_FILE="${CT2_HOME}/env.sh"
@@ -162,10 +187,16 @@ if ! command -v claude &>/dev/null; then
   warning "Claude Code CLI not found. CT2 requires Claude Code to function."
   warning "Install from: https://claude.ai/claude-code"
 fi
+if ! command -v tmux &>/dev/null; then
+  echo ""
+  warning "tmux not found. Install tmux to use the visible Codex reviewer loop:"
+  warning "  brew install tmux   # macOS"
+fi
 echo ""
 echo "Then, in a project directory:"
 echo "  ct2-init          # Initialize .ct2/ in your project"
 echo "  claude            # Open Claude Code"
 echo "  /ct2:helm         # Enter planner role"
+echo "  ct2-lens-cx-tui   # Open visible Codex reviewer loop"
 echo ""
 echo "Full documentation: ${CT2_HOME}/spec/"

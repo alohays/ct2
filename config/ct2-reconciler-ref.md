@@ -78,7 +78,7 @@ except: print('3')" ".ct2/config/harness.yaml")
 ## _update_verdict
 
 Frontmatter rewrite is delegated to the shared helper `bin/_ct2_update_verdict.py`
-so both reconcilers (lens-cc via this reference, lens-cx via its daemon) produce
+so both reconcilers (lens-cc and lens-cx) produce
 identical output. Any logic change to ticket frontmatter mutation must happen in
 the Python helper only — the previous per-reconciler Python heredocs drifted and
 silently broke the `sidecar:` nested key (the regex could not span the
@@ -100,6 +100,7 @@ _update_verdict() {
 ```bash
 _send_escalation() {
   local ticket="$1" round="$2" max="$3"
+  local actor="${CT2_RECONCILER_ACTOR:-ct2-lens-cc}"
   local ts; ts=$(date -u +%Y%m%dT%H%M%SZ)
   local uid
   uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || true)
@@ -110,7 +111,7 @@ _send_escalation() {
   cat > "$tmp" <<MSGEOF
 ---
 id: $msgid
-from: ct2-lens-cc
+from: $actor
 to: ct2-helm
 type: escalation
 ticket: $ticket

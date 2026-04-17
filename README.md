@@ -86,9 +86,15 @@ claude
 claude
 /ct2:lens-cc
 
-# Session 4: Codex reviewer (daemon)
-ct2-lens-cx-daemon /path/to/your/project
+# Session 4: Codex reviewer (visible TUI loop)
+ct2-lens-cx-tui /path/to/your/project
 ```
+
+`ct2-lens-cx-tui` opens a tmux session with Codex TUI in the main pane and a
+small scheduler pane below it. The scheduler reads
+`lens_cx.poll_interval_sec` from `.ct2/config/harness.yaml` (default: 180
+seconds) and injects a `/ct2:lens-cx` review tick into the visible Codex pane,
+so you can watch each scan and review iteration happen in the TUI.
 
 ### Workflow
 
@@ -106,15 +112,17 @@ ct2-lens-cx-daemon /path/to/your/project
 | `ct2-seal <ticket>` | Validate and move a draft ticket to backlog |
 | `ct2-revise <ticket>` | Archive past sidecars and return an escalated/rejected ticket to `draft/` |
 | `ct2-status [dir]` | Display Kanban board, agent heartbeats, and inbox |
-| `ct2-lens-cx-daemon <dir>` | Start the Codex reviewer polling daemon |
+| `ct2-lens-cx-tui <dir>` | Start the visible Codex TUI reviewer loop |
+| `ct2-lens-cx-daemon <dir>` | Start the legacy headless Codex reviewer polling daemon |
 
-## Claude Code Skills
+## Agent Skills
 
 | Skill | Role | Loop | Description |
 |-------|------|------|-------------|
 | `/ct2:helm` | Planner | OFF | Interactive ticket authoring and management |
 | `/ct2:forge` | Engineer | ON | Autonomous backlog processing |
 | `/ct2:lens-cc` | Reviewer | ON | Idempotent review scan and verdict writing |
+| `/ct2:lens-cx` | Reviewer | ON | Codex TUI review scan and verdict writing |
 | `/ct2:status` | Monitor | — | One-shot state query |
 
 ## State Machine
@@ -162,8 +170,9 @@ Full protocol specifications are in [`spec/`](spec/):
 - macOS (primary target) or Linux
 - Python 3.9+
 - Git 2.5+
+- tmux (for the visible Codex reviewer loop)
 - [Claude Code](https://claude.ai/claude-code) (for helm, forge, lens-cc roles)
-- [Codex CLI](https://github.com/openai/codex) (for lens-cx daemon, optional)
+- [Codex CLI](https://github.com/openai/codex) (for lens-cx reviewer, optional)
 
 ## License
 
