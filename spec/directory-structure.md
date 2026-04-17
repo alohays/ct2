@@ -26,7 +26,9 @@ This directory is excluded from git via `.git/info/exclude` (never via `.gitigno
 ├── done/                              # Both lens sessions approved (sole path to this state)
 ├── reviews/                           # Reviewer verdict sidecar files (immutable, authoritative)
 │   ├── {ticket-id}-cc-r{n}.md        # Claude reviewer verdict sidecar (round n)
-│   └── {ticket-id}-cx-r{n}.md        # Codex reviewer verdict sidecar (round n)
+│   ├── {ticket-id}-cx-r{n}.md        # Codex reviewer verdict sidecar (round n)
+│   └── .archive/                     # Populated lazily by ct2-revise on escalation/rejected rework
+│       └── {YYYYMMDDTHHMMSSZ}-{id}/  # One folder per revise operation; holds archived sidecars
 ├── inbox/                             # Asynchronous message channels between roles
 │   ├── ct2-helm/
 │   │   ├── processing/                # Claimed messages (atomically renamed here)
@@ -49,7 +51,10 @@ This directory is excluded from git via `.git/info/exclude` (never via `.gitigno
 │   ├── ct2-forge.heartbeat            # forge liveness timestamp
 │   ├── ct2-lens-cc.heartbeat          # lens-cc liveness timestamp
 │   ├── ct2-lens-cx.heartbeat          # lens-cx liveness timestamp
-│   └── circuit-breaker.json           # Current circuit breaker state
+│   ├── ct2-active-role                # Current role marker consumed by PreToolUse hooks
+│   ├── {id}.started                   # forge pickup stamp; drives duration circuit breaker
+│   ├── {id}-r{n}-reconcile.lock       # O_EXCL lockfile held by whichever reconciler wins
+│   └── circuit-breaker.json           # Reserved for pipeline-wide circuit breaker state
 └── .tmp/                              # Atomic write staging area (inbox sends only)
 ```
 

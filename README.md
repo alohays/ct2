@@ -116,17 +116,31 @@ ct2-lens-cx-daemon /path/to/your/project
 ## State Machine
 
 ```
-draft → backlog → in-progress → in-review → done
-                                    │
-                              ┌─────┴──────┐
-                              ▼            ▼
-                          rejected → in-progress  (rework cycle)
-                          escalated               (circuit breaker)
+  ┌──────────────────────── ct2-revise ────────────────────────┐
+  │                        (human-triggered)                    │
+  ▼                                                             │
+draft → backlog → in-progress → in-review → done                │
+                      ▲             │                           │
+                      │             ▼                           │
+                      │         ┌────────┴──────┐               │
+                      │         ▼               ▼               │
+                      │      rejected ───► in-progress          │
+                      │     (rework cycle, review-round++)      │
+                      │                                         │
+                      └── duration CB bounce (backlog)          │
+                                                                │
+                              escalated ─────────────────── ────┘
+                              (max_review_rounds)
 ```
 
-- **`done`** is reachable only when both reviewers approve
-- **`escalated`** triggers when `max_review_rounds` is exceeded — requires human intervention
-- All transitions are atomic `mv` operations
+- **`done`** is reachable only when both reviewers approve.
+- **`escalated`** triggers when `max_review_rounds` is exceeded — requires human
+  intervention via `ct2-revise`, which archives past review sidecars and
+  returns the ticket to `draft/` for rework.
+- **Duration circuit breaker**: if forge holds a ticket longer than
+  `max_ticket_duration_min`, it is bounced back to `backlog/` automatically.
+  Timer is driven by `.ct2/.meta/{id}.started`, not the ticket file's mtime.
+- All transitions are atomic `mv` operations.
 
 ## Specifications
 

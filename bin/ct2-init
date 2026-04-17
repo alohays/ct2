@@ -38,7 +38,7 @@ else
 fi
 
 # ── Create Kanban directories ──────────────────────────────────────────────────
-for dir in draft backlog in-progress in-review rejected escalated done reviews worktrees logs; do
+for dir in draft backlog in-progress in-review rejected escalated done reviews reviews/.archive worktrees logs; do
   mkdir -p "${CT2_DIR}/${dir}"
 done
 

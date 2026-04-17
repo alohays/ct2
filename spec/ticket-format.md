@@ -26,7 +26,7 @@ status: backlog          # draft | backlog | in-progress | in-review | rejected 
 priority: high           # critical | high | medium | low
 created: 2026-04-13T10:00:00Z
 updated: 2026-04-13T14:30:00Z
-sealed: null             # ISO8601 timestamp; set on draft→backlog transition by ct2-seal
+sealed: null             # ISO8601 timestamp; set on draft→backlog by ct2-seal; reset to null by ct2-revise
 branch: feat/003-db-pool # Git working branch name
 pr: null                 # PR URL recorded after completion
 review-round: 0          # Current review round; incremented by forge on each rejected→in-progress pickup
@@ -56,14 +56,18 @@ verdict: pending         # pending | approved | rejected | escalated
 
 ### Writer Ownership
 
+Automated roles own their fields exclusively. `ct2-revise` is the one
+exception: it is a manual human-triggered recovery tool and resets every field
+marked below, bringing the ticket back to its `draft/` shape.
+
 | Field               | Written by                                                                        |
 |---------------------|-----------------------------------------------------------------------------------|
 | All metadata fields | ct2-helm (at ticket creation)                                                     |
-| `status`            | ct2-seal (`draft→backlog`), ct2-forge (`→in-progress`, `→in-review`), reconciler (`→done/rejected/escalated`) |
-| `sealed`            | ct2-seal                                                                          |
-| `review-round`      | ct2-forge (incremented on rejected pickup)                                        |
-| `review-status.*`   | reconciler only                                                                   |
-| `verdict`           | reconciler only                                                                   |
+| `status`            | ct2-seal (`draft→backlog`); ct2-forge (`→in-progress`, `→in-review`); reconciler (`→done/rejected/escalated`); ct2-revise (`→draft`) |
+| `sealed`            | ct2-seal (timestamp); ct2-revise (reset to `null`)                                |
+| `review-round`      | ct2-forge (incremented on rejected pickup); ct2-revise (reset to `0`)             |
+| `review-status.*`   | reconciler (automatic updates); ct2-revise (reset to `pending` / `null`)          |
+| `verdict`           | reconciler (automatic verdicts); ct2-revise (reset to `pending`)                  |
 | `branch`, `pr`      | ct2-forge                                                                         |
 | `updated`           | any actor that modifies the ticket                                                |
 

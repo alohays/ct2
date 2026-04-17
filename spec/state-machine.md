@@ -12,33 +12,33 @@ version: "0.1.0"
               [Authored by ct2-helm]
                     │
                     ▼
-               ┌─────────┐
-               │  draft  │──── ct2-helm WIP (in draft/)
-               └────┬────┘
-                    │ ct2-seal (explicit seal by helm)
-                    ▼
-              ┌──────────┐
-              │ backlog  │──── Awaiting forge, priority-ordered (in backlog/)
-              └────┬─────┘
-                   │ forge picks up highest-priority ticket
-                   ▼
-           ┌─────────────┐
-           │ in-progress │──── forge working, at most one at a time (in in-progress/)
-           └──────┬──────┘
-                  │ forge declares completion (all ACs checked)
-                  ▼
-            ┌──────────┐
-            │ in-review │──── lens-cc + lens-cx review in parallel (in in-review/)
+               ┌─────────┐◄────────────────────────── ct2-revise
+               │  draft  │──── ct2-helm WIP (in draft/)   (archives sidecars,
+               └────┬────┘                                 resets frontmatter)
+                    │ ct2-seal (explicit seal by helm)           ▲
+                    ▼                                            │
+              ┌──────────┐                                       │
+              │ backlog  │──── Awaiting forge, priority-ordered  │
+              └────┬─────┘                                       │
+                   │ forge picks up highest-priority ticket      │
+                   ▼                                             │
+           ┌─────────────┐                                       │
+           │ in-progress │─── duration CB bounce ─► backlog      │
+           └──────┬──────┘   (elapsed > max_ticket_duration_min) │
+                  │ forge declares completion (all ACs checked)  │
+                  ▼                                              │
+            ┌──────────┐                                         │
+            │ in-review │──── lens-cc + lens-cx review in parallel│
             └─────┬─────┘     each writes its own sidecar to reviews/
-                  │ reconciler confirms both sidecars present
-        ┌─────────┼──────────────────────────┐
-        │                   │                 │
-   (both approved)    (any rejected)    (review-round ≥
-        ▼                   ▼             max_review_rounds)
-     ┌──────┐         ┌──────────┐       ┌───────────┐
-     │ done │         │ rejected │       │ escalated │
-     └──────┘         └────┬─────┘       └───────────┘
-      ↑ Only               │ review-round++     ↑
+                  │ reconciler confirms both sidecars present    │
+        ┌─────────┼──────────────────────────┐                   │
+        │                   │                 │                  │
+   (both approved)    (any rejected)    (review-round ≥          │
+        ▼                   ▼             max_review_rounds)     │
+     ┌──────┐         ┌──────────┐       ┌───────────┐           │
+     │ done │         │ rejected │       │ escalated │───────────┘
+     └──────┘         └────┬─────┘       └───────────┘ ct2-revise
+      ↑ Only               │ review-round++     ↑     (human-triggered)
       approved path        └──────► in-progress  │
                                                   └── helm inbox escalation
 ```
@@ -54,9 +54,13 @@ version: "0.1.0"
 | `in-review → rejected`        | reconciler verdict   | reconciler    | `cc sidecar = rejected` OR `cx sidecar = rejected`                         |
 | `rejected → in-progress`      | Automatic pickup     | ct2-forge     | `review-round < max_review_rounds`                                         |
 | `in-review → escalated`       | Circuit breaker      | reconciler    | `review-round + 1 ≥ max_review_rounds`; also sends escalation to helm inbox |
+| `in-progress → backlog`       | Duration CB bounce   | ct2-forge     | `now − .meta/{id}.started > max_ticket_duration_min`; stamp removed on bounce |
+| `escalated → draft`           | `ct2-revise` (manual)| human, via ct2-helm | Archives every `reviews/{id}-*.md` to `reviews/.archive/{ts}-{id}/`; resets frontmatter (`status=draft`, `review-round=0`, `verdict=pending`, `sealed=null`, nested `review-status.lens-*.*` reset); drops stale `.meta/{id}.started` if present |
+| `rejected → draft`            | `ct2-revise --from=rejected` | human, via ct2-helm | Same semantics as `escalated → draft`. Escape hatch when a rejected ticket is stuck outside normal rework (e.g. requirements must be rewritten, not re-implemented). |
 
 > **Invariant**: `done` is reachable **only** when both reviewers have verdict `approved`.
 > No automation — including the circuit breaker — may place a ticket into `done` without satisfying this condition.
+> `ct2-revise` is a human-triggered escape and deliberately out of the automated pipeline: it is the only way to re-open a terminal `escalated` ticket.
 
 ## File-Based State Representation
 
@@ -84,12 +88,14 @@ The reconciler runs as part of both lens loops. It:
 4. Updates ticket `review-status` and `verdict` frontmatter fields
 5. Moves the ticket to `done/` or `rejected/` or `escalated/` accordingly
 
-The reconciler is the **sole writer** of `review-status` and `verdict` fields in ticket frontmatter.
+The reconciler is the **sole automatic writer** of `review-status` and `verdict` fields in ticket frontmatter. `ct2-revise` is the only other writer of these fields and is a manual human-triggered escape; see the transition table above.
 
 ## Circuit Breaker Conditions
 
 | Condition                                      | Action                                                                 |
 |------------------------------------------------|------------------------------------------------------------------------|
 | `review-round + 1 ≥ max_review_rounds`         | Move to `escalated/`; send `escalation` message to ct2-helm inbox     |
-| Ticket processing time > `max_ticket_duration_min` | Abort forge work; return ticket to `backlog/`; log event          |
+| `now − mtime(.meta/{id}.started) > max_ticket_duration_min` | Abort forge work; return ticket to `backlog/`; remove the `.started` stamp; log event |
 | No heartbeat for > `heartbeat_timeout_min`     | Session declared dead; warning shown in `ct2-status` output           |
+
+> **Note**: The ticket-duration timer reads `.meta/{id}.started` (written by forge at pickup and rework), not the ticket file's mtime. Ticket mtime mutates on every edit and is preserved across `mv`, which makes it an unreliable stopwatch.
