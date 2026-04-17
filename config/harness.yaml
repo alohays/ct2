@@ -11,14 +11,13 @@ circuit_breaker:
 forge:
   loop_interval_active_sec: 60    # Polling interval when actively working a ticket
   loop_interval_idle_sec: 120     # Polling interval when backlog is empty
-  loop_interval_dormant_sec: 180  # No tickets anywhere. Kept within prompt-cache TTL
-                                  # (≤ 270s) to avoid the 300s worst-of-both cache-miss
-                                  # window while still giving reasonable reaction latency.
+  loop_interval_dormant_sec: 180  # No tickets anywhere. Kept short enough for
+                                  # reasonable reaction latency without noisy polling.
 
 lens_cc:
   loop_interval_sec: 60           # How often lens-cc scans in-review/
 
 lens_cx:
-  poll_interval_sec: 180          # How often the lens-cx daemon polls in-review/
-                                  # (Codex subprocess; unrelated to Anthropic cache — this
-                                  # value is chosen purely for reaction latency vs fs-scan cost.)
+  poll_interval_sec: 180          # How often lens-cx scans in-review/ (TUI loop or headless daemon)
+                                  # Codex is unrelated to Anthropic cache; this value is chosen
+                                  # purely for reaction latency vs fs-scan cost.

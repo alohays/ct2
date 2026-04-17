@@ -20,7 +20,8 @@ ct2-init [dir]                 # Initialize .ct2/ in a project directory
 ct2-seal {ticket-id}           # Validate ticket, move draft -> backlog
 ct2-revise {ticket-id}         # Archive past sidecars, reset escalated/rejected ticket -> draft
 ct2-status [dir]               # Display kanban board + agent state
-ct2-lens-cx-daemon {project}   # Start Codex reviewer daemon
+ct2-lens-cx-tui [dir]           # Start visible Codex reviewer loop
+ct2-lens-cx-daemon {project}   # Start legacy headless Codex reviewer daemon
 ```
 
 Manual verification: `ct2-init` in a scratch directory, author a ticket, `ct2-seal`, confirm with `ct2-status`.

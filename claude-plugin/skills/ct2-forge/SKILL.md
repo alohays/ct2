@@ -262,7 +262,7 @@ When all AC items are `[x]`:
 Use `/loop` (self-paced) with appropriate intervals from harness.yaml:
 - Active work in progress: `loop_interval_active_sec` (default 60s)
 - Backlog exists but nothing picked up yet: `loop_interval_idle_sec` (default 120s)
-- No tickets anywhere: `loop_interval_dormant_sec` (default 300s)
+- No tickets anywhere: `loop_interval_dormant_sec` (default 180s)
 
 </workflow>
 

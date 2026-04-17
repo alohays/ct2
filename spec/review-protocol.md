@@ -32,7 +32,9 @@ loop iteration:
 ```
 
 - **lens-cc**: `/loop`-based, 60-second interval idempotent scan
-- **lens-cx**: bash polling daemon, 300-second interval idempotent scan
+- **lens-cx**: visible Codex TUI loop driven by `ct2-lens-cx-tui`, using
+  `lens_cx.poll_interval_sec` (default 180 seconds). The legacy headless
+  `ct2-lens-cx-daemon` uses the same interval source.
 
 Tickets for which a sidecar already exists are **skipped** (idempotency guaranteed). No duplicate reviews occur even after a session restart.
 

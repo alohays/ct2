@@ -1,0 +1,377 @@
+#!/usr/bin/env bash
+# ct2-lens-cx-tui — Launch a visible Codex TUI reviewer loop.
+#
+# Codex TUI does not provide a native cron-style loop primitive. This command
+# creates the same operator experience with tmux: Codex runs in the main pane,
+# while a small scheduler pane periodically pastes an idempotent lens-cx tick
+# into that same visible Codex session.
+#
+# Usage:
+#   ct2-lens-cx-tui [project-dir]
+#   ct2-lens-cx-tui --interval 60 [project-dir]
+#   ct2-lens-cx-tui --session ct2-lens-cx-myproj [project-dir]
+
+set -euo pipefail
+
+INTERVAL="${CT2_LENS_CX_TUI_INTERVAL:-}"
+INITIAL_DELAY="${CT2_LENS_CX_TUI_INITIAL_DELAY:-8}"
+MAX_TICKS="${CT2_LENS_CX_TUI_MAX_TICKS:-500}"
+CLEAR_EVERY="${CT2_LENS_CX_TUI_CLEAR_EVERY:-50}"
+SESSION=""
+ATTACH=true
+DRIVER=false
+POSITIONAL=()
+
+usage() {
+  cat <<'EOF'
+Usage: ct2-lens-cx-tui [options] [project-dir]
+
+Options:
+  --interval SEC       Tick interval in seconds (default: .ct2/config/harness.yaml lens_cx.poll_interval_sec, fallback 180)
+  --initial-delay SEC  Seconds to wait before the first tick (default: 8)
+  --session NAME       tmux session name (default: ct2-lens-cx-<project>-<hash>)
+  --no-attach          Start the tmux session without attaching
+  --driver             Internal mode used by the tmux scheduler pane
+  -h, --help           Show this help
+
+Environment:
+  CT2_CODEX_CMD        Codex command to run (default: codex)
+  CT2_CODEX_ARGS       Extra args for Codex TUI (default: --sandbox workspace-write)
+  CT2_LENS_CX_TUI_MAX_TICKS    Max scheduled ticks before driver exits (default: 500; 0 disables)
+  CT2_LENS_CX_TUI_CLEAR_EVERY  Inject /clear before every Nth tick (default: 50; 0 disables)
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --interval)
+      INTERVAL="${2:-}"
+      shift 2
+      ;;
+    --initial-delay)
+      INITIAL_DELAY="${2:-}"
+      shift 2
+      ;;
+    --session)
+      SESSION="${2:-}"
+      shift 2
+      ;;
+    --no-attach)
+      ATTACH=false
+      shift
+      ;;
+    --driver)
+      DRIVER=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+
+read_harness_value() {
+  local file="$1" section="$2" key="$3" fallback="$4"
+  python3 - "$file" "$section" "$key" "$fallback" <<'PY'
+import re
+import sys
+
+path, section, key, fallback = sys.argv[1:]
+try:
+    lines = open(path, encoding="utf-8").read().splitlines()
+except OSError:
+    print(fallback)
+    raise SystemExit
+
+in_section = False
+section_indent = None
+for line in lines:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        continue
+
+    indent = len(line) - len(line.lstrip(" "))
+    if re.match(r"^[A-Za-z0-9_-]+:\s*(#.*)?$", stripped):
+        name = stripped.split(":", 1)[0]
+        in_section = name == section
+        section_indent = indent if in_section else None
+        continue
+
+    if in_section and section_indent is not None and indent <= section_indent:
+        in_section = False
+        section_indent = None
+
+    if in_section:
+        m = re.match(rf"^{re.escape(key)}:\s*([0-9]+)\b", stripped)
+        if m:
+            print(m.group(1))
+            raise SystemExit
+
+print(fallback)
+PY
+}
+
+file_mtime() {
+  local path="$1"
+  [[ -f "$path" ]] || { echo 0; return; }
+  case "$(uname -s)" in
+    Darwin|FreeBSD) stat -f %m "$path" ;;
+    *) stat -c %Y "$path" ;;
+  esac
+}
+
+driver_loop() {
+  : "${CT2_PROJECT_DIR:?CT2_PROJECT_DIR is required in driver mode}"
+  : "${CT2_CODEX_PANE:?CT2_CODEX_PANE is required in driver mode}"
+  : "${CT2_INTERVAL:?CT2_INTERVAL is required in driver mode}"
+  : "${CT2_INITIAL_DELAY:=8}"
+
+  if [[ ! "$MAX_TICKS" =~ ^[0-9]+$ ]]; then
+    echo "ct2-lens-cx-tui: CT2_LENS_CX_TUI_MAX_TICKS must be an integer >= 0" >&2
+    exit 1
+  fi
+
+  if [[ ! "$CLEAR_EVERY" =~ ^[0-9]+$ ]]; then
+    echo "ct2-lens-cx-tui: CT2_LENS_CX_TUI_CLEAR_EVERY must be an integer >= 0" >&2
+    exit 1
+  fi
+
+  cd "$CT2_PROJECT_DIR"
+  mkdir -p .ct2/.tmp .ct2/.meta
+
+  local inflight=".ct2/.meta/ct2-lens-cx-tui.inflight"
+  local heartbeat=".ct2/.meta/ct2-lens-cx.heartbeat"
+  local stale_after=$(( CT2_INTERVAL * 2 ))
+  if (( stale_after < 600 )); then
+    stale_after=600
+  fi
+
+  if (( CT2_INITIAL_DELAY > 0 )); then
+    printf '[%s] waiting %ss for Codex TUI startup\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$CT2_INITIAL_DELAY"
+    sleep "$CT2_INITIAL_DELAY"
+  fi
+
+  local tick=0
+  while true; do
+    tick=$((tick + 1))
+    local ts now mtime age started
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    if [[ -f "$inflight" ]]; then
+      now="$(date +%s)"
+      mtime="$(file_mtime "$inflight")"
+      age=$(( now - mtime ))
+      started=false
+      if grep -q '^started=1$' "$inflight" 2>/dev/null; then
+        started=true
+      fi
+      if [[ "$started" == true ]] && (( age >= CT2_INTERVAL )); then
+        printf '[%s] clearing started in-flight marker still present after %ss\n' "$ts" "$age"
+        rm -f "$inflight"
+      elif (( age < stale_after )); then
+        printf '[%s] previous tick still in flight (%ss old); skipping this tick\n' "$ts" "$age"
+        date -u > .ct2/.meta/ct2-lens-cx-tui-driver.heartbeat
+        sleep "$CT2_INTERVAL"
+        continue
+      else
+        printf '[%s] clearing stale in-flight marker (%ss old)\n' "$ts" "$age"
+        rm -f "$inflight"
+      fi
+    fi
+
+    if (( MAX_TICKS > 0 )) && (( tick > MAX_TICKS )); then
+      printf '[%s] reached max_ticks=%s; driver exiting. Restart ct2-lens-cx-tui to continue.\n' \
+        "$ts" "$MAX_TICKS"
+      exit 0
+    fi
+
+    if (( CLEAR_EVERY > 0 )) && (( tick > 1 )) && (( (tick - 1) % CLEAR_EVERY == 0 )); then
+      printf '[%s] injecting /clear before tick %s (every %s ticks)\n' "$ts" "$tick" "$CLEAR_EVERY"
+      tmux send-keys -t "$CT2_CODEX_PANE" "/clear"
+      sleep 1
+      tmux send-keys -t "$CT2_CODEX_PANE" Right C-m
+      sleep 3
+    fi
+
+    local pre_heartbeat_mtime
+    pre_heartbeat_mtime="$(file_mtime "$heartbeat")"
+
+    printf '%s\n' "$ts tick=$tick pane=$CT2_CODEX_PANE" > "$inflight"
+
+    local prompt_file
+    prompt_file="$(mktemp ".ct2/.tmp/lens-cx-tui-tick-XXXXXX")"
+    cat > "$prompt_file" <<EOF
+CT2 scheduled \$ct2:lens-cx tick ${tick} at ${ts}.
+
+You are running inside the visible Codex TUI pane managed by ct2-lens-cx-tui.
+Process exactly one idempotent ct2-lens-cx review iteration now.
+
+Before any analysis, file reads, status output, or review work, run exactly:
+  mkdir -p .ct2/.meta && date -u > .ct2/.meta/ct2-lens-cx.heartbeat
+
+The skill mention above should load the installed ct2-lens-cx skill when this
+Codex build supports skill mentions. If it is not available, use these
+instructions directly:
+
+1. Re-anchor as ct2-lens-cx and refresh .ct2/.meta/ct2-lens-cx.heartbeat.
+2. Poll .ct2/inbox/ct2-lens-cx/ and atomically claim/ack messages.
+3. Scan .ct2/in-review/*.md.
+4. For each ticket whose .ct2/reviews/{id}-cx-r{round}.md sidecar is missing,
+   independently review it without reading the cc sidecar first.
+5. Write only your own cx sidecar atomically through .ct2/.tmp/.
+6. After your cx sidecar exists, if the cc sidecar also exists, run
+   reconciliation using .ct2/config/ct2-reconciler-ref.md with
+   CT2_RECONCILER_ACTOR=ct2-lens-cx.
+7. Print a compact idle/review summary.
+8. At the very end, run:
+   rm -f .ct2/.meta/ct2-lens-cx-tui.inflight
+
+Do not ask for confirmation. Do not modify project source files. Do not modify
+existing sidecars. If there is no pending work, report that and clear the
+in-flight marker.
+EOF
+
+    tmux load-buffer -b ct2-lens-cx-tick "$prompt_file"
+    tmux paste-buffer -b ct2-lens-cx-tick -t "$CT2_CODEX_PANE"
+    sleep 1
+    tmux send-keys -t "$CT2_CODEX_PANE" Right C-m
+    rm -f "$prompt_file"
+
+    local probe_timeout waited post_heartbeat_mtime
+    probe_timeout=$(( CT2_INTERVAL / 2 ))
+    if (( probe_timeout < 1 )); then
+      probe_timeout=1
+    fi
+
+    date -u > .ct2/.meta/ct2-lens-cx-tui-driver.heartbeat
+    printf '[%s] sent lens-cx tick %s to %s; watching for heartbeat up to %ss\n' \
+      "$ts" "$tick" "$CT2_CODEX_PANE" "$probe_timeout"
+
+    waited=0
+    while (( waited < probe_timeout )); do
+      sleep 1
+      waited=$((waited + 1))
+      post_heartbeat_mtime="$(file_mtime "$heartbeat")"
+      if (( post_heartbeat_mtime > pre_heartbeat_mtime )); then
+        if [[ -f "$inflight" ]]; then
+          printf 'started=1\nheartbeat_mtime=%s\n' "$post_heartbeat_mtime" >> "$inflight"
+        fi
+        printf '[%s] lens-cx heartbeat advanced after %ss\n' \
+          "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$waited"
+        break
+      fi
+    done
+
+    post_heartbeat_mtime="$(file_mtime "$heartbeat")"
+    if (( post_heartbeat_mtime <= pre_heartbeat_mtime )); then
+      printf '[%s] skill did not start within %ss; clearing in-flight marker\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$probe_timeout"
+      rm -f "$inflight"
+    fi
+
+    printf '[%s] next tick in %ss\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$CT2_INTERVAL"
+    sleep "$CT2_INTERVAL"
+  done
+}
+
+if [[ "$DRIVER" == true ]]; then
+  driver_loop
+  exit 0
+fi
+
+PROJECT_DIR="${POSITIONAL[0]:-$(pwd)}"
+PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+CT2_DIR="${PROJECT_DIR}/.ct2"
+CODEX_CMD="${CT2_CODEX_CMD:-codex}"
+CODEX_ARGS="${CT2_CODEX_ARGS:-}"
+if [[ -z "$CODEX_ARGS" ]]; then
+  # Codex 0.121 rejects `--add-dir` under read-only; lens-cx needs .ct2 writes.
+  CODEX_ARGS="--sandbox workspace-write"
+fi
+
+if [[ ! -d "$CT2_DIR" ]]; then
+  echo "ct2-lens-cx-tui: .ct2/ not found in ${PROJECT_DIR}" >&2
+  echo "Run 'ct2-init' first." >&2
+  exit 1
+fi
+
+if [[ -z "$INTERVAL" ]]; then
+  INTERVAL="$(read_harness_value "${CT2_DIR}/config/harness.yaml" lens_cx poll_interval_sec 180)"
+fi
+
+if [[ ! "$INTERVAL" =~ ^[0-9]+$ ]] || (( INTERVAL < 10 )); then
+  echo "ct2-lens-cx-tui: --interval must be an integer >= 10" >&2
+  exit 1
+fi
+
+if [[ ! "$INITIAL_DELAY" =~ ^[0-9]+$ ]]; then
+  echo "ct2-lens-cx-tui: --initial-delay must be an integer >= 0" >&2
+  exit 1
+fi
+
+if [[ ! "$MAX_TICKS" =~ ^[0-9]+$ ]]; then
+  echo "ct2-lens-cx-tui: CT2_LENS_CX_TUI_MAX_TICKS must be an integer >= 0" >&2
+  exit 1
+fi
+
+if [[ ! "$CLEAR_EVERY" =~ ^[0-9]+$ ]]; then
+  echo "ct2-lens-cx-tui: CT2_LENS_CX_TUI_CLEAR_EVERY must be an integer >= 0" >&2
+  exit 1
+fi
+
+if ! command -v tmux &>/dev/null; then
+  echo "ct2-lens-cx-tui: tmux is required for visible TUI scheduling." >&2
+  exit 1
+fi
+
+if ! command -v "$CODEX_CMD" &>/dev/null; then
+  echo "ct2-lens-cx-tui: '${CODEX_CMD}' not found. Install Codex CLI and retry." >&2
+  exit 1
+fi
+
+if [[ -z "$SESSION" ]]; then
+  project_slug="$(basename "$PROJECT_DIR" | tr -cd '[:alnum:]_-')"
+  hash_suffix="$(python3 - "$PROJECT_DIR" <<'PY'
+import hashlib
+import sys
+
+print(hashlib.sha1(sys.argv[1].encode("utf-8")).hexdigest()[:6])
+PY
+)"
+  SESSION="ct2-lens-cx-${project_slug:-project}-${hash_suffix}"
+fi
+
+if tmux has-session -t "$SESSION" 2>/dev/null; then
+  echo "ct2-lens-cx-tui: attaching existing tmux session ${SESSION}"
+  if [[ "$ATTACH" == true ]]; then
+    exec tmux attach -t "$SESSION"
+  fi
+  exit 0
+fi
+
+mkdir -p "${CT2_DIR}/.tmp" "${CT2_DIR}/.meta"
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+
+tmux new-session -d -s "$SESSION" -n lens-cx -c "$PROJECT_DIR" \
+  "$CODEX_CMD $CODEX_ARGS"
+CODEX_PANE="$(tmux display-message -p -t "${SESSION}:0.0" '#{pane_id}')"
+
+tmux split-window -v -l 10 -t "$CODEX_PANE" -c "$PROJECT_DIR" \
+  "CT2_PROJECT_DIR='$PROJECT_DIR' CT2_CODEX_PANE='$CODEX_PANE' CT2_INTERVAL='$INTERVAL' CT2_INITIAL_DELAY='$INITIAL_DELAY' CT2_LENS_CX_TUI_MAX_TICKS='$MAX_TICKS' CT2_LENS_CX_TUI_CLEAR_EVERY='$CLEAR_EVERY' '$SELF' --driver"
+tmux select-pane -t "$CODEX_PANE"
+
+echo "ct2-lens-cx-tui: started tmux session ${SESSION}"
+echo "  Codex pane:  ${CODEX_PANE}"
+echo "  Interval:    ${INTERVAL}s"
+echo "  Max ticks:   ${MAX_TICKS}"
+echo "  Clear every: ${CLEAR_EVERY}"
+echo "  Project:     ${PROJECT_DIR}"
+
+if [[ "$ATTACH" == true ]]; then
+  exec tmux attach -t "$SESSION"
+fi
