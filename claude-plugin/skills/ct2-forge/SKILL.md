@@ -94,11 +94,29 @@ Message types to handle:
 - `priority-override`: Note the reorder; pick it up in Step 4
 
 ### Step 3: Check Circuit Breaker (Ticket Duration)
+
+The timer runs from the **pickup moment**, not the ticket file's mtime (which
+mutates on every Edit/AC-check and is preserved across `mv` — both make ticket
+mtime an unreliable stopwatch). Pickup time is recorded as a dedicated stamp
+file in `.ct2/.meta/` at the end of Step 5.
+
 For any ticket in `.ct2/in-progress/`:
 ```bash
 for ticket in .ct2/in-progress/*.md; do
   [ -f "$ticket" ] || continue
-  start_time=$(stat -f %m "$ticket" 2>/dev/null || stat -c %Y "$ticket")
+  stem=$(basename "$ticket" .md)
+  ticket_id=$(echo "$stem" | grep -oE '^[0-9]+')
+  started_stamp=".ct2/.meta/${ticket_id}.started"
+
+  # If the stamp is missing (e.g. session restart after a crash), lay it down now.
+  # This biases toward under-counting elapsed time rather than over-counting —
+  # preferable to spuriously tripping the breaker on ticket mtime.
+  if [ ! -f "$started_stamp" ]; then
+    date -u > "$started_stamp"
+    continue
+  fi
+
+  start_time=$(stat -f %m "$started_stamp" 2>/dev/null || stat -c %Y "$started_stamp")
   elapsed_min=$(( ($(date +%s) - start_time) / 60 ))
   if (( elapsed_min > MAX_TICKET_DURATION_MIN )); then
     # Return to backlog
@@ -108,6 +126,7 @@ import re, sys
 c = open(sys.argv[1]).read()
 c = re.sub(r'^(status:\s*).*\$', r'\g<1>backlog', c, flags=re.MULTILINE)
 open(sys.argv[1], 'w').write(c)" ".ct2/backlog/$(basename "$ticket")"
+    rm -f "$started_stamp"
     echo "Circuit breaker: ticket returned to backlog (duration exceeded)"
   fi
 done
@@ -121,6 +140,10 @@ Scan `.ct2/rejected/` for tickets with `review-round < max_review_rounds`:
 - Increment `review-round` in the ticket frontmatter
 - Move: `mv .ct2/rejected/{ticket} .ct2/in-progress/{ticket}`
 - Update `status: in-progress`
+- **Restart the circuit-breaker stamp** for the new round:
+  ```bash
+  date -u > ".ct2/.meta/${ticket_id}.started"
+  ```
 - **Proceed to Step 6** (rework based on reviewer feedback)
 
 ### Step 5: Pick from Backlog
@@ -149,7 +172,21 @@ d. Update frontmatter:
    - `status: in-progress`
    - `updated: {now}`
 
-e. If no eligible tickets in backlog and no rejected tickets: use a longer loop interval (idle).
+e. **Stamp the pickup moment** for the circuit breaker (see Step 3):
+   ```bash
+   date -u > ".ct2/.meta/${ticket_id}.started"
+   ```
+   Same stamp is created when reworking a rejected ticket (Step 4) — replace the
+   prior round's stamp so the timer restarts for each round.
+
+f. **Append a one-line event to the forge log** so long autonomous runs leave an
+   audit trail (`logs/ct2-forge.log` is created by `ct2-init`):
+   ```bash
+   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] pickup ticket=${ticket_id} from=backlog" >> .ct2/logs/ct2-forge.log
+   ```
+   Use `from=rejected round=${n}` when the ticket came from Step 4 instead.
+
+g. If no eligible tickets in backlog and no rejected tickets: use a longer loop interval (idle).
 
 ### Step 6: Execute Work
 For the current `in-progress/` ticket:
@@ -185,10 +222,13 @@ For the current `in-progress/` ticket:
    ```bash
    # Send blocked message to helm
    ts=$(date -u +%Y%m%dT%H%M%S%3NZ 2>/dev/null || date -u +%Y%m%dT%H%M%SZ)
-   uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || head -c 8 /dev/urandom | xxd -p | head -c 8)
+   # UUID fallback: uuidgen → od → xxd  (vim-common is not always installed)
+   uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || true)
+   [ -z "$uid" ] && uid=$(od -An -tx1 -N4 /dev/urandom 2>/dev/null | tr -d ' \n' || true)
+   [ -z "$uid" ] && uid=$(head -c 8 /dev/urandom | xxd -p | head -c 8 || true)
    msgid="msg-${ts}-$$-${uid}"
    tmp=$(mktemp ".ct2/.tmp/${msgid}.XXXXXX")
-   # ... write message ... 
+   # ... write message ...
    mv -n "$tmp" ".ct2/inbox/ct2-helm/${msgid}.md"
    ```
    Then pause work on this ticket and check other tickets or wait.
@@ -205,7 +245,17 @@ When all AC items are `[x]`:
    mv .ct2/in-progress/{ticket} .ct2/in-review/{ticket}
    ```
 
-3. Log: "Ticket {id} moved to in-review. Awaiting dual approval."
+3. Clear the circuit-breaker stamp (timer is not running while lens reviews):
+   ```bash
+   rm -f ".ct2/.meta/${ticket_id}.started"
+   ```
+
+4. Append one line to the forge log for audit:
+   ```bash
+   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] submit ticket=${ticket_id} -> in-review" >> .ct2/logs/ct2-forge.log
+   ```
+
+5. Log in-context: "Ticket {id} moved to in-review. Awaiting dual approval."
 
 ### Step 8: Loop Pacing
 
@@ -268,8 +318,10 @@ When proceeding with best judgment, always add a `## Forge Notes` section to the
 ct2_send_msg() {
   local to="$1" type="$2" ticket="$3" subject="$4" body="$5"
   local ts; ts=$(date -u +%Y%m%dT%H%M%S%3NZ 2>/dev/null || date -u +%Y%m%dT%H%M%SZ)
-  local uid; uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || \
-                   head -c 8 /dev/urandom | xxd -p | head -c 8)
+  # UUID fallback: uuidgen → od → xxd  (vim-common is not always installed)
+  local uid; uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || true)
+  [[ -z "$uid" ]] && uid=$(od -An -tx1 -N4 /dev/urandom 2>/dev/null | tr -d ' \n' || true)
+  [[ -z "$uid" ]] && uid=$(head -c 8 /dev/urandom | xxd -p | head -c 8 || true)
   local msgid="msg-${ts}-$$-${uid}"
   local tmp; tmp=$(mktemp ".ct2/.tmp/${msgid}.XXXXXX") || return 1
   cat > "$tmp" <<MSGEOF
@@ -313,5 +365,6 @@ MSGEOF
 | `.ct2/inbox/ct2-forge/` | Claim and ack |
 | `.ct2/inbox/ct2-helm/` | Send messages only |
 | `.ct2/.meta/ct2-forge.heartbeat` | Write (heartbeat) |
+| `.ct2/.meta/{id}.started` | Write (pickup stamp for circuit breaker; remove on complete) |
 
 </access-matrix>
