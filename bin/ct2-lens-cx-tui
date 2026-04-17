@@ -125,6 +125,17 @@ file_mtime() {
   esac
 }
 
+attach_or_switch() {
+  local target="$1"
+  if [[ -n "${TMUX:-}" ]]; then
+    echo "ct2-lens-cx-tui: inside existing tmux; switching client to ${target}"
+    exec tmux switch-client -t "$target"
+  fi
+
+  echo "ct2-lens-cx-tui: attaching tmux session ${target}"
+  exec tmux attach -t "$target"
+}
+
 driver_loop() {
   : "${CT2_PROJECT_DIR:?CT2_PROJECT_DIR is required in driver mode}"
   : "${CT2_CODEX_PANE:?CT2_CODEX_PANE is required in driver mode}"
@@ -347,9 +358,9 @@ PY
 fi
 
 if tmux has-session -t "$SESSION" 2>/dev/null; then
-  echo "ct2-lens-cx-tui: attaching existing tmux session ${SESSION}"
+  echo "ct2-lens-cx-tui: found existing tmux session ${SESSION}"
   if [[ "$ATTACH" == true ]]; then
-    exec tmux attach -t "$SESSION"
+    attach_or_switch "$SESSION"
   fi
   exit 0
 fi
@@ -373,5 +384,5 @@ echo "  Clear every: ${CLEAR_EVERY}"
 echo "  Project:     ${PROJECT_DIR}"
 
 if [[ "$ATTACH" == true ]]; then
-  exec tmux attach -t "$SESSION"
+  attach_or_switch "$SESSION"
 fi

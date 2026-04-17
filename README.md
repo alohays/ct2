@@ -118,6 +118,11 @@ review iteration happen in real time.
 
 **Operational basics**
 
+From a plain terminal, `ct2-lens-cx-tui` attaches to the CT2 tmux session. If
+you run it from inside an existing tmux client, it switches that client to the
+CT2 session instead of nesting tmux. Use `--no-attach` to start or reuse the
+session without attaching or switching.
+
 ```bash
 # Detach (leave the session running in the background)
 Ctrl-B d
