@@ -8,16 +8,19 @@ This file contains the reconciler implementation loaded by ct2-lens-cc (and ct2-
 perform_reconcile() {
   local ticket="$1" ticket_id="$2" round="$3"
 
-  # O_EXCL lockfile — exactly one reconciler instance wins
+  # O_EXCL lockfile — exactly one reconciler instance wins.
+  # Stale detection combines liveness (`kill -0`) with mtime age, since PID reuse
+  # on long-running systems can mask a dead owner. Reconcile runs in seconds, so
+  # any lockfile older than ~10 min is almost certainly abandoned.
   local lockfile=".ct2/.meta/${ticket_id}-r${round}-reconcile.lock"
   if ! ( set -C; echo "$$" > "$lockfile" ) 2>/dev/null; then
-    # Lock exists — check if owner is still alive
-    local lock_pid
+    local lock_pid lock_mtime lock_age
     lock_pid=$(cat "$lockfile" 2>/dev/null || echo "")
-    if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
-      return 0  # Owner alive, skip
+    lock_mtime=$(stat -f %m "$lockfile" 2>/dev/null || stat -c %Y "$lockfile" 2>/dev/null || echo 0)
+    lock_age=$(( $(date +%s) - lock_mtime ))
+    if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null && (( lock_age < 600 )); then
+      return 0  # Owner alive and lock recent — skip.
     fi
-    # Stale lock — remove and retry
     rm -f "$lockfile"
     ( set -C; echo "$$" > "$lockfile" ) 2>/dev/null || return 0
   fi
@@ -74,29 +77,21 @@ except: print('3')" ".ct2/config/harness.yaml")
 
 ## _update_verdict
 
+Frontmatter rewrite is delegated to the shared helper `bin/_ct2_update_verdict.py`
+so both reconcilers (lens-cc via this reference, lens-cx via its daemon) produce
+identical output. Any logic change to ticket frontmatter mutation must happen in
+the Python helper only — the previous per-reconciler Python heredocs drifted and
+silently broke the `sidecar:` nested key (the regex could not span the
+intermediate `status:` line).
+
 ```bash
 _update_verdict() {
   local ticket_file="$1" verdict="$2" ticket_id="$3" round="$4"
-  python3 - ".ct2/in-review/${ticket_file}" "$verdict" \
+  "${HOME}/.ct2/bin/_ct2_update_verdict.py" \
+    ".ct2/in-review/${ticket_file}" \
+    "$verdict" \
     ".ct2/reviews/${ticket_id}-cc-r${round}.md" \
-    ".ct2/reviews/${ticket_id}-cx-r${round}.md" <<'PYEOF'
-import sys, re
-path, verdict, cc_sc, cx_sc = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-def get_v(p):
-    try:
-        m=re.search(r'verdict:\s*(\w+)', open(p).read())
-        return m.group(1) if m else 'pending'
-    except: return 'pending'
-c = open(path).read()
-c = re.sub(r'^(verdict:\s*).*$', rf'\g<1>{verdict}', c, flags=re.MULTILINE)
-c = re.sub(r'(lens-claude:\n\s*status:\s*).*', rf'\g<1>{get_v(cc_sc)}', c)
-c = re.sub(r'(lens-claude:\n\s*sidecar:\s*).*', rf'\g<1>{cc_sc}', c)
-c = re.sub(r'(lens-codex:\n\s*status:\s*).*', rf'\g<1>{get_v(cx_sc)}', c)
-c = re.sub(r'(lens-codex:\n\s*sidecar:\s*).*', rf'\g<1>{cx_sc}', c)
-from datetime import datetime, timezone
-c = re.sub(r'^(updated:\s*).*$', rf'\g<1>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}', c, flags=re.MULTILINE)
-open(path, 'w').write(c)
-PYEOF
+    ".ct2/reviews/${ticket_id}-cx-r${round}.md"
 }
 ```
 

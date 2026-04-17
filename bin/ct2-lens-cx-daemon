@@ -233,13 +233,18 @@ reconcile_ticket() {
 
   local lockfile="${CT2_DIR}/.meta/${ticket_id}-r${round}-reconcile.lock"
   if ! ( set -C; echo "$$" > "$lockfile" ) 2>/dev/null; then
-    # Lock exists — check if owner is still alive
-    local lock_pid
+    # Lock exists — decide if it is stale. `kill -0 $pid` alone is not enough
+    # because PID reuse on long-running systems can mask a dead owner. We also
+    # require the lockfile mtime to be recent (≤ 10 min); reconcile completes in
+    # seconds, so any older lockfile is almost certainly abandoned.
+    local lock_pid lock_mtime lock_age
     lock_pid=$(cat "$lockfile" 2>/dev/null || echo "")
-    if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null; then
-      return 0  # Owner alive, skip
+    lock_mtime=$(stat -f %m "$lockfile" 2>/dev/null || stat -c %Y "$lockfile" 2>/dev/null || echo 0)
+    lock_age=$(( $(date +%s) - lock_mtime ))
+    if [[ -n "$lock_pid" ]] && kill -0 "$lock_pid" 2>/dev/null && (( lock_age < 600 )); then
+      return 0  # Owner alive and lock recent — skip.
     fi
-    # Stale lock — remove and retry
+    # Stale lock — remove and retry.
     rm -f "$lockfile"
     ( set -C; echo "$$" > "$lockfile" ) 2>/dev/null || return 0
   fi
@@ -260,32 +265,12 @@ print(m.group(1) if m else 'pending')" "$cx_sidecar")
 
   local ticket_file; ticket_file=$(basename "$ticket_path")
 
+  # Frontmatter mutations (verdict + updated + nested review-status.*) are
+  # delegated to the shared helper so both reconcilers write identical output.
+  # See bin/_ct2_update_verdict.py for the full contract.
   update_ticket_verdict() {
     local v="$1"
-    python3 - "${ticket_path}" "$v" "$cc_sidecar" "$cx_sidecar" <<'PYEOF'
-import sys, re
-path, verdict, cc_sc, cx_sc = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-c = open(path).read()
-c = re.sub(r'^(verdict:\s*).*$', rf'\g<1>{verdict}', c, flags=re.MULTILINE)
-
-def extract_verdict(p):
-    try:
-        m = re.search(r'verdict:\s*(\w+)', open(p).read())
-        return m.group(1) if m else 'pending'
-    except Exception:
-        return 'pending'
-
-# Update review-status
-cc_v = extract_verdict(cc_sc)
-cx_v = extract_verdict(cx_sc)
-c = re.sub(r'(lens-claude:\s*\n\s*status:\s*).*', rf'\g<1>{cc_v}', c)
-c = re.sub(r'(lens-claude:\s*\n\s*sidecar:\s*).*', rf'\g<1>{cc_sc}', c)
-c = re.sub(r'(lens-codex:\s*\n\s*status:\s*).*', rf'\g<1>{cx_v}', c)
-c = re.sub(r'(lens-codex:\s*\n\s*sidecar:\s*).*', rf'\g<1>{cx_sc}', c)
-from datetime import datetime, timezone
-c = re.sub(r'^(updated:\s*).*$', rf'\g<1>{datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}', c, flags=re.MULTILINE)
-open(path, 'w').write(c)
-PYEOF
+    "${BASH_SOURCE%/*}/_ct2_update_verdict.py" "$ticket_path" "$v" "$cc_sidecar" "$cx_sidecar"
   }
 
   # Guard: ticket may have been moved by a concurrent reconciler
