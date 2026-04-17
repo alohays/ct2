@@ -141,8 +141,11 @@ Messages are written to `.ct2/.tmp/` first, then atomically renamed into the inb
 ct2_send_message() {
   local to="$1" from="$2" type="$3" ticket="$4" subject="$5" body="$6"
   local ts; ts=$(date -u +%Y%m%dT%H%M%S%3NZ 2>/dev/null || date -u +%Y%m%dT%H%M%SZ)
-  local uid; uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || \
-                   head -c 8 /dev/urandom | xxd -p | head -c 8)
+  # Note: some Linux distros ship `xxd` only with `vim-common`; try `od` first
+  # so scripts still start on minimal images.
+  local uid; uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || true)
+  [[ -z "$uid" ]] && uid=$(od -An -tx1 -N4 /dev/urandom 2>/dev/null | tr -d ' \n' || true)
+  [[ -z "$uid" ]] && uid=$(head -c 8 /dev/urandom | xxd -p | head -c 8 || true)
   local msgid="msg-${ts}-$$-${uid}"
   local tmp; tmp=$(mktemp ".ct2/.tmp/${msgid}.XXXXXX") || return 1
   local dest=".ct2/inbox/${to}/${msgid}.md"
