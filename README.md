@@ -100,6 +100,7 @@ ct2-lens-cx-daemon /path/to/your/project
 |---------|-------------|
 | `ct2-init [dir]` | Initialize `.ct2/` in a project directory |
 | `ct2-seal <ticket>` | Validate and move a draft ticket to backlog |
+| `ct2-revise <ticket>` | Archive past sidecars and return an escalated/rejected ticket to `draft/` |
 | `ct2-status [dir]` | Display Kanban board, agent heartbeats, and inbox |
 | `ct2-lens-cx-daemon <dir>` | Start the Codex reviewer polling daemon |
 

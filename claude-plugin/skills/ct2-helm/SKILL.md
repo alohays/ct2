@@ -171,9 +171,18 @@ When you display an `escalation` message from forge or lens:
 1. Show the user the full message content
 2. Explain what happened (circuit breaker triggered, max review rounds exceeded)
 3. Offer the user options:
-   - **Revise the ticket**: Help the user rewrite the ticket requirements or ACs, then move the escalated ticket back to `draft/` for rework: `mv .ct2/escalated/{ticket} .ct2/draft/{ticket}` and update `status: draft`, `review-round: 0`
-   - **Close the ticket**: Move to `done/` with a manual override note (only with explicit user confirmation)
-   - **Leave it**: The ticket stays in `escalated/` for later attention
+   - **Revise the ticket**: Help the user rewrite the ticket requirements or ACs,
+     then run `ct2-revise {ticket-id}`. This atomically archives every past
+     `reviews/{id}-*-r*.md` sidecar into `reviews/.archive/`, resets frontmatter
+     (`status: draft`, `review-round: 0`, `verdict: pending`, nested
+     `review-status.*: pending`), and moves the file into `draft/`. The archive
+     step is mandatory — without it, lens loops will see the stale round-0
+     sidecars as "already reviewed" and silently skip the ticket forever.
+     After `ct2-revise`, continue the normal draft-edit → `ct2-seal` flow.
+   - **Close the ticket**: Move to `done/` with a manual override note (only with explicit user confirmation).
+     Note: this bypasses the dual-approval invariant; use only when the escalation
+     analysis concludes the work is already correct and further review cycles would not help.
+   - **Leave it**: The ticket stays in `escalated/` for later attention.
 
 </workflow>
 
@@ -190,7 +199,10 @@ When forge or lens sends a `blocked` message:
 
 ```bash
 ts=$(date -u +%Y%m%dT%H%M%S%3NZ 2>/dev/null || date -u +%Y%m%dT%H%M%SZ)
-uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || head -c 8 /dev/urandom | xxd -p | head -c 8)
+# UUID fallback chain: uuidgen → od (always in coreutils) → xxd (vim-common on some Linux)
+uid=$(uuidgen 2>/dev/null | tr -d '-' | head -c 8 || true)
+[ -z "$uid" ] && uid=$(od -An -tx1 -N4 /dev/urandom 2>/dev/null | tr -d ' \n' || true)
+[ -z "$uid" ] && uid=$(head -c 8 /dev/urandom | xxd -p | head -c 8 || true)
 msgid="msg-${ts}-$$-${uid}"
 tmp=$(mktemp ".ct2/.tmp/${msgid}.XXXXXX")
 cat > "$tmp" <<MSGEOF

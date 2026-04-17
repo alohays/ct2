@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# ct2-revise — Move an escalated ticket back to draft/ for rework, atomically
+# archiving its past review sidecars so the automation does not find stale
+# approvals/rejections and deadlock on the next review round.
+#
+# Usage: ct2-revise <ticket-id-or-filename>
+#
+# Accepts: "003" | "003-refactor-db-pool" | "003-refactor-db-pool.md"
+#
+# What this does:
+#   1. Locate the ticket in .ct2/escalated/ (or, with --from=rejected, .ct2/rejected/)
+#   2. Move every .ct2/reviews/{id}-{cc,cx}-r{n}.md into .ct2/reviews/.archive/{timestamp}/
+#      so the lens idempotency check ("does my sidecar already exist?") returns false
+#      when the ticket re-enters in-review/
+#   3. Reset ticket frontmatter:
+#        status:        draft
+#        review-round:  0
+#        verdict:       pending
+#        review-status.lens-{claude,codex}: pending/null
+#   4. Move the ticket atomically: escalated/{file} -> draft/{file}
+#
+# Exit codes:
+#   0  success
+#   1  usage / missing ticket / precondition failure
+#   2  already present in destination
+
+set -euo pipefail
+
+CT2_DIR="${PWD}/.ct2"
+
+if [[ ! -d "$CT2_DIR" ]]; then
+  echo "ct2-revise: error — .ct2/ not found in ${PWD}" >&2
+  echo "Run 'ct2-init' first." >&2
+  exit 1
+fi
+
+# ── Parse args ────────────────────────────────────────────────────────────────
+SOURCE_STATE="escalated"
+POSITIONAL=()
+for arg in "$@"; do
+  case "$arg" in
+    --from=rejected)  SOURCE_STATE="rejected" ;;
+    --from=escalated) SOURCE_STATE="escalated" ;;
+    --help|-h)
+      echo "Usage: ct2-revise [--from=escalated|rejected] <ticket-id-or-filename>"
+      echo "  Archive past review sidecars and return the ticket to draft/ for rework."
+      exit 0 ;;
+    --*) echo "ct2-revise: unknown option $arg" >&2; exit 1 ;;
+    *)   POSITIONAL+=("$arg") ;;
+  esac
+done
+
+if [[ ${#POSITIONAL[@]} -lt 1 ]]; then
+  echo "Usage: ct2-revise [--from=escalated|rejected] <ticket-id-or-filename>" >&2
+  exit 1
+fi
+ARG="${POSITIONAL[0]}"
+
+SOURCE_DIR="${CT2_DIR}/${SOURCE_STATE}"
+
+# ── Resolve ticket filename ───────────────────────────────────────────────────
+find_ticket() {
+  local dir="$1" arg="$2"
+  if [[ -f "${dir}/${arg}" ]]; then echo "${dir}/${arg}"; return; fi
+  if [[ -f "${dir}/${arg}.md" ]]; then echo "${dir}/${arg}.md"; return; fi
+  local match; match=$(ls "${dir}/${arg}"-*.md 2>/dev/null | head -1)
+  if [[ -n "$match" ]]; then echo "$match"; return; fi
+}
+
+TICKET_PATH=$(find_ticket "$SOURCE_DIR" "$ARG")
+if [[ -z "${TICKET_PATH:-}" ]]; then
+  echo "ct2-revise: error — ticket '${ARG}' not found in .ct2/${SOURCE_STATE}/" >&2
+  exit 1
+fi
+
+TICKET_FILE=$(basename "$TICKET_PATH")
+TICKET_STEM="${TICKET_FILE%.md}"
+TICKET_ID=$(echo "$TICKET_STEM" | grep -oE '^[0-9]+')
+
+if [[ -z "$TICKET_ID" ]]; then
+  echo "ct2-revise: error — cannot extract numeric ticket id from '${TICKET_FILE}'" >&2
+  exit 1
+fi
+
+DRAFT_DEST="${CT2_DIR}/draft/${TICKET_FILE}"
+if [[ -e "$DRAFT_DEST" ]]; then
+  echo "ct2-revise: error — ${TICKET_FILE} already exists in draft/; resolve manually" >&2
+  exit 2
+fi
+
+echo "ct2-revise: reviving ${TICKET_FILE} from ${SOURCE_STATE}/ -> draft/"
+
+# ── Archive review sidecars ──────────────────────────────────────────────────
+TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+ARCHIVE_DIR="${CT2_DIR}/reviews/.archive/${TIMESTAMP}-${TICKET_ID}"
+mkdir -p "$ARCHIVE_DIR"
+
+ARCHIVED=0
+for sc in "${CT2_DIR}/reviews/${TICKET_ID}-cc-r"*.md "${CT2_DIR}/reviews/${TICKET_ID}-cx-r"*.md; do
+  [[ -f "$sc" ]] || continue
+  mv "$sc" "${ARCHIVE_DIR}/$(basename "$sc")"
+  ARCHIVED=$((ARCHIVED + 1))
+done
+
+if (( ARCHIVED > 0 )); then
+  echo "  archived ${ARCHIVED} sidecar(s) -> .ct2/reviews/.archive/${TIMESTAMP}-${TICKET_ID}/"
+else
+  rmdir "$ARCHIVE_DIR" 2>/dev/null || true
+  echo "  (no review sidecars to archive)"
+fi
+
+# ── Reset frontmatter in-place ───────────────────────────────────────────────
+# Done on the source file *before* the mv, so a crash between steps leaves the
+# ticket in escalated/ with old frontmatter (recoverable) rather than in draft/
+# with inconsistent fields.
+python3 - "$TICKET_PATH" <<'PYEOF'
+import re, sys
+from datetime import datetime, timezone
+
+path = sys.argv[1]
+c = open(path).read()
+
+now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+c = re.sub(r'^(status:\s*).*$',       r'\g<1>draft',    c, flags=re.MULTILINE)
+c = re.sub(r'^(review-round:\s*).*$', r'\g<1>0',        c, flags=re.MULTILINE)
+c = re.sub(r'^(verdict:\s*).*$',      r'\g<1>pending',  c, flags=re.MULTILINE)
+c = re.sub(r'^(updated:\s*).*$',     rf'\g<1>{now}',    c, flags=re.MULTILINE)
+c = re.sub(r'^(sealed:\s*).*$',       r'\g<1>null',     c, flags=re.MULTILINE)
+
+# review-status nested fields — reset both reviewers.
+# Match the full 2-line block (status line + sidecar line) under each lens
+# because `lens-<name>:\s*\n\s*sidecar:` would otherwise have to span the
+# intermediate `status:` line, which `\s*` cannot do (`status:` is not whitespace).
+c = re.sub(
+    r'(lens-claude:\s*\n\s*status:\s*)[^\n]*(\n\s*sidecar:\s*)[^\n]*',
+    r'\g<1>pending\g<2>null',
+    c,
+)
+c = re.sub(
+    r'(lens-codex:\s*\n\s*status:\s*)[^\n]*(\n\s*sidecar:\s*)[^\n]*',
+    r'\g<1>pending\g<2>null',
+    c,
+)
+
+open(path, 'w').write(c)
+PYEOF
+
+# ── Atomic move to draft/ (verify source is gone — BSD mv -n returns 0 on NOP) ─
+mv -n "$TICKET_PATH" "$DRAFT_DEST" 2>/dev/null
+if [[ -f "$TICKET_PATH" ]]; then
+  echo "ct2-revise: error — move to draft/ suppressed (destination created concurrently?)" >&2
+  echo "  ticket left in ${SOURCE_STATE}/ with reset frontmatter; archived sidecars preserved" >&2
+  exit 1
+fi
+
+# ── Also drop any stale circuit-breaker stamp ────────────────────────────────
+rm -f "${CT2_DIR}/.meta/${TICKET_ID}.started"
+
+echo "✓ ${TICKET_FILE} is now in draft/ with reset frontmatter."
+echo "  Edit the ticket as needed, then run 'ct2-seal ${TICKET_ID}' to re-enter the pipeline."
