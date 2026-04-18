@@ -45,18 +45,22 @@ version: "0.1.0"
 
 ## State Transition Rules
 
-| Transition                    | Trigger              | Actor         | Precondition                                                               |
-|-------------------------------|----------------------|---------------|----------------------------------------------------------------------------|
-| `draft → backlog`             | `ct2-seal` runs      | ct2-helm      | `title`, `priority`, `touched-files`, `## Acceptance Criteria` all present |
-| `backlog → in-progress`       | Automatic pickup     | ct2-forge     | `in-progress/` is empty; no `touched-files` overlap                        |
-| `in-progress → in-review`     | Work completion      | ct2-forge     | All AC checklist items checked `[x]`                                       |
-| `in-review → done`            | reconciler verdict   | reconciler    | `cc sidecar = approved` AND `cx sidecar = approved`                        |
-| `in-review → rejected`        | reconciler verdict   | reconciler    | `cc sidecar = rejected` OR `cx sidecar = rejected`                         |
-| `rejected → in-progress`      | Automatic pickup     | ct2-forge     | `review-round < max_review_rounds`                                         |
-| `in-review → escalated`       | Circuit breaker      | reconciler    | `review-round + 1 ≥ max_review_rounds`; also sends escalation to helm inbox |
-| `in-progress → backlog`       | Duration CB bounce   | ct2-forge     | `now − .meta/{id}.started > max_ticket_duration_min`; stamp removed on bounce |
-| `escalated → draft`           | `ct2-revise` (manual)| human, via ct2-helm | Archives every `reviews/{id}-*.md` to `reviews/.archive/{ts}-{id}/`; resets frontmatter (`status=draft`, `review-round=0`, `verdict=pending`, `sealed=null`, nested `review-status.lens-*.*` reset); drops stale `.meta/{id}.started` if present |
-| `rejected → draft`            | `ct2-revise --from=rejected` | human, via ct2-helm | Same semantics as `escalated → draft`. Escape hatch when a rejected ticket is stuck outside normal rework (e.g. requirements must be rewritten, not re-implemented). |
+Each automated transition also has a corresponding git action when
+`git_strategy: branch-per-ticket`. See `spec/git-workflow.md` for the full
+git contract; the "Git action" column summarizes the coupling.
+
+| Transition                    | Trigger              | Actor         | Precondition                                                               | Git action |
+|-------------------------------|----------------------|---------------|----------------------------------------------------------------------------|------------|
+| `draft → backlog`             | `ct2-seal` runs      | ct2-helm      | `title`, `priority`, `touched-files`, `## Acceptance Criteria` all present | none       |
+| `backlog → in-progress`       | Automatic pickup     | ct2-forge     | `in-progress/` is empty; no `touched-files` overlap                        | `ct2-git-start` (create branch from base) |
+| `in-progress → in-review`     | Work completion      | ct2-forge     | All AC checklist items checked `[x]`                                       | `ct2-git-submit` (push, open PR, record `pr:` URL) |
+| `in-review → done`            | reconciler verdict   | reconciler    | `cc sidecar = approved` AND `cx sidecar = approved`                        | `ct2-git-finalize approved` (squash-merge if `git_auto_merge_on_approval`) |
+| `in-review → rejected`        | reconciler verdict   | reconciler    | `cc sidecar = rejected` OR `cx sidecar = rejected`                         | `ct2-git-finalize rejected` (no-op — PR open) |
+| `rejected → in-progress`      | Automatic pickup     | ct2-forge     | `review-round < max_review_rounds`                                         | `ct2-git-start` (checkout existing branch; rework appends commits) |
+| `in-review → escalated`       | Circuit breaker      | reconciler    | `review-round + 1 ≥ max_review_rounds`; also sends escalation to helm inbox | `ct2-git-finalize escalated` (comment on PR) |
+| `in-progress → backlog`       | Duration CB bounce   | ct2-forge     | `now − .meta/{id}.started > max_ticket_duration_min`; stamp removed on bounce | none (branch preserved for resume) |
+| `escalated → draft`           | `ct2-revise` (manual)| human, via ct2-helm | Archives every `reviews/{id}-*.md` to `reviews/.archive/{ts}-{id}/`; resets frontmatter (`status=draft`, `review-round=0`, `verdict=pending`, `sealed=null`, `pr=null`, nested `review-status.lens-*.*` reset); drops stale `.meta/{id}.started` if present | `ct2-git-cleanup` (close PR, delete local + remote branch) |
+| `rejected → draft`            | `ct2-revise --from=rejected` | human, via ct2-helm | Same semantics as `escalated → draft`. Escape hatch when a rejected ticket is stuck outside normal rework (e.g. requirements must be rewritten, not re-implemented). | `ct2-git-cleanup` (close PR, delete local + remote branch) |
 
 > **Invariant**: `done` is reachable **only** when both reviewers have verdict `approved`.
 > No automation — including the circuit breaker — may place a ticket into `done` without satisfying this condition.

@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+# ct2-git-start — Prepare the git branch for a ticket picked up by forge.
+# Usage: ct2-git-start <ticket-id-or-filename>
+#
+# Called by ct2-forge right after moving a ticket into .ct2/in-progress/:
+#   - backlog → in-progress (fresh pickup)
+#   - rejected → in-progress (rework — branch already exists, just checkout)
+#
+# Strategy (from .ct2/config/harness.yaml git_strategy):
+#   - branch-per-ticket : ensure feat/{id}-{slug} (or frontmatter-declared branch) exists & checked out
+#   - direct-to-main    : ensure base branch is checked out
+#   - none              : no-op
+#
+# Fail-soft on git errors (push/fetch/etc); abort only on dirty working tree.
+#
+# Full contract: spec/git-workflow.md
+
+set -euo pipefail
+
+CT2_DIR="${PWD}/.ct2"
+
+if [[ ! -d "$CT2_DIR" ]]; then
+  echo "ct2-git-start: error — .ct2/ not found in ${PWD}" >&2
+  exit 1
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: ct2-git-start <ticket-id-or-filename>" >&2
+  exit 1
+fi
+
+ARG="$1"
+
+# ── Read a flat-YAML key from harness.yaml ────────────────────────────────────
+_read_key() {
+  local key="$1" default="$2"
+  python3 - "$key" "$default" <<'PYEOF'
+import re, sys
+key, default = sys.argv[1], sys.argv[2]
+try:
+    c = open('.ct2/config/harness.yaml').read()
+    m = re.search(rf'^{re.escape(key)}:\s*(\S+)', c, re.MULTILINE)
+    print(m.group(1) if m else default)
+except Exception:
+    print(default)
+PYEOF
+}
+
+STRATEGY=$(_read_key git_strategy branch-per-ticket)
+DEFAULT_BASE=$(_read_key git_default_base auto)
+
+if [[ "$STRATEGY" == "none" ]]; then
+  exit 0
+fi
+
+# ── Require git repo (fail-soft) ──────────────────────────────────────────────
+if ! git rev-parse --git-dir &>/dev/null; then
+  echo "ct2-git-start: warning — not a git repository; skipping git setup" >&2
+  exit 0
+fi
+
+# ── Guard: dirty working tree is a hard stop ─────────────────────────────────
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "ct2-git-start: error — working tree has uncommitted changes" >&2
+  echo "  commit, stash, or discard changes before picking up a new ticket" >&2
+  git status --short >&2
+  exit 1
+fi
+
+# ── Resolve ticket file ───────────────────────────────────────────────────────
+find_ticket() {
+  local dir="${CT2_DIR}/in-progress" arg="$1"
+  if [[ -f "${dir}/${arg}" ]]; then echo "${dir}/${arg}"; return; fi
+  if [[ -f "${dir}/${arg}.md" ]]; then echo "${dir}/${arg}.md"; return; fi
+  local match; match=$(ls "${dir}/${arg}"-*.md 2>/dev/null | head -1)
+  [[ -n "$match" ]] && echo "$match"
+}
+
+TICKET_PATH=$(find_ticket "$ARG")
+if [[ -z "${TICKET_PATH:-}" ]]; then
+  echo "ct2-git-start: error — ticket '${ARG}' not found in .ct2/in-progress/" >&2
+  exit 1
+fi
+
+TICKET_FILE=$(basename "$TICKET_PATH")
+TICKET_STEM="${TICKET_FILE%.md}"
+
+# ── Determine base branch ─────────────────────────────────────────────────────
+if [[ "$DEFAULT_BASE" == "auto" ]]; then
+  BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/origin/||' || true)
+  if [[ -z "${BASE:-}" ]]; then
+    for cand in main master develop; do
+      if git show-ref --verify --quiet "refs/heads/${cand}"; then
+        BASE="$cand"; break
+      fi
+    done
+  fi
+  BASE="${BASE:-main}"
+else
+  BASE="$DEFAULT_BASE"
+fi
+
+# ── direct-to-main: stay on base, done ────────────────────────────────────────
+if [[ "$STRATEGY" == "direct-to-main" ]]; then
+  CURRENT=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  if [[ "$CURRENT" != "$BASE" ]]; then
+    if git show-ref --verify --quiet "refs/heads/${BASE}"; then
+      git checkout "$BASE" >&2
+    else
+      echo "ct2-git-start: warning — base branch '${BASE}' not found; staying on ${CURRENT}" >&2
+    fi
+  fi
+  echo "ct2-git-start: ${TICKET_FILE} on base branch ${BASE} (direct-to-main)"
+  exit 0
+fi
+
+# ── branch-per-ticket: resolve branch name ───────────────────────────────────
+# Prefer frontmatter `branch:` unless it is the template placeholder.
+BRANCH=$(python3 - "$TICKET_PATH" <<'PYEOF'
+import re, sys
+c = open(sys.argv[1]).read()
+m = re.search(r'^branch:\s*(\S+)', c, re.MULTILINE)
+val = m.group(1) if m else ''
+# Treat as unset if null/empty OR matches the `feat/000-...` template stub
+if val in ('', 'null', '~') or re.match(r'^feat/0+-?$', val):
+    print('')
+else:
+    print(val)
+PYEOF
+)
+[[ -z "$BRANCH" ]] && BRANCH="feat/${TICKET_STEM}"
+
+# ── Create or checkout ────────────────────────────────────────────────────────
+CURRENT=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
+if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
+  if [[ "$CURRENT" != "$BRANCH" ]]; then
+    git checkout "$BRANCH" >&2
+  fi
+elif git ls-remote --exit-code --heads origin "$BRANCH" &>/dev/null; then
+  git fetch origin "${BRANCH}:${BRANCH}" >&2 || true
+  git checkout "$BRANCH" >&2
+else
+  git fetch origin "$BASE" 2>/dev/null || true
+  if git show-ref --verify --quiet "refs/remotes/origin/${BASE}"; then
+    git checkout -b "$BRANCH" "origin/${BASE}" >&2
+  elif git show-ref --verify --quiet "refs/heads/${BASE}"; then
+    git checkout -b "$BRANCH" "$BASE" >&2
+  else
+    echo "ct2-git-start: warning — base '${BASE}' not found; branching from current HEAD" >&2
+    git checkout -b "$BRANCH" >&2
+  fi
+fi
+
+# ── Normalize `branch:` field in ticket frontmatter ──────────────────────────
+python3 - "$TICKET_PATH" "$BRANCH" <<'PYEOF'
+import re, sys
+path, branch = sys.argv[1], sys.argv[2]
+c = open(path).read()
+if re.search(r'^branch:', c, re.MULTILINE):
+    c = re.sub(r'^(branch:\s*).*$', rf'\g<1>{branch}', c, count=1, flags=re.MULTILINE)
+    open(path, 'w').write(c)
+PYEOF
+
+echo "ct2-git-start: ${TICKET_FILE} on branch ${BRANCH}"

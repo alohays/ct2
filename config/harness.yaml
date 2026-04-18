@@ -21,3 +21,13 @@ lens_cx:
   poll_interval_sec: 180          # How often lens-cx scans in-review/ (TUI loop or headless daemon)
                                   # Codex is unrelated to Anthropic cache; this value is chosen
                                   # purely for reaction latency vs fs-scan cost.
+
+# ── Git workflow ──────────────────────────────────────────────────────────────
+# Flat keys (not nested) so existing regex-based YAML readers work unchanged.
+# See spec/git-workflow.md for the full contract.
+git_strategy: branch-per-ticket   # branch-per-ticket | direct-to-main | none
+git_default_base: auto            # auto (detect from origin/HEAD) | explicit branch name
+git_auto_merge_on_approval: false # true = reconciler squash-merges PR on dual-approval
+git_merge_method: squash          # squash | merge | rebase
+git_commit_trailer_style: none    # none | structured (global CLAUDE.md decision trailers)
+git_push_on_commit: true          # push after each commit (false = batch push at submit)

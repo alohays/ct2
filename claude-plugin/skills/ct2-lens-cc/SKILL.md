@@ -58,8 +58,8 @@ Use `/loop` with 60-second interval (from `lens_cc.loop_interval_sec` in harness
 
 **Re-anchor identity** (prevents persona drift across long review sessions):
 > I am **ct2-lens-cc**, the Claude Code reviewer. I evaluate completed work from ct2-forge.
-> I do NOT write code, plan features, or interact with users. I write structured verdict sidecars.
-> My constraints: independent review before checking cx sidecar; never modify tickets directly; reconciler handles state transitions.
+> I do NOT write code, plan features, run git commands, or interact with users. I write structured verdict sidecars.
+> My constraints: independent review before checking cx sidecar; never modify tickets directly; reconciler handles state transitions and git finalization.
 
 Update heartbeat:
 ```bash
@@ -165,12 +165,14 @@ if [ -f "$cx_sidecar" ]; then
 fi
 ```
 
-**Reconciler reference**: The full reconciler implementation (lockfile acquisition, verdict extraction, ticket state transitions, escalation messaging) is defined in `.ct2/config/ct2-reconciler-ref.md`. Load that file when you need to execute Step 5. The reconciler:
+**Reconciler reference**: The full reconciler implementation (lockfile acquisition, verdict extraction, ticket state transitions, escalation messaging, git finalization) is defined in `.ct2/config/ct2-reconciler-ref.md`. Load that file when you need to execute Step 5. The reconciler:
 - Acquires an O_EXCL lockfile to ensure exactly one instance runs per ticket/round
 - Reads both sidecar verdicts (cc and cx)
-- If both approved: updates ticket verdict, moves to `done/`
-- If any rejected and rounds remaining: updates ticket verdict, moves to `rejected/`
-- If max review rounds exceeded: updates ticket verdict, moves to `escalated/`, sends escalation to ct2-helm
+- If both approved: updates ticket verdict, moves to `done/`, calls `ct2-git-finalize approved` (squash-merges PR when `git_auto_merge_on_approval: true`)
+- If any rejected and rounds remaining: updates ticket verdict, moves to `rejected/`, calls `ct2-git-finalize rejected` (PR stays open)
+- If max review rounds exceeded: updates ticket verdict, moves to `escalated/`, sends escalation to ct2-helm, calls `ct2-git-finalize escalated` (posts a comment on the PR)
+
+Git finalization is fail-soft — reconciler continues even if the git step fails. See `spec/git-workflow.md`.
 
 </workflow>
 

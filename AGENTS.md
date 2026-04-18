@@ -42,6 +42,7 @@ Manual verification: `ct2-init` in a scratch directory, author a ticket, `ct2-se
 | Ticket YAML + body format | `spec/ticket-format.md` |
 | Dual-review + inbox + reconciler | `spec/review-protocol.md` |
 | `.ct2/` directory layout | `spec/directory-structure.md` |
+| Git branch/commit/PR lifecycle | `spec/git-workflow.md` |
 | Claude reviewer mandate | `config/ct2-lens-cc-role.md` |
 | Codex reviewer mandate | `config/ct2-lens-cx-role.md` |
 

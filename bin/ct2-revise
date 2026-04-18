@@ -109,6 +109,13 @@ else
   echo "  (no review sidecars to archive)"
 fi
 
+# ── Git cleanup (close PR, delete branch) ────────────────────────────────────
+# Runs before the frontmatter reset so ct2-git-cleanup can read the pr: URL.
+# Fail-soft: failures here must not block ticket revival.
+if command -v ct2-git-cleanup &>/dev/null; then
+  ct2-git-cleanup "$TICKET_STEM" || echo "  (ct2-git-cleanup returned non-zero; continuing)" >&2
+fi
+
 # ── Reset frontmatter in-place ───────────────────────────────────────────────
 # Done on the source file *before* the mv, so a crash between steps leaves the
 # ticket in escalated/ with old frontmatter (recoverable) rather than in draft/
@@ -127,6 +134,7 @@ c = re.sub(r'^(review-round:\s*).*$', r'\g<1>0',        c, flags=re.MULTILINE)
 c = re.sub(r'^(verdict:\s*).*$',      r'\g<1>pending',  c, flags=re.MULTILINE)
 c = re.sub(r'^(updated:\s*).*$',     rf'\g<1>{now}',    c, flags=re.MULTILINE)
 c = re.sub(r'^(sealed:\s*).*$',       r'\g<1>null',     c, flags=re.MULTILINE)
+c = re.sub(r'^(pr:\s*).*$',           r'\g<1>null',     c, flags=re.MULTILINE)
 
 # review-status nested fields — reset both reviewers.
 # Match the full 2-line block (status line + sidecar line) under each lens

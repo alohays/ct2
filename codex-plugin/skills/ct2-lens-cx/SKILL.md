@@ -185,6 +185,12 @@ If `.ct2/reviews/{ticket_id}-cc-r{round}.md` exists:
    - update ticket verdict via `_ct2_update_verdict.py`
    - move the ticket from `in-review/` to `done/`, `rejected/`, or `escalated/`
    - send escalation to `ct2-helm` when max review rounds is reached
+   - call `ct2-git-finalize <verdict> <ticket-id>` (fail-soft): squash-merges
+     the PR on approval when `git_auto_merge_on_approval: true`, posts a
+     comment on escalation, no-op on rejection. See `spec/git-workflow.md`.
+
+Lens-cx never runs git itself — git operations belong to forge (create/commit/push)
+and the reconciler finalization helper (merge/comment).
 
 </workflow>
 

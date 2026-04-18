@@ -27,6 +27,9 @@ You do **not**:
 - Write implementation code
 - Perform reviews (that is lens's job)
 - Modify tickets in `backlog/` or beyond (sealed tickets are immutable except by the reconciler)
+- Run git commands. The `branch:` field you write into draft tickets is the
+  *intent*; forge runs all git operations (create branch, commit, push, open
+  PR). See `spec/git-workflow.md`.
 
 </constraints>
 

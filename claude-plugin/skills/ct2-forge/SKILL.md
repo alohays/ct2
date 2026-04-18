@@ -144,6 +144,11 @@ Scan `.ct2/rejected/` for tickets with `review-round < max_review_rounds`:
   ```bash
   date -u > ".ct2/.meta/${ticket_id}.started"
   ```
+- **Resume the git branch** (checkout existing ticket branch — commits from
+  previous rounds are preserved, rework commits will append):
+  ```bash
+  ct2-git-start "${ticket_id}"
+  ```
 - **Proceed to Step 6** (rework based on reviewer feedback)
 
 ### Step 5: Pick from Backlog
@@ -186,7 +191,15 @@ f. **Append a one-line event to the forge log** so long autonomous runs leave an
    ```
    Use `from=rejected round=${n}` when the ticket came from Step 4 instead.
 
-g. If no eligible tickets in backlog and no rejected tickets: use a longer loop interval (idle).
+g. **Prepare the git workspace** for this ticket (creates feat/{id}-{slug}
+   branch under `branch-per-ticket`, no-op under `direct-to-main` / `none`):
+   ```bash
+   ct2-git-start "${ticket_id}"
+   ```
+   If this exits non-zero with "working tree has uncommitted changes", pause
+   and escalate — do not auto-stash another actor's work.
+
+h. If no eligible tickets in backlog and no rejected tickets: use a longer loop interval (idle).
 
 ### Step 6: Execute Work
 For the current `in-progress/` ticket:
@@ -212,6 +225,11 @@ For the current `in-progress/` ticket:
 
 4. **Implement the changes** using your full tool suite (Bash, Read, Write, Edit, Glob, Grep)
 
+   **Commit as you go** — do not batch all changes into one final commit. See the
+   `git-workflow` section below for granularity heuristics and the commit message
+   template. Each AC flip from `[ ]` to `[x]` or each logical unit (extract,
+   module bootstrap, green test suite in isolation) is a natural commit boundary.
+
 5. **Verify all ACs are satisfied**:
    - Run tests if a test command is specified
    - Verify each AC item can be checked `[x]`
@@ -236,26 +254,38 @@ For the current `in-progress/` ticket:
 ### Step 7: Complete Ticket
 When all AC items are `[x]`:
 
-1. Update ticket frontmatter:
+1. **Final commit** for any uncommitted AC-completing changes, then push +
+   open the PR. `ct2-git-submit` must run *before* the move to `in-review/`
+   because it writes the PR URL back into the ticket's `pr:` field:
+   ```bash
+   # ensure nothing is uncommitted
+   git status --short
+   # push + open/update PR, record pr: URL in frontmatter
+   ct2-git-submit "${ticket_id}"
+   ```
+   `ct2-git-submit` is fail-soft: if push or `gh` fails, the ticket still
+   proceeds — commits remain local and the team can investigate.
+
+2. Update ticket frontmatter:
    - `status: in-review`
    - `updated: {now}`
 
-2. Move to in-review:
+3. Move to in-review:
    ```bash
    mv .ct2/in-progress/{ticket} .ct2/in-review/{ticket}
    ```
 
-3. Clear the circuit-breaker stamp (timer is not running while lens reviews):
+4. Clear the circuit-breaker stamp (timer is not running while lens reviews):
    ```bash
    rm -f ".ct2/.meta/${ticket_id}.started"
    ```
 
-4. Append one line to the forge log for audit:
+5. Append one line to the forge log for audit:
    ```bash
    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] submit ticket=${ticket_id} -> in-review" >> .ct2/logs/ct2-forge.log
    ```
 
-5. Log in-context: "Ticket {id} moved to in-review. Awaiting dual approval."
+6. Log in-context: "Ticket {id} moved to in-review. Awaiting dual approval."
 
 ### Step 8: Loop Pacing
 
@@ -348,6 +378,63 @@ MSGEOF
 
 ---
 
+<workflow id="git-workflow">
+
+## Git Workflow (branch-per-ticket default)
+
+See `spec/git-workflow.md` for the full contract. Forge is the only role that
+touches git. The lifecycle mirrors the Kanban states:
+
+| Kanban transition            | Forge git action                                 |
+|-----------------------------|--------------------------------------------------|
+| backlog → in-progress       | `ct2-git-start` (create branch from base)         |
+| rejected → in-progress      | `ct2-git-start` (checkout existing branch)        |
+| in-progress work            | `git add/commit` per AC + logical unit            |
+| in-progress → in-review     | `ct2-git-submit` (push + open/update PR)          |
+
+### Commit granularity
+
+Commit whenever either is true:
+- **An AC flips** from `[ ]` to `[x]`.
+- **A logical unit reaches a stable state**: an extracted function lands, a new
+  file/module is bootstrapped, a test suite passes in isolation.
+
+Never batch an entire ticket into a single end-of-work commit. Rework after
+a rejection **appends new commits** — do NOT amend or rebase published
+history. Squash happens at merge time (controlled by `git_merge_method` in
+harness.yaml), so per-commit noise on the branch does not pollute the base.
+
+### Commit message template
+
+```
+<type>(t-<id>): <imperative subject, ≤50 chars>
+
+<Why — wrap at 72. Motivation, alternatives considered, constraint that
+shaped this approach. Skip the body only for truly trivial edits.>
+
+Refs: .ct2/in-progress/<ticket-file>
+```
+
+- `type`: `feat | fix | refactor | docs | test | chore | perf | build | ci`
+- `scope` is always `t-<id>` (three-digit, e.g., `t-003`). This makes
+  `git log --grep t-003` a reliable per-ticket view.
+- When `git_commit_trailer_style: structured` is set, append the decision
+  trailers from the user's global CLAUDE.md (`Constraint:`, `Rejected:`,
+  `Confidence:`, `Scope-risk:`). Default is `none` — leave them off unless
+  harness.yaml opts in.
+
+### Fail-soft guarantees
+
+All `ct2-git-*` helpers fail soft on git/PR errors:
+- No git repo, no remote, or `gh` missing → helper no-ops with a warning
+  and the ticket still proceeds.
+- **Hard stop**: `ct2-git-start` aborts if the working tree is dirty at
+  pickup. Do not auto-stash; escalate to helm.
+
+</workflow>
+
+---
+
 <access-matrix>
 
 ## What You Can and Cannot Touch
@@ -356,7 +443,7 @@ MSGEOF
 |----------|---------|
 | Project source files | Full read/write |
 | `.ct2/backlog/` | Read; move to `in-progress/` |
-| `.ct2/in-progress/` | Full read/write (update ACs, notes) |
+| `.ct2/in-progress/` | Full read/write (update ACs, notes, `branch:`/`pr:` fields via `ct2-git-*`) |
 | `.ct2/in-review/` | Move there when done; do not modify after |
 | `.ct2/rejected/` | Read; move to `in-progress/` on pickup |
 | `.ct2/done/` | Read-only |
@@ -366,5 +453,6 @@ MSGEOF
 | `.ct2/inbox/ct2-helm/` | Send messages only |
 | `.ct2/.meta/ct2-forge.heartbeat` | Write (heartbeat) |
 | `.ct2/.meta/{id}.started` | Write (pickup stamp for circuit breaker; remove on complete) |
+| Git branches (project repo) | Create/checkout/commit/push via `ct2-git-start` and `ct2-git-submit` |
 
 </access-matrix>

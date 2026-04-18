@@ -85,7 +85,9 @@ fi
 
 # ── Exclude .ct2/ from git (without modifying .gitignore) ────────────────────
 # Use git rev-parse to handle both normal repos and worktrees (.git as file)
+IS_GIT_REPO=false
 if git -C "$PROJECT_DIR" rev-parse --git-common-dir &>/dev/null; then
+  IS_GIT_REPO=true
   GIT_DIR_RESOLVED="$(git -C "$PROJECT_DIR" rev-parse --git-common-dir)"
   # Make absolute if relative
   [[ "$GIT_DIR_RESOLVED" == /* ]] || GIT_DIR_RESOLVED="${PROJECT_DIR}/${GIT_DIR_RESOLVED}"
@@ -98,6 +100,47 @@ if git -C "$PROJECT_DIR" rev-parse --git-common-dir &>/dev/null; then
 else
   echo "ct2-init: warning — not a git repository; .ct2/ will not be git-excluded" >&2
   echo "  CT2 workflows (forge, lens) depend on git. Consider initializing git first." >&2
+fi
+
+# ── Choose git workflow strategy ─────────────────────────────────────────────
+# On fresh init + TTY, prompt. Otherwise fall back to a sensible default.
+# See spec/git-workflow.md for the contract.
+if [[ "$REPAIR" == false ]]; then
+  if [[ "$IS_GIT_REPO" == false ]]; then
+    GIT_STRATEGY="none"
+    echo "ct2-init: git_strategy=none (not a git repository)"
+  elif [[ -t 0 ]] && [[ -t 1 ]]; then
+    echo ""
+    echo "Choose the git workflow strategy for this project:"
+    echo "  1) branch-per-ticket  — each ticket on feat/{id}-{slug}, PR opened at in-review (default, recommended)"
+    echo "  2) direct-to-main     — forge commits directly to the base branch (no PR; single-author only)"
+    echo "  3) none               — CT2 performs no git operations"
+    echo ""
+    printf "Selection [1]: "
+    read -r CHOICE || CHOICE=""
+    case "${CHOICE:-1}" in
+      1|"") GIT_STRATEGY="branch-per-ticket" ;;
+      2)    GIT_STRATEGY="direct-to-main"   ;;
+      3)    GIT_STRATEGY="none"             ;;
+      *)
+        echo "ct2-init: invalid choice '${CHOICE}'; using default branch-per-ticket" >&2
+        GIT_STRATEGY="branch-per-ticket"
+        ;;
+    esac
+    echo "ct2-init: git_strategy=${GIT_STRATEGY}"
+  else
+    GIT_STRATEGY="branch-per-ticket"
+  fi
+
+  # Persist the selection by patching .ct2/config/harness.yaml in place.
+  python3 - "${CT2_DIR}/config/harness.yaml" "$GIT_STRATEGY" <<'PYEOF'
+import re, sys
+path, strat = sys.argv[1], sys.argv[2]
+c = open(path).read()
+if re.search(r'^git_strategy:', c, re.MULTILINE):
+    c = re.sub(r'^(git_strategy:\s*)\S+', rf'\g<1>{strat}', c, count=1, flags=re.MULTILINE)
+    open(path, 'w').write(c)
+PYEOF
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────

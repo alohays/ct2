@@ -27,8 +27,8 @@ priority: high           # critical | high | medium | low
 created: 2026-04-13T10:00:00Z
 updated: 2026-04-13T14:30:00Z
 sealed: null             # ISO8601 timestamp; set on draft→backlog by ct2-seal; reset to null by ct2-revise
-branch: feat/003-db-pool # Git working branch name
-pr: null                 # PR URL recorded after completion
+branch: feat/003-db-pool # Git working branch name (see spec/git-workflow.md)
+pr: null                 # PR URL; written by ct2-git-submit, reset to null by ct2-revise
 review-round: 0          # Current review round; incremented by forge on each rejected→in-progress pickup
 estimated-scope: small   # small | medium | large
 touched-files:           # Files/directories forge expects to modify (overlap detection)
@@ -68,7 +68,7 @@ marked below, bringing the ticket back to its `draft/` shape.
 | `review-round`      | ct2-forge (incremented on rejected pickup); ct2-revise (reset to `0`)             |
 | `review-status.*`   | reconciler (automatic updates); ct2-revise (reset to `pending` / `null`)          |
 | `verdict`           | reconciler (automatic verdicts); ct2-revise (reset to `pending`)                  |
-| `branch`, `pr`      | ct2-forge                                                                         |
+| `branch`, `pr`      | ct2-forge (via `ct2-git-start` / `ct2-git-submit`); `ct2-revise` resets `pr` to `null` |
 | `updated`           | any actor that modifies the ticket                                                |
 
 ## Ticket Body Structure

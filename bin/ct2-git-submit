@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# ct2-git-submit — Push the ticket branch and open/update its PR.
+# Usage: ct2-git-submit <ticket-id-or-filename>
+#
+# Called by ct2-forge at Step 7 (complete), *before* moving the ticket into
+# .ct2/in-review/. Preconditions: ticket is in .ct2/in-progress/, the final
+# commits are already made, and we are on the ticket branch.
+#
+# Actions:
+#   1. Push branch to origin (fail-soft)
+#   2. If gh is available and PR does not exist for this branch: create it
+#      and record the URL in the ticket's `pr:` field.
+#   3. If gh is available and PR exists: push updates the PR automatically;
+#      no frontmatter change needed.
+#
+# No-op for strategies `direct-to-main` and `none`.
+#
+# Full contract: spec/git-workflow.md
+
+set -euo pipefail
+
+CT2_DIR="${PWD}/.ct2"
+
+if [[ ! -d "$CT2_DIR" ]]; then
+  echo "ct2-git-submit: error — .ct2/ not found in ${PWD}" >&2
+  exit 1
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: ct2-git-submit <ticket-id-or-filename>" >&2
+  exit 1
+fi
+
+ARG="$1"
+
+_read_key() {
+  local key="$1" default="$2"
+  python3 - "$key" "$default" <<'PYEOF'
+import re, sys
+key, default = sys.argv[1], sys.argv[2]
+try:
+    c = open('.ct2/config/harness.yaml').read()
+    m = re.search(rf'^{re.escape(key)}:\s*(\S+)', c, re.MULTILINE)
+    print(m.group(1) if m else default)
+except Exception:
+    print(default)
+PYEOF
+}
+
+STRATEGY=$(_read_key git_strategy branch-per-ticket)
+
+if [[ "$STRATEGY" != "branch-per-ticket" ]]; then
+  # direct-to-main and none: nothing to submit
+  exit 0
+fi
+
+if ! git rev-parse --git-dir &>/dev/null; then
+  echo "ct2-git-submit: warning — not a git repository; skipping" >&2
+  exit 0
+fi
+
+# ── Resolve ticket ────────────────────────────────────────────────────────────
+find_ticket() {
+  local dir="${CT2_DIR}/in-progress" arg="$1"
+  if [[ -f "${dir}/${arg}" ]]; then echo "${dir}/${arg}"; return; fi
+  if [[ -f "${dir}/${arg}.md" ]]; then echo "${dir}/${arg}.md"; return; fi
+  local match; match=$(ls "${dir}/${arg}"-*.md 2>/dev/null | head -1)
+  [[ -n "$match" ]] && echo "$match"
+}
+
+TICKET_PATH=$(find_ticket "$ARG")
+if [[ -z "${TICKET_PATH:-}" ]]; then
+  echo "ct2-git-submit: error — ticket '${ARG}' not found in .ct2/in-progress/" >&2
+  exit 1
+fi
+
+TICKET_FILE=$(basename "$TICKET_PATH")
+TICKET_STEM="${TICKET_FILE%.md}"
+
+# ── Extract branch, pr, title from frontmatter ───────────────────────────────
+BRANCH=$(python3 - "$TICKET_PATH" <<'PYEOF'
+import re, sys
+c = open(sys.argv[1]).read()
+m = re.search(r'^branch:\s*(\S+)', c, re.MULTILINE)
+print(m.group(1) if m else '')
+PYEOF
+)
+PR_URL=$(python3 - "$TICKET_PATH" <<'PYEOF'
+import re, sys
+c = open(sys.argv[1]).read()
+m = re.search(r'^pr:\s*(\S+)', c, re.MULTILINE)
+val = m.group(1) if m else ''
+print('' if val in ('', 'null', '~') else val)
+PYEOF
+)
+TITLE=$(python3 - "$TICKET_PATH" <<'PYEOF'
+import re, sys
+c = open(sys.argv[1]).read()
+m = re.search(r'^title:\s*"?(.+?)"?\s*$', c, re.MULTILINE)
+print((m.group(1) if m else '').strip())
+PYEOF
+)
+[[ -z "$BRANCH" ]] && BRANCH="feat/${TICKET_STEM}"
+[[ -z "$TITLE" ]] && TITLE="$TICKET_STEM"
+
+# ── Ensure we are on the right branch ─────────────────────────────────────────
+CURRENT=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+if [[ "$CURRENT" != "$BRANCH" ]]; then
+  echo "ct2-git-submit: warning — expected branch ${BRANCH}, currently on ${CURRENT}" >&2
+  echo "  skipping submit; forge should reconcile manually" >&2
+  exit 0
+fi
+
+# ── Push (fail-soft) ──────────────────────────────────────────────────────────
+if git remote get-url origin &>/dev/null; then
+  if ! git push -u origin "$BRANCH" 2>&1; then
+    echo "ct2-git-submit: warning — push failed; commits remain local" >&2
+    exit 0
+  fi
+else
+  echo "ct2-git-submit: warning — no 'origin' remote; skipping push" >&2
+  exit 0
+fi
+
+# ── Open or update PR via gh ─────────────────────────────────────────────────
+if ! command -v gh &>/dev/null; then
+  echo "ct2-git-submit: note — gh CLI unavailable; skipping PR creation" >&2
+  exit 0
+fi
+
+# Determine base branch for the PR
+DEFAULT_BASE=$(_read_key git_default_base auto)
+if [[ "$DEFAULT_BASE" == "auto" ]]; then
+  BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/origin/||' || echo "main")
+else
+  BASE="$DEFAULT_BASE"
+fi
+
+if [[ -n "$PR_URL" ]]; then
+  # PR already exists — push above already refreshed it.
+  echo "ct2-git-submit: PR already exists at ${PR_URL}"
+  exit 0
+fi
+
+# Check if a PR for this branch already exists (e.g., opened outside CT2)
+EXISTING=$(gh pr list --head "$BRANCH" --state open --json url -q '.[0].url' 2>/dev/null || echo "")
+if [[ -n "$EXISTING" ]]; then
+  PR_URL="$EXISTING"
+else
+  # Build PR body from ticket
+  BODY_TMP=$(mktemp "${CT2_DIR}/.tmp/pr-body-XXXXXX.md")
+  python3 - "$TICKET_PATH" "$TICKET_FILE" > "$BODY_TMP" <<'PYEOF'
+import re, sys
+path, fname = sys.argv[1], sys.argv[2]
+c = open(path).read()
+# Strip frontmatter
+body = re.sub(r'^---\n.*?\n---\n', '', c, count=1, flags=re.DOTALL)
+print(f"Ticket: `.ct2/in-review/{fname}` (see CT2 kanban)\n")
+print(body.strip())
+print("\n---")
+print("🤖 Opened by ct2-forge via ct2-git-submit.")
+PYEOF
+
+  if PR_URL=$(gh pr create --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$BODY_TMP" 2>&1); then
+    :
+  else
+    echo "ct2-git-submit: warning — gh pr create failed:" >&2
+    echo "$PR_URL" | sed 's/^/  /' >&2
+    rm -f "$BODY_TMP"
+    exit 0
+  fi
+  rm -f "$BODY_TMP"
+fi
+
+# ── Record PR URL in ticket frontmatter ──────────────────────────────────────
+python3 - "$TICKET_PATH" "$PR_URL" <<'PYEOF'
+import re, sys
+path, url = sys.argv[1], sys.argv[2]
+c = open(path).read()
+if re.search(r'^pr:', c, re.MULTILINE):
+    c = re.sub(r'^(pr:\s*).*$', rf'\g<1>{url}', c, count=1, flags=re.MULTILINE)
+else:
+    # Insert after `branch:` line
+    c = re.sub(r'^(branch:.*\n)', rf'\g<1>pr: {url}\n', c, count=1, flags=re.MULTILINE)
+open(path, 'w').write(c)
+PYEOF
+
+echo "ct2-git-submit: ${TICKET_FILE} submitted — PR ${PR_URL}"

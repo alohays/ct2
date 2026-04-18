@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# ct2-git-finalize — Apply the git-side outcome of a reconciler verdict.
+# Usage: ct2-git-finalize <verdict> <ticket-id-or-filename>
+#
+# <verdict> ∈ { approved | rejected | escalated }
+#
+# Called by the reconciler after it has already moved the ticket into its
+# final directory (.ct2/done, .ct2/rejected, .ct2/escalated). Behavior:
+#
+#   approved:
+#     - If git_auto_merge_on_approval=true: merge PR with git_merge_method
+#       (squash|merge|rebase) and delete remote branch.
+#     - Else: leave PR open for the human to merge.
+#
+#   rejected: no-op (PR stays open; forge will push rework on next pickup).
+#
+#   escalated: post a comment on the PR explaining the circuit-breaker trip,
+#     keep PR open.
+#
+# Fail-soft everywhere. Reconciler must not be blocked by git failures.
+#
+# Full contract: spec/git-workflow.md
+
+set -euo pipefail
+
+CT2_DIR="${PWD}/.ct2"
+
+if [[ ! -d "$CT2_DIR" ]]; then
+  exit 0
+fi
+
+if [[ $# -lt 2 ]]; then
+  echo "Usage: ct2-git-finalize <verdict> <ticket-id-or-filename>" >&2
+  exit 1
+fi
+
+VERDICT="$1"
+ARG="$2"
+
+_read_key() {
+  local key="$1" default="$2"
+  python3 - "$key" "$default" <<'PYEOF'
+import re, sys
+key, default = sys.argv[1], sys.argv[2]
+try:
+    c = open('.ct2/config/harness.yaml').read()
+    m = re.search(rf'^{re.escape(key)}:\s*(\S+)', c, re.MULTILINE)
+    print(m.group(1) if m else default)
+except Exception:
+    print(default)
+PYEOF
+}
+
+STRATEGY=$(_read_key git_strategy branch-per-ticket)
+if [[ "$STRATEGY" != "branch-per-ticket" ]]; then
+  exit 0
+fi
+
+if ! git rev-parse --git-dir &>/dev/null; then
+  exit 0
+fi
+
+# ── Locate ticket across terminal directories ────────────────────────────────
+find_ticket() {
+  local arg="$1"
+  for state in done rejected escalated in-review; do
+    local dir="${CT2_DIR}/${state}"
+    if [[ -f "${dir}/${arg}" ]]; then echo "${dir}/${arg}"; return; fi
+    if [[ -f "${dir}/${arg}.md" ]]; then echo "${dir}/${arg}.md"; return; fi
+    local match; match=$(ls "${dir}/${arg}"-*.md 2>/dev/null | head -1)
+    [[ -n "$match" ]] && { echo "$match"; return; }
+  done
+}
+
+TICKET_PATH=$(find_ticket "$ARG")
+if [[ -z "${TICKET_PATH:-}" ]]; then
+  echo "ct2-git-finalize: warning — ticket '${ARG}' not found in done/rejected/escalated/in-review" >&2
+  exit 0
+fi
+
+TICKET_FILE=$(basename "$TICKET_PATH")
+TICKET_STEM="${TICKET_FILE%.md}"
+
+BRANCH=$(python3 - "$TICKET_PATH" <<'PYEOF'
+import re, sys
+c = open(sys.argv[1]).read()
+m = re.search(r'^branch:\s*(\S+)', c, re.MULTILINE)
+print(m.group(1) if m else '')
+PYEOF
+)
+PR_URL=$(python3 - "$TICKET_PATH" <<'PYEOF'
+import re, sys
+c = open(sys.argv[1]).read()
+m = re.search(r'^pr:\s*(\S+)', c, re.MULTILINE)
+val = m.group(1) if m else ''
+print('' if val in ('', 'null', '~') else val)
+PYEOF
+)
+[[ -z "$BRANCH" ]] && BRANCH="feat/${TICKET_STEM}"
+
+if ! command -v gh &>/dev/null; then
+  echo "ct2-git-finalize: note — gh CLI unavailable; cannot ${VERDICT} PR for ${TICKET_FILE}" >&2
+  exit 0
+fi
+
+case "$VERDICT" in
+  approved)
+    AUTO_MERGE=$(_read_key git_auto_merge_on_approval false)
+    if [[ "$AUTO_MERGE" != "true" ]]; then
+      echo "ct2-git-finalize: ${TICKET_FILE} approved — auto-merge disabled; PR left open"
+      exit 0
+    fi
+    METHOD=$(_read_key git_merge_method squash)
+    MERGE_FLAG="--squash"
+    case "$METHOD" in
+      merge)  MERGE_FLAG="--merge"  ;;
+      rebase) MERGE_FLAG="--rebase" ;;
+      squash) MERGE_FLAG="--squash" ;;
+    esac
+    # Prefer PR URL when recorded; fall back to branch selector
+    SELECTOR="${PR_URL:-$BRANCH}"
+    if gh pr merge "$SELECTOR" "$MERGE_FLAG" --delete-branch 2>&1 | sed 's/^/  /' >&2; then
+      echo "ct2-git-finalize: ${TICKET_FILE} merged (${METHOD})"
+    else
+      echo "ct2-git-finalize: warning — gh pr merge failed for ${TICKET_FILE}" >&2
+    fi
+    ;;
+
+  rejected)
+    # PR stays open; forge will push more commits on next pickup. No-op.
+    :
+    ;;
+
+  escalated)
+    SELECTOR="${PR_URL:-$BRANCH}"
+    gh pr comment "$SELECTOR" --body \
+"🚧 **CT2 circuit breaker tripped** — ticket moved to \`.ct2/escalated/${TICKET_FILE}\`.
+
+The dual-review pipeline exceeded \`max_review_rounds\`. A human should either:
+- Run \`ct2-revise ${TICKET_STEM}\` to revise requirements and restart, or
+- Close this PR and the ticket manually if the work is no longer needed." \
+      2>&1 | sed 's/^/  /' >&2 || {
+        echo "ct2-git-finalize: warning — gh pr comment failed for ${TICKET_FILE}" >&2
+      }
+    ;;
+
+  *)
+    echo "ct2-git-finalize: unknown verdict '${VERDICT}'" >&2
+    exit 1
+    ;;
+esac

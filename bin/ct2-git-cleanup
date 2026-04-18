@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# ct2-git-cleanup — Discard the branch + PR associated with a ticket.
+# Usage: ct2-git-cleanup <ticket-id-or-filename>
+#
+# Called by ct2-revise after frontmatter reset. Semantically this is
+# "this work was wrong; start fresh." The ticket's branch and PR are
+# destroyed so the next forge pickup starts from a clean base.
+#
+# Actions (all fail-soft):
+#   1. If gh available and pr: URL recorded: close the PR with a note.
+#   2. Delete remote branch (origin).
+#   3. Delete local branch.
+#   4. Caller (ct2-revise) clears the `pr:` field in frontmatter.
+#
+# The `branch:` field is preserved — it is a name template and can be reused.
+#
+# Full contract: spec/git-workflow.md
+
+set -euo pipefail
+
+CT2_DIR="${PWD}/.ct2"
+
+if [[ ! -d "$CT2_DIR" ]]; then
+  exit 0
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: ct2-git-cleanup <ticket-id-or-filename>" >&2
+  exit 1
+fi
+
+ARG="$1"
+
+_read_key() {
+  local key="$1" default="$2"
+  python3 - "$key" "$default" <<'PYEOF'
+import re, sys
+key, default = sys.argv[1], sys.argv[2]
+try:
+    c = open('.ct2/config/harness.yaml').read()
+    m = re.search(rf'^{re.escape(key)}:\s*(\S+)', c, re.MULTILINE)
+    print(m.group(1) if m else default)
+except Exception:
+    print(default)
+PYEOF
+}
+
+STRATEGY=$(_read_key git_strategy branch-per-ticket)
+if [[ "$STRATEGY" != "branch-per-ticket" ]]; then
+  exit 0
+fi
+
+if ! git rev-parse --git-dir &>/dev/null; then
+  exit 0
+fi
+
+# ── Locate ticket across all states (revise can be called from escalated/draft) ─
+find_ticket() {
+  local arg="$1"
+  for state in draft escalated rejected in-review in-progress backlog done; do
+    local dir="${CT2_DIR}/${state}"
+    if [[ -f "${dir}/${arg}" ]]; then echo "${dir}/${arg}"; return; fi
+    if [[ -f "${dir}/${arg}.md" ]]; then echo "${dir}/${arg}.md"; return; fi
+    local match; match=$(ls "${dir}/${arg}"-*.md 2>/dev/null | head -1)
+    [[ -n "$match" ]] && { echo "$match"; return; }
+  done
+}
+
+TICKET_PATH=$(find_ticket "$ARG")
+if [[ -z "${TICKET_PATH:-}" ]]; then
+  echo "ct2-git-cleanup: warning — ticket '${ARG}' not found in any state dir" >&2
+  exit 0
+fi
+
+TICKET_FILE=$(basename "$TICKET_PATH")
+TICKET_STEM="${TICKET_FILE%.md}"
+
+BRANCH=$(python3 - "$TICKET_PATH" <<'PYEOF'
+import re, sys
+c = open(sys.argv[1]).read()
+m = re.search(r'^branch:\s*(\S+)', c, re.MULTILINE)
+print(m.group(1) if m else '')
+PYEOF
+)
+PR_URL=$(python3 - "$TICKET_PATH" <<'PYEOF'
+import re, sys
+c = open(sys.argv[1]).read()
+m = re.search(r'^pr:\s*(\S+)', c, re.MULTILINE)
+val = m.group(1) if m else ''
+print('' if val in ('', 'null', '~') else val)
+PYEOF
+)
+[[ -z "$BRANCH" ]] && BRANCH="feat/${TICKET_STEM}"
+
+# ── Close PR if one is recorded ──────────────────────────────────────────────
+if [[ -n "$PR_URL" ]] && command -v gh &>/dev/null; then
+  gh pr close "$PR_URL" --comment \
+"Ticket revised via \`ct2-revise ${TICKET_STEM}\` — this PR's work is superseded. Closing and deleting the branch." \
+    --delete-branch 2>&1 | sed 's/^/  /' >&2 || {
+      echo "ct2-git-cleanup: note — gh pr close failed; will try direct branch delete" >&2
+    }
+fi
+
+# ── Delete remote branch (gh pr close --delete-branch may have handled it) ──
+if git ls-remote --exit-code --heads origin "$BRANCH" &>/dev/null; then
+  git push origin --delete "$BRANCH" 2>&1 | sed 's/^/  /' >&2 || {
+    echo "ct2-git-cleanup: warning — failed to delete remote branch ${BRANCH}" >&2
+  }
+fi
+
+# ── Delete local branch (switch off it first if currently checked out) ──────
+CURRENT=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+if [[ "$CURRENT" == "$BRANCH" ]]; then
+  # Move to base to free the branch for deletion
+  DEFAULT_BASE=$(_read_key git_default_base auto)
+  if [[ "$DEFAULT_BASE" == "auto" ]]; then
+    BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|^refs/remotes/origin/||' || echo "main")
+  else
+    BASE="$DEFAULT_BASE"
+  fi
+  git checkout "$BASE" >&2 2>/dev/null || git checkout - >&2 2>/dev/null || true
+fi
+
+if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
+  git branch -D "$BRANCH" >&2 || {
+    echo "ct2-git-cleanup: warning — failed to delete local branch ${BRANCH}" >&2
+  }
+fi
+
+echo "ct2-git-cleanup: ${TICKET_FILE} branch + PR cleaned"

@@ -170,12 +170,16 @@ If missing, re-run `bash ~/.ct2/install.sh` — it's idempotent.
 
 | Command | Description |
 |---------|-------------|
-| `ct2-init [dir]` | Initialize `.ct2/` in a project directory |
+| `ct2-init [dir]` | Initialize `.ct2/` in a project directory (prompts for git strategy on first run) |
 | `ct2-seal <ticket>` | Validate and move a draft ticket to backlog |
 | `ct2-revise <ticket>` | Archive past sidecars and return an escalated/rejected ticket to `draft/` |
 | `ct2-status [dir]` | Display Kanban board, agent heartbeats, and inbox |
 | `ct2-lens-cx-tui <dir>` | Start the visible Codex TUI reviewer loop |
 | `ct2-lens-cx-daemon <dir>` | Start the legacy headless Codex reviewer polling daemon |
+| `ct2-git-start <ticket>` | Internal. Create/checkout the ticket's branch (called by forge on pickup) |
+| `ct2-git-submit <ticket>` | Internal. Push the branch and open/update the PR (called by forge at in-review) |
+| `ct2-git-finalize <verdict> <ticket>` | Internal. Merge/comment on PR per reconciler verdict |
+| `ct2-git-cleanup <ticket>` | Internal. Close PR and delete the branch (called by `ct2-revise`) |
 
 ## Agent Skills
 

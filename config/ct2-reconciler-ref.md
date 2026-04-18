@@ -55,23 +55,51 @@ except: print('3')" ".ct2/config/harness.yaml")
   if [[ "$cc_v" == "approved" && "$cx_v" == "approved" ]]; then
     _update_verdict "$ticket_file" "approved" "$ticket_id" "$round"
     mv -n "$src" ".ct2/done/${ticket_file}" 2>/dev/null
-    [[ -f "$src" ]] && echo "Reconciler: ERROR — failed to move ${ticket_file} to done/" >&2 \
-                     || echo "Reconciler: ${ticket_file} -> done (cc=approved, cx=approved)"
+    if [[ -f "$src" ]]; then
+      echo "Reconciler: ERROR — failed to move ${ticket_file} to done/" >&2
+    else
+      echo "Reconciler: ${ticket_file} -> done (cc=approved, cx=approved)"
+      _git_finalize "approved" "${ticket_id}"
+    fi
 
   elif (( round + 1 >= max_rounds )); then
     _update_verdict "$ticket_file" "escalated" "$ticket_id" "$round"
     mv -n "$src" ".ct2/escalated/${ticket_file}" 2>/dev/null
-    [[ -f "$src" ]] && echo "Reconciler: ERROR — failed to move ${ticket_file} to escalated/" >&2 \
-                     || { echo "Reconciler: ${ticket_file} -> escalated (max rounds)"; _send_escalation "${ticket_file}" "${round}" "${max_rounds}"; }
+    if [[ -f "$src" ]]; then
+      echo "Reconciler: ERROR — failed to move ${ticket_file} to escalated/" >&2
+    else
+      echo "Reconciler: ${ticket_file} -> escalated (max rounds)"
+      _send_escalation "${ticket_file}" "${round}" "${max_rounds}"
+      _git_finalize "escalated" "${ticket_id}"
+    fi
 
   else
     _update_verdict "$ticket_file" "rejected" "$ticket_id" "$round"
     mv -n "$src" ".ct2/rejected/${ticket_file}" 2>/dev/null
-    [[ -f "$src" ]] && echo "Reconciler: ERROR — failed to move ${ticket_file} to rejected/" >&2 \
-                     || echo "Reconciler: ${ticket_file} -> rejected (cc=${cc_v}, cx=${cx_v})"
+    if [[ -f "$src" ]]; then
+      echo "Reconciler: ERROR — failed to move ${ticket_file} to rejected/" >&2
+    else
+      echo "Reconciler: ${ticket_file} -> rejected (cc=${cc_v}, cx=${cx_v})"
+      _git_finalize "rejected" "${ticket_id}"
+    fi
   fi
 
   rm -f "$lockfile"
+}
+```
+
+## _git_finalize
+
+Thin wrapper around `ct2-git-finalize` that makes the call explicitly fail-soft:
+the reconciler must never block on git/PR failures, because the ticket state
+has already advanced by the time this is called.
+
+```bash
+_git_finalize() {
+  local verdict="$1" ticket_id="$2"
+  if command -v ct2-git-finalize &>/dev/null; then
+    ct2-git-finalize "$verdict" "$ticket_id" 2>&1 | sed 's/^/  /' || true
+  fi
 }
 ```
 
