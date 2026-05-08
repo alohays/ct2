@@ -1,0 +1,349 @@
+#!/usr/bin/env python3
+"""Preflight the local Codex CLI surface CT2 depends on."""
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+REQUIRED_SKILLS = (
+    "ct2-helm",
+    "ct2-forge",
+    "ct2-lens-cx",
+    "ct2-helm-auto-cx",
+    "ct2-status",
+)
+
+FEATURES = (
+    "goals",
+    "plugins",
+    "tool_search",
+    "tool_suggest",
+    "tool_call_mcp_elicitation",
+    "default_mode_request_user_input",
+    "multi_agent",
+    "apps",
+)
+
+MIN_CODEX_VERSION = (0, 128, 0)
+
+
+def run(cmd: list[str], cwd: Path, timeout: int = 30) -> dict:
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
+        )
+        return {
+            "ok": proc.returncode == 0,
+            "returncode": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+        }
+    except Exception as exc:
+        return {"ok": False, "returncode": None, "stdout": "", "stderr": str(exc)}
+
+
+def parse_features(output: str) -> dict[str, dict[str, object]]:
+    features: dict[str, dict[str, object]] = {}
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        key = parts[0]
+        enabled_raw = parts[-1]
+        if enabled_raw not in {"true", "false"}:
+            continue
+        features[key] = {
+            "stage": " ".join(parts[1:-1]),
+            "enabled": enabled_raw == "true",
+        }
+    return features
+
+
+def atomic_write_json(ct2_dir: Path, rel: str, data: dict) -> None:
+    tmp_dir = ct2_dir / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    dest = ct2_dir / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix="codex-doctor-", dir=str(tmp_dir))
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    os.replace(tmp_name, dest)
+
+
+def compact_lines(text: str, limit: int = 40) -> list[str]:
+    lines = [line.rstrip() for line in text.splitlines() if line.rstrip()]
+    return lines[:limit]
+
+
+def parse_codex_version(text: str) -> tuple[int, int, int] | None:
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", text)
+    if not match:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
+def version_at_least(found: tuple[int, int, int] | None, minimum: tuple[int, int, int]) -> bool:
+    return found is not None and found >= minimum
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Preflight Codex support for CT2")
+    parser.add_argument("project_dir", nargs="?", default=".")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--enable-request-input", action="store_true")
+    group.add_argument("--no-enable-request-input", action="store_true")
+    parser.add_argument("--json", action="store_true", help="Print machine-readable report")
+    args = parser.parse_args()
+
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = project_dir / ".ct2"
+    checked_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    codex_cmd = os.environ.get("CT2_CODEX_CMD", "codex")
+    codex_path = shutil.which(codex_cmd)
+    report: dict[str, object] = {
+        "checked_at": checked_at,
+        "project_dir": str(project_dir),
+        "codex_cmd": codex_cmd,
+        "codex_path": codex_path,
+        "hard_failures": [],
+        "degradations": [],
+        "features": {},
+        "commands": {},
+        "schema": {},
+        "skills": {},
+        "mcp": {},
+        "request_input_setup": {"state": "not_checked"},
+    }
+
+    hard_failures: list[str] = report["hard_failures"]  # type: ignore[assignment]
+    degradations: list[str] = report["degradations"]  # type: ignore[assignment]
+
+    if not ct2_dir.is_dir():
+        hard_failures.append(f".ct2/ not found in {project_dir}")
+    if not codex_path:
+        hard_failures.append(f"{codex_cmd!r} not found")
+
+    if hard_failures:
+        if args.json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print("CT2 Codex Doctor")
+            for failure in hard_failures:
+                print(f"  HARD FAIL: {failure}")
+        return 1
+
+    version = run([codex_cmd, "--version"], project_dir)
+    codex_version = version["stdout"].strip() if version["ok"] else None
+    parsed_version = parse_codex_version(codex_version or "")
+    report["codex_version"] = codex_version
+    report["codex_version_ok"] = version_at_least(parsed_version, MIN_CODEX_VERSION)
+    report["codex_min_version"] = ".".join(str(part) for part in MIN_CODEX_VERSION)
+    if not version["ok"]:
+        hard_failures.append("codex --version failed")
+    elif not report["codex_version_ok"]:
+        degradations.append(
+            f"Codex CLI {codex_version or 'unknown'} is below required baseline "
+            f"{report['codex_min_version']}; full support is degraded"
+        )
+
+    command_specs = {
+        "exec": [codex_cmd, "exec", "--help"],
+        "review": [codex_cmd, "review", "--help"],
+        "app-server": [codex_cmd, "app-server", "--help"],
+        "features": [codex_cmd, "features", "--help"],
+        "mcp": [codex_cmd, "mcp", "--help"],
+        "plugin": [codex_cmd, "plugin", "--help"],
+    }
+    commands: dict[str, dict[str, object]] = {}
+    for name, cmd in command_specs.items():
+        res = run(cmd, project_dir)
+        commands[name] = {"ok": res["ok"]}
+        if not res["ok"]:
+            if name in {"exec", "review", "app-server", "features", "mcp", "plugin"}:
+                degradations.append(f"codex {name} unavailable; related CT2 Codex support degrades")
+    report["commands"] = commands
+
+    features_res = run([codex_cmd, "features", "list"], project_dir)
+    feature_map = parse_features(features_res["stdout"]) if features_res["ok"] else {}
+    report["features"] = {name: feature_map.get(name, {"stage": "absent", "enabled": None}) for name in FEATURES}
+    if not features_res["ok"]:
+        degradations.append("codex features list failed; feature-gated behavior cannot be trusted")
+    else:
+        for name in FEATURES:
+            feature = feature_map.get(name)
+            if feature is None:
+                degradations.append(f"{name} absent; using documented fallback")
+            elif feature["enabled"] is False:
+                if name == "default_mode_request_user_input":
+                    continue
+                fallback = {
+                    "goals": "run role without /goal continuation",
+                    "plugins": "install CT2 skills directly",
+                    "tool_search": "continue with explicit tools and MCP list",
+                    "tool_suggest": "print manual install guidance",
+                    "tool_call_mcp_elicitation": "fall back to CT2 inbox blocked messages",
+                    "default_mode_request_user_input": "use app-server/plan-mode when exposed or CT2 inbox fallback",
+                    "multi_agent": "single-agent execution",
+                    "apps": "disable app-dependent enhancements",
+                }[name]
+                degradations.append(f"{name} disabled; fallback: {fallback}")
+
+    request_feature = feature_map.get("default_mode_request_user_input")
+    setup_state = "absent"
+    setup_note = "feature key absent; request-input remains runtime-gated"
+    if request_feature is not None and request_feature["enabled"] is True:
+        setup_state = "enabled"
+        setup_note = "already enabled"
+    elif request_feature is not None and request_feature["enabled"] is False:
+        if args.enable_request_input:
+            enable_res = run([codex_cmd, "features", "enable", "default_mode_request_user_input"], project_dir)
+            setup_state = "applied" if enable_res["ok"] else "blocked"
+            setup_note = "codex features enable default_mode_request_user_input"
+            if not enable_res["ok"]:
+                setup_note = enable_res["stderr"].strip() or setup_note
+                degradations.append("request-input enablement failed; using inbox fallback")
+        elif args.no_enable_request_input:
+            setup_state = "declined"
+            setup_note = "operator passed --no-enable-request-input"
+        elif sys.stdin.isatty() and sys.stdout.isatty():
+            answer = input("Enable default_mode_request_user_input in Codex config? [y/N] ").strip().lower()
+            if answer in {"y", "yes"}:
+                enable_res = run([codex_cmd, "features", "enable", "default_mode_request_user_input"], project_dir)
+                setup_state = "applied" if enable_res["ok"] else "blocked"
+                setup_note = "codex features enable default_mode_request_user_input"
+                if not enable_res["ok"]:
+                    setup_note = enable_res["stderr"].strip() or setup_note
+                    degradations.append("request-input enablement failed; using inbox fallback")
+            else:
+                setup_state = "declined"
+                setup_note = "operator declined interactive enablement"
+        else:
+            setup_state = "declined"
+            setup_note = "non-interactive run; pass --enable-request-input to apply"
+        if setup_state not in {"enabled", "applied"}:
+            degradations.append(
+                "default_mode_request_user_input disabled; fallback: use app-server/plan-mode when exposed or CT2 inbox fallback"
+            )
+    report["request_input_setup"] = {"state": setup_state, "note": setup_note}
+
+    schema_report = {"ok": False, "goal_api": False, "request_input": False, "files": 0}
+    schema_dir = Path(tempfile.mkdtemp(prefix="ct2-codex-schema-"))
+    schema_res = run(
+        [codex_cmd, "app-server", "generate-json-schema", "--experimental", "--out", str(schema_dir)],
+        project_dir,
+        timeout=60,
+    )
+    schema_report["ok"] = schema_res["ok"]
+    if schema_res["ok"]:
+        files = sorted(schema_dir.rglob("*.json"))
+        schema_report["files"] = len(files)
+        blob = "\n".join(p.read_text(encoding="utf-8", errors="ignore") for p in files)
+        schema_report["goal_api"] = all(s in blob for s in ("thread/goal/set", "thread/goal/get", "thread/goal/clear"))
+        schema_report["request_input"] = "item/tool/requestUserInput" in blob and "ToolRequestUserInput" in blob
+        if not schema_report["goal_api"]:
+            degradations.append("app-server schema lacks thread/goal/*; goal mode disabled")
+        if not schema_report["request_input"]:
+            degradations.append("app-server schema lacks requestUserInput; using inbox fallback")
+    else:
+        degradations.append("app-server schema generation failed; fall back to TUI or codex exec")
+        schema_report["stderr"] = schema_res["stderr"].strip()
+    shutil.rmtree(schema_dir, ignore_errors=True)
+    report["schema"] = schema_report
+
+    mcp_res = run([codex_cmd, "mcp", "list"], project_dir)
+    report["mcp"] = {
+        "ok": mcp_res["ok"],
+        "servers": compact_lines(mcp_res["stdout"]),
+    }
+    if not mcp_res["ok"]:
+        degradations.append("codex mcp list failed; MCP-dependent enhancements disabled")
+
+    codex_home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+    user_skill_root = codex_home / "skills"
+    repo_skill_root = Path(__file__).resolve().parents[1] / "codex-plugin" / "skills"
+    skill_report = {}
+    for skill in REQUIRED_SKILLS:
+        skill_report[skill] = {
+            "user_root": (user_skill_root / skill).is_dir(),
+            "plugin_source": (repo_skill_root / skill).is_dir(),
+        }
+        if not skill_report[skill]["user_root"] and not skill_report[skill]["plugin_source"]:
+            degradations.append(f"{skill} missing; install CT2 Codex skills")
+    report["skills"] = {
+        "codex_home": str(codex_home),
+        "user_skill_root": str(user_skill_root),
+        "repo_plugin_skill_root": str(repo_skill_root),
+        "required": skill_report,
+    }
+
+    report["tmux"] = {"ok": shutil.which("tmux") is not None}
+    if not report["tmux"]["ok"]:  # type: ignore[index]
+        degradations.append("tmux missing; ct2-lens-cx-tui unavailable, use codex exec path")
+
+    sandbox_report = {
+        "role_defaults": {
+            "ct2-helm": {"sandbox": "workspace-write", "required_writes": [".ct2/draft", ".ct2/backlog", ".ct2/inbox"]},
+            "ct2-forge": {"sandbox": "workspace-write", "required_writes": ["project source", ".ct2/in-progress", ".ct2/in-review", ".ct2/inbox"]},
+            "ct2-lens-cx": {"sandbox": "workspace-write", "required_writes": [".ct2/reviews", ".ct2/.meta", ".ct2/inbox"]},
+            "ct2-helm-auto-cx": {"sandbox": "workspace-write", "required_writes": [".ct2/draft", ".ct2/backlog", ".ct2/codex/ledgers", ".ct2/inbox"]},
+            "ct2-status": {"sandbox": "read-only", "required_writes": []},
+        },
+        "local_write_checks": {},
+        "exec_sandbox_flags": {
+            "supported": bool(re.search(r"--sandbox <SANDBOX_MODE>", run([codex_cmd, "exec", "--help"], project_dir)["stdout"])),
+            "values": ["read-only", "workspace-write", "danger-full-access"],
+        },
+    }
+    for rel in (".ct2/.tmp", ".ct2/reviews", ".ct2/.meta", ".ct2/inbox", ".ct2/codex/ledgers"):
+        path = project_dir / rel
+        path.mkdir(parents=True, exist_ok=True)
+        sandbox_report["local_write_checks"][rel] = os.access(path, os.W_OK)  # type: ignore[index]
+        if not os.access(path, os.W_OK):
+            hard_failures.append(f"required CT2 write path is not writable: {rel}")
+    if not sandbox_report["exec_sandbox_flags"]["supported"]:  # type: ignore[index]
+        degradations.append("codex exec help does not expose --sandbox; explicit sandbox roles degraded")
+    report["sandbox_profile_compatibility"] = sandbox_report
+
+    atomic_write_json(ct2_dir, "codex/preflight.json", report)
+
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print("CT2 Codex Doctor")
+        print(f"  Project: {project_dir}")
+        print(f"  Codex:  {report.get('codex_version') or 'unknown'}")
+        print(f"  Version baseline: >= {report['codex_min_version']} -> {report['codex_version_ok']}")
+        print(f"  Schema: goal_api={schema_report['goal_api']} request_input={schema_report['request_input']}")
+        print(f"  Sandbox profiles: exec_flags={sandbox_report['exec_sandbox_flags']['supported']} local_writes=checked")
+        print(f"  Request-input setup: {setup_state} ({setup_note})")
+        if hard_failures:
+            for failure in hard_failures:
+                print(f"  HARD FAIL: {failure}")
+        if degradations:
+            print("  Degraded capabilities:")
+            for item in degradations:
+                print(f"    - {item}")
+        else:
+            print("  Degraded capabilities: none")
+        print(f"  Wrote: {ct2_dir / 'codex' / 'preflight.json'}")
+
+    return 1 if hard_failures else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

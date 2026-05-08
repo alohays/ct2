@@ -192,11 +192,28 @@ if ! command -v tmux &>/dev/null; then
   warning "tmux not found. Install tmux to use the visible Codex reviewer loop:"
   warning "  brew install tmux   # macOS"
 fi
+if ! command -v codex &>/dev/null; then
+  echo ""
+  warning "Codex CLI not found. Install Codex to use CT2 Codex roles:"
+  warning "  https://github.com/openai/codex"
+else
+  echo ""
+  info "Codex support can be checked in any initialized project with:"
+  info "  ct2-codex-doctor"
+  info "Codex app-server control is available through:"
+  info "  ct2-codex-app-driver"
+  if [[ -f "${CT2_HOME}/.agents/plugins/marketplace.json" ]]; then
+    info "Codex plugin marketplace metadata is available at:"
+    info "  ${CT2_HOME}/.agents/plugins/marketplace.json"
+  fi
+fi
 echo ""
 echo "Then, in a project directory:"
 echo "  ct2-init          # Initialize .ct2/ in your project"
 echo "  claude            # Open Claude Code"
 echo "  /ct2:helm         # Enter planner role"
+echo "  ct2-codex-doctor  # Check Codex CLI feature support"
+echo "  ct2-codex-app-driver ct2-status \"Inspect CT2 state\" --sandbox read-only"
 echo "  ct2-lens-cx-tui   # Open visible Codex reviewer loop"
 echo ""
 echo "Full documentation: ${CT2_HOME}/spec/"

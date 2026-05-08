@@ -1,0 +1,525 @@
+#!/usr/bin/env python3
+"""Minimal CT2 driver for Codex app-server over stdio."""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+ROLE_SANDBOX = {
+    "ct2-helm": "workspace-write",
+    "ct2-forge": "workspace-write",
+    "ct2-lens-cx": "workspace-write",
+    "ct2-helm-auto-cx": "workspace-write",
+    "ct2-status": "read-only",
+    "maintenance": "workspace-write",
+}
+
+ROLE_INBOX_FALLBACK = {
+    "ct2-helm": "ct2-helm",
+    "ct2-forge": "ct2-helm",
+    "ct2-lens-cx": "ct2-helm",
+    "ct2-helm-auto-cx": "ct2-helm",
+    "ct2-status": "ct2-helm",
+    "maintenance": "ct2-helm",
+}
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def ensure_ct2(project_dir: Path) -> Path:
+    ct2_dir = project_dir / ".ct2"
+    if not ct2_dir.is_dir():
+        print(f"ct2-codex-app-driver: .ct2/ not found in {project_dir}", file=sys.stderr)
+        raise SystemExit(1)
+    for rel in ("codex/threads", "codex/goals", "codex/scopes", "codex/ledgers", "logs", ".tmp", ".meta"):
+        (ct2_dir / rel).mkdir(parents=True, exist_ok=True)
+    return ct2_dir
+
+
+def atomic_write_json(ct2_dir: Path, dest: Path, data: dict[str, Any]) -> None:
+    tmp_dir = ct2_dir / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix="codex-app-", dir=str(tmp_dir))
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    os.replace(tmp_name, dest)
+
+
+def atomic_write_text(ct2_dir: Path, dest: Path, text: str) -> None:
+    tmp_dir = ct2_dir / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix="codex-app-", dir=str(tmp_dir))
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.replace(tmp_name, dest)
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def append_log(ct2_dir: Path, line: str) -> None:
+    path = ct2_dir / "logs" / "ct2-codex-app-driver.log"
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(f"[{utc_now()}] {line}\n")
+
+
+def write_inbox_message(ct2_dir: Path, to_role: str, from_role: str, msg_type: str, subject: str, body: str) -> None:
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    msgid = f"msg-{ts}-{os.getpid()}-{next(tempfile._get_candidate_names())[:8]}"
+    inbox_dir = ct2_dir / "inbox" / to_role
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+    tmp = tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=str(ct2_dir / ".tmp"), prefix=f"{msgid}.")
+    with tmp:
+        tmp.write(
+            f"""---
+id: {msgid}
+from: {from_role}
+to: {to_role}
+type: {msg_type}
+ticket: codex-app-server
+timestamp: {utc_now()}
+---
+
+## Subject
+{subject}
+
+## Body
+{body}
+"""
+        )
+    os.replace(tmp.name, inbox_dir / f"{msgid}.md")
+
+
+def append_ledger_event(ct2_dir: Path, role: str, event: dict[str, Any]) -> None:
+    path = ct2_dir / "codex" / "ledgers" / f"app-server-{role}.json"
+    ledger = load_json(path)
+    if not ledger:
+        ledger = {"role": role, "goal_slug": f"app-server-{role}", "created": utc_now(), "events": []}
+    events = ledger.get("events")
+    if not isinstance(events, list):
+        events = []
+    events.append({"timestamp": utc_now(), **event})
+    ledger["events"] = events
+    ledger["updated"] = utc_now()
+    atomic_write_json(ct2_dir, path, ledger)
+
+
+class AppServer:
+    def __init__(self, codex_cmd: str, project_dir: Path, extra_args: list[str]) -> None:
+        self.next_id = 1
+        self.proc = subprocess.Popen(
+            [codex_cmd, "app-server", "--listen", "stdio://", *extra_args],
+            cwd=str(project_dir),
+            text=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+    def close(self) -> None:
+        if self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+
+    def send(self, message: dict[str, Any]) -> None:
+        if self.proc.stdin is None:
+            raise RuntimeError("app-server stdin is closed")
+        self.proc.stdin.write(json.dumps(message, separators=(",", ":")) + "\n")
+        self.proc.stdin.flush()
+
+    def request(self, method: str, params: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+        request_id = self.next_id
+        self.next_id += 1
+        payload: dict[str, Any] = {"id": request_id, "method": method}
+        if params is not None:
+            payload["params"] = params
+        self.send(payload)
+        return request_id, payload
+
+    def notify(self, method: str, params: dict[str, Any] | None = None) -> None:
+        payload: dict[str, Any] = {"method": method}
+        if params is not None:
+            payload["params"] = params
+        self.send(payload)
+
+    def read_message(self) -> dict[str, Any]:
+        if self.proc.stdout is None:
+            raise RuntimeError("app-server stdout is closed")
+        line = self.proc.stdout.readline()
+        if not line:
+            stderr = self.proc.stderr.read() if self.proc.stderr else ""
+            raise RuntimeError(f"app-server closed stdout: {stderr[-1000:]}")
+        return json.loads(line)
+
+
+def response_for_server_request(
+    ct2_dir: Path,
+    role: str,
+    method: str,
+    params: dict[str, Any],
+    answers: dict[str, list[str]],
+) -> dict[str, Any] | None:
+    if method == "item/tool/requestUserInput":
+        questions = params.get("questions") or []
+        response_answers: dict[str, dict[str, list[str]]] = {}
+        missing: list[str] = []
+        ledger_questions: list[dict[str, Any]] = []
+        for q in questions:
+            qid = str(q.get("id", "question"))
+            secret = bool(q.get("isSecret"))
+            if qid in answers:
+                response_answers[qid] = {"answers": answers[qid]}
+                ledger_answer: Any = "[redacted]" if secret else answers[qid]
+            else:
+                missing.append(f"- {qid}: {q.get('question', '')}")
+                ledger_answer = None
+            ledger_questions.append(
+                {
+                    "id": qid,
+                    "question": q.get("question", ""),
+                    "answered": qid in answers,
+                    "answer": ledger_answer,
+                    "secret": secret,
+                }
+            )
+        if missing:
+            write_inbox_message(
+                ct2_dir,
+                ROLE_INBOX_FALLBACK[role],
+                role,
+                "blocked",
+                "Codex app-server request-input requires a human answer",
+                "\n".join(missing),
+            )
+        append_ledger_event(
+            ct2_dir,
+            role,
+            {
+                "type": "request_user_input",
+                "questions": ledger_questions,
+                "fallback": "inbox" if missing else "answered",
+            },
+        )
+        if missing:
+            return None
+        return {"answers": response_answers}
+
+    if method in {"item/commandExecution/requestApproval", "item/fileChange/requestApproval"}:
+        return {"decision": "decline"}
+
+    if method in {"applyPatchApproval", "execCommandApproval"}:
+        return {"decision": "denied"}
+
+    if method == "mcpServer/elicitation/request":
+        return {"action": "decline", "content": None}
+
+    if method == "item/tool/call":
+        return {
+            "success": False,
+            "contentItems": [
+                {
+                    "type": "inputText",
+                    "text": "CT2 app driver does not execute dynamic client tools in non-interactive mode.",
+                }
+            ],
+        }
+
+    if method in {"item/permissions/requestApproval", "account/chatgptAuthTokens/refresh"}:
+        return None
+
+    return None
+
+
+def update_thread_record(
+    ct2_dir: Path,
+    project_dir: Path,
+    role: str,
+    mode: str,
+    thread_id: str,
+    goal: dict[str, Any] | None,
+    wait_state: str | None = None,
+    runtime: dict[str, Any] | None = None,
+) -> None:
+    existing = load_json(ct2_dir / "codex" / "threads" / f"{role}.json")
+    record = {
+        **existing,
+        "role": role,
+        "mode": mode,
+        "thread_id": thread_id,
+        "cwd": str(project_dir),
+        "goal": goal or existing.get("goal"),
+        "wait_state": wait_state,
+        "runtime": runtime or existing.get("runtime"),
+        "updated": utc_now(),
+    }
+    atomic_write_json(ct2_dir, ct2_dir / "codex" / "threads" / f"{role}.json", record)
+
+
+def persist_app_goal(
+    ct2_dir: Path,
+    role: str,
+    thread_id: str,
+    objective: str,
+    previous_thread: dict[str, Any],
+    goal_result: dict[str, Any],
+) -> None:
+    atomic_write_json(
+        ct2_dir,
+        ct2_dir / "codex" / "goals" / f"app-server-{role}.json",
+        {
+            "role": role,
+            "mode": "app-server",
+            "goal_slug": f"app-server-{role}",
+            "scope_id": previous_thread.get("scope_id"),
+            "thread_id": goal_result.get("threadId", thread_id),
+            "objective": goal_result.get("objective", objective),
+            "status": goal_result.get("status"),
+            "token_budget": goal_result.get("tokenBudget"),
+            "tokens_used": goal_result.get("tokensUsed"),
+            "time_used_seconds": goal_result.get("timeUsedSeconds"),
+            "created_at": goal_result.get("createdAt"),
+            "updated_at": goal_result.get("updatedAt"),
+            "updated": utc_now(),
+            "goal": goal_result,
+        },
+    )
+
+
+def parse_answers(values: list[str]) -> dict[str, list[str]]:
+    parsed: dict[str, list[str]] = {}
+    for value in values:
+        if "=" not in value:
+            raise SystemExit(f"--answer must be question_id=value, got {value!r}")
+        key, raw = value.split("=", 1)
+        parsed[key] = [part for part in raw.split(",") if part]
+    return parsed
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Drive a Codex app-server thread for CT2")
+    parser.add_argument("role", choices=sorted(ROLE_SANDBOX))
+    parser.add_argument("objective", nargs="*", help="Goal objective. Required unless --get-goal or --clear-goal is used.")
+    parser.add_argument("--project-dir", default=".")
+    parser.add_argument("--codex-cmd", default=os.environ.get("CT2_CODEX_CMD", "codex"))
+    parser.add_argument("--thread-id")
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--fork", action="store_true")
+    parser.add_argument("--turn", help="Start one turn after setting/resuming the goal")
+    parser.add_argument("--token-budget", type=int)
+    parser.add_argument("--sandbox", choices=("read-only", "workspace-write", "danger-full-access"))
+    parser.add_argument("--model")
+    parser.add_argument("--approval-policy", default="on-request", choices=("untrusted", "on-failure", "on-request", "never"))
+    parser.add_argument("--answer", action="append", default=[], help="Answer app-server request-input as question_id=value[,value]")
+    parser.add_argument("--get-goal", action="store_true")
+    parser.add_argument("--clear-goal", action="store_true")
+    parser.add_argument("--extra-app-server-arg", action="append", default=[])
+    args = parser.parse_args()
+
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    objective = " ".join(args.objective).strip()
+    if not objective and not (args.get_goal or args.clear_goal):
+        print("ct2-codex-app-driver: objective is required", file=sys.stderr)
+        return 1
+
+    answers = parse_answers(args.answer)
+    role_thread_path = ct2_dir / "codex" / "threads" / f"{args.role}.json"
+    previous_thread = load_json(role_thread_path)
+    requested_thread_id = args.thread_id or previous_thread.get("thread_id")
+    sandbox = args.sandbox or ROLE_SANDBOX[args.role]
+    app = AppServer(args.codex_cmd, project_dir, args.extra_app_server_arg)
+    pending: dict[int, str] = {}
+    goal_result: dict[str, Any] | None = None
+    thread_id: str | None = None
+    turn_done = False
+    exit_code = 0
+
+    try:
+        rid, _ = app.request(
+            "initialize",
+            {
+                "clientInfo": {"name": "ct2", "title": "CT2", "version": "0.1.0"},
+                "capabilities": {"experimentalApi": True},
+            },
+        )
+        pending[rid] = "initialize"
+        while pending:
+            msg = app.read_message()
+            if "id" in msg and msg["id"] in pending:
+                method = pending.pop(msg["id"])
+                if "error" in msg:
+                    raise RuntimeError(f"{method} failed: {msg['error']}")
+                if method == "initialize":
+                    append_log(ct2_dir, f"initialized userAgent={msg.get('result', {}).get('userAgent', '?')}")
+        app.notify("initialized", {})
+
+        thread_params: dict[str, Any] = {
+            "cwd": str(project_dir),
+            "sandbox": sandbox,
+            "approvalPolicy": args.approval_policy,
+        }
+        if args.model:
+            thread_params["model"] = args.model
+
+        if args.fork:
+            if not requested_thread_id:
+                raise RuntimeError("--fork requires --thread-id or existing role thread metadata")
+            thread_params["threadId"] = requested_thread_id
+            method = "thread/fork"
+        elif args.resume or requested_thread_id:
+            if not requested_thread_id:
+                raise RuntimeError("--resume requires --thread-id or existing role thread metadata")
+            thread_params["threadId"] = requested_thread_id
+            method = "thread/resume"
+        else:
+            method = "thread/start"
+
+        rid, _ = app.request(method, thread_params)
+        pending[rid] = method
+        while pending:
+            msg = app.read_message()
+            if "id" in msg and msg["id"] in pending:
+                pending.pop(msg["id"])
+                if "error" in msg:
+                    raise RuntimeError(f"{method} failed: {msg['error']}")
+                result = msg.get("result", {})
+                thread_id = result.get("thread", {}).get("id")
+                if not thread_id:
+                    raise RuntimeError(f"{method} response missing thread.id")
+                update_thread_record(
+                    ct2_dir,
+                    project_dir,
+                    args.role,
+                    "app-server",
+                    thread_id,
+                    previous_thread.get("goal"),
+                    runtime={
+                        "sandbox": sandbox,
+                        "approval_policy": args.approval_policy,
+                        "active_permission_profile": result.get("activePermissionProfile"),
+                    },
+                )
+        assert thread_id is not None
+
+        if args.clear_goal:
+            rid, _ = app.request("thread/goal/clear", {"threadId": thread_id})
+            pending[rid] = "thread/goal/clear"
+        elif objective:
+            goal_params: dict[str, Any] = {"threadId": thread_id, "objective": objective, "status": "active"}
+            if args.token_budget is not None:
+                goal_params["tokenBudget"] = args.token_budget
+            rid, _ = app.request("thread/goal/set", goal_params)
+            pending[rid] = "thread/goal/set"
+        elif args.get_goal:
+            rid, _ = app.request("thread/goal/get", {"threadId": thread_id})
+            pending[rid] = "thread/goal/get"
+
+        while pending:
+            msg = app.read_message()
+            if "id" in msg and msg["id"] in pending:
+                method = pending.pop(msg["id"])
+                if "error" in msg:
+                    raise RuntimeError(f"{method} failed: {msg['error']}")
+                goal_result = msg.get("result", {}).get("goal")
+                if method == "thread/goal/clear":
+                    goal_result = {"status": "cleared", "threadId": thread_id}
+                update_thread_record(ct2_dir, project_dir, args.role, "app-server", thread_id, goal_result)
+                if goal_result:
+                    persist_app_goal(ct2_dir, args.role, thread_id, objective, previous_thread, goal_result)
+
+        if args.turn:
+            rid, _ = app.request(
+                "turn/start",
+                {
+                    "threadId": thread_id,
+                    "cwd": str(project_dir),
+                    "input": [{"type": "text", "text": args.turn}],
+                },
+            )
+            pending[rid] = "turn/start"
+            while not turn_done:
+                msg = app.read_message()
+                append_log(ct2_dir, json.dumps(msg, separators=(",", ":"))[:4000])
+                if "id" in msg and msg["id"] in pending:
+                    method = pending.pop(msg["id"])
+                    if "error" in msg:
+                        raise RuntimeError(f"{method} failed: {msg['error']}")
+                    print(json.dumps(msg))
+                    continue
+                if "id" in msg and "method" in msg:
+                    response = response_for_server_request(ct2_dir, args.role, msg["method"], msg.get("params", {}), answers)
+                    if response is None:
+                        app.send({"id": msg["id"], "error": {"code": -32000, "message": "Denied by CT2 app driver policy"}})
+                    else:
+                        app.send({"id": msg["id"], "result": response})
+                    continue
+                method_name = msg.get("method", "")
+                print(json.dumps(msg))
+                if method_name in {"turn/completed", "turn/failed", "turn/cancelled"}:
+                    turn_done = True
+                    exit_code = 0 if method_name == "turn/completed" else 1
+                if method_name in {"thread/goal/updated"}:
+                    goal_result = msg.get("params", {}).get("goal")
+                    update_thread_record(ct2_dir, project_dir, args.role, "app-server", thread_id, goal_result)
+                    if goal_result:
+                        persist_app_goal(ct2_dir, args.role, thread_id, objective, previous_thread, goal_result)
+                if re.match(r"turn/", method_name):
+                    heartbeat = ct2_dir / ".meta" / f"{args.role}.app-server.heartbeat"
+                    atomic_write_text(ct2_dir, heartbeat, utc_now() + "\n")
+
+            rid, _ = app.request("thread/goal/get", {"threadId": thread_id})
+            pending[rid] = "thread/goal/get"
+            while pending:
+                msg = app.read_message()
+                append_log(ct2_dir, json.dumps(msg, separators=(",", ":"))[:4000])
+                if "id" in msg and msg["id"] in pending:
+                    method = pending.pop(msg["id"])
+                    if "error" in msg:
+                        raise RuntimeError(f"{method} failed: {msg['error']}")
+                    goal_result = msg.get("result", {}).get("goal")
+                    update_thread_record(ct2_dir, project_dir, args.role, "app-server", thread_id, goal_result)
+                    if goal_result:
+                        persist_app_goal(ct2_dir, args.role, thread_id, objective, previous_thread, goal_result)
+                    break
+                if "id" in msg and "method" in msg:
+                    response = response_for_server_request(ct2_dir, args.role, msg["method"], msg.get("params", {}), answers)
+                    if response is None:
+                        app.send({"id": msg["id"], "error": {"code": -32000, "message": "Denied by CT2 app driver policy"}})
+                    else:
+                        app.send({"id": msg["id"], "result": response})
+
+        print(f"ct2-codex-app-driver: thread={thread_id} role={args.role}")
+        if goal_result:
+            print(f"ct2-codex-app-driver: goal_status={goal_result.get('status')} objective={goal_result.get('objective', objective)}")
+        return exit_code
+    except Exception as exc:
+        append_log(ct2_dir, f"error {exc}")
+        print(f"ct2-codex-app-driver: error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        app.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
