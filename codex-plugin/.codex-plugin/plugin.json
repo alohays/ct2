@@ -1,0 +1,39 @@
+{
+  "name": "ct2",
+  "version": "0.1.0",
+  "description": "CT2 Codex role skills for a file-backed multi-agent engineering harness with dual independent review.",
+  "author": {
+    "name": "CT2"
+  },
+  "homepage": "https://github.com/alohays/ct2",
+  "repository": "https://github.com/alohays/ct2",
+  "license": "MIT",
+  "keywords": [
+    "ct2",
+    "codex",
+    "harness",
+    "multi-agent",
+    "review"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "CT2",
+    "shortDescription": "Codex roles for the CT2 harness",
+    "longDescription": "CT2 packages Codex-native planner, forge, status, autonomous planning, and independent reviewer role skills for file-backed ticket workflows with dual review.",
+    "developerName": "CT2",
+    "category": "Engineering",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/alohays/ct2",
+    "defaultPrompt": [
+      "Run CT2 Codex doctor",
+      "Start a CT2 Codex review",
+      "Plan CT2 tickets from a goal"
+    ],
+    "brandColor": "#2563EB",
+    "screenshots": []
+  }
+}

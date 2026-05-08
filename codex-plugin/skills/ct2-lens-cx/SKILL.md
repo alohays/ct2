@@ -20,6 +20,9 @@ For continuous visible operation, use `ct2-lens-cx-tui`. It opens a tmux session
 with Codex TUI in the main pane and periodically injects scheduled
 `ct2:lens-cx` tick prompts into that same visible Codex pane.
 
+When attached to a Codex `/goal`, the goal is a role-local continuation aid. It
+does not replace CT2 review sidecars, reconciler verdicts, or ticket state.
+
 </identity>
 
 ---
@@ -194,6 +197,26 @@ and the reconciler finalization helper (merge/comment).
 
 </workflow>
 
+<workflow id="goal-operation">
+
+## Goal Operation
+
+For a lens-cx goal, drain every in-scope Codex review without violating review
+independence.
+
+- Read `.ct2/codex/scopes/*.json` when a scope is present.
+- If an in-scope ticket is in `.ct2/in-review/`, write the missing cx sidecar.
+- If no reviewable ticket is present but in-scope upstream forge work can still
+  enter review, update heartbeat and record `upstream_work_pending` instead of
+  completing the goal.
+- Empty `in-review/` is completion only when the scope proves no more in-scope
+  upstream work remains.
+- Before goal completion, audit each in-scope ticket path, review round, cx
+  sidecar path, whether cc was unread before cx write, reconciler result, and
+  any upstream wait evidence.
+
+</workflow>
+
 ---
 
 <constraints id="access">
@@ -208,10 +231,21 @@ and the reconciler finalization helper (merge/comment).
 | `.ct2/inbox/ct2-lens-cx/` | Claim and acknowledge |
 | `.ct2/inbox/ct2-helm/` | Send blocked/escalation messages only |
 | `.ct2/.meta/ct2-lens-cx.heartbeat` | Write |
+| `.ct2/codex/ledgers/` | Append goal wait/audit notes through `.ct2/.tmp/` |
 | Project source files | Read-only |
 | Any existing sidecar | Never modify or delete |
 
 </constraints>
+
+## Forbidden Operations
+
+- Do not edit project source files, tests, or git state.
+- Do not read the matching `*-cc-r{round}.md` sidecar before your own
+  `*-cx-r{round}.md` sidecar exists.
+- Do not modify or delete any existing sidecar.
+- Do not move tickets except through the reconciler path after your own
+  sidecar exists.
+- Do not ask the user to waive review criteria.
 
 <constraints id="review-quality">
 
@@ -226,3 +260,33 @@ and the reconciler finalization helper (merge/comment).
   `ct2-helm`.
 
 </constraints>
+
+<verification>
+
+## Verification Steps
+
+Before claiming a lens-cx iteration or goal is complete:
+
+1. Confirm every eligible `.ct2/in-review/*.md` ticket has a matching
+   `.ct2/reviews/{id}-cx-r{round}.md` sidecar or record why it could not be
+   written.
+2. Confirm the matching cc sidecar was not read until after the cx sidecar
+   existed.
+3. If both sidecars exist, confirm reconciliation ran or record the exact
+   blocker.
+4. Run `ct2-status` and report the resulting state.
+
+</verification>
+
+<fallbacks>
+
+## Fallbacks
+
+- If skill dispatch fails, follow the inline instructions injected by
+  `ct2-lens-cx-tui`.
+- If app-server or `/goal` is unavailable, continue one idempotent review tick
+  using CT2 filesystem state.
+- If requirements are unverifiable, write a rejecting sidecar with a BLOCKING
+  finding; do not ask the user to waive review criteria.
+
+</fallbacks>

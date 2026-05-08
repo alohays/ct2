@@ -1,0 +1,20 @@
+{
+  "name": "ct2",
+  "interface": {
+    "displayName": "CT2"
+  },
+  "plugins": [
+    {
+      "name": "ct2",
+      "source": {
+        "source": "local",
+        "path": "./codex-plugin"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Engineering"
+    }
+  ]
+}
