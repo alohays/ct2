@@ -1,0 +1,422 @@
+#!/usr/bin/env python3
+"""Maintain CT2-local Codex goal metadata and ticket scope snapshots."""
+
+import argparse
+import json
+import os
+import re
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+ROLE_DEFAULTS = {
+    "ct2-helm": {"scope_mode": "snapshot", "states": ("draft",)},
+    "ct2-forge": {"scope_mode": "snapshot", "states": ("backlog", "rejected", "in-progress", "in-review")},
+    "ct2-lens-cx": {"scope_mode": "snapshot", "states": ("in-review", "in-progress", "backlog", "rejected")},
+    "ct2-helm-auto-cx": {"scope_mode": "production", "states": ()},
+    "maintenance": {"scope_mode": "snapshot", "states": ("draft", "backlog", "rejected", "in-progress", "in-review")},
+}
+
+TERMINAL_BY_ROLE = {
+    "ct2-helm": "sealed or intentionally left in draft",
+    "ct2-forge": "done or explicit blocked/escalated/budget-limited outcome",
+    "ct2-lens-cx": "cx sidecar written and in-scope upstream work terminal",
+    "ct2-helm-auto-cx": "ledger satisfies initial planning conditions",
+    "maintenance": "objective evidence audit complete",
+}
+
+ROLE_COMPLETION_CONDITIONS = {
+    "ct2-helm": [
+        "user objective is represented by sealed tickets or explicitly approved draft tickets",
+        "each ticket has bounded touched-files and testable acceptance criteria",
+        "no required product intent, priority, scope, or acceptance criterion remains unanswered",
+        "prompt-to-artifact completion audit maps objective requirements to ticket paths",
+    ],
+    "ct2-forge": [
+        "every captured ticket is in .ct2/done/, .ct2/escalated/, or another explicit terminal path approved by the initial goal",
+        "no in-scope ticket remains in .ct2/backlog/, .ct2/in-progress/, .ct2/in-review/, or .ct2/rejected/",
+        "every submitted ticket has acceptance-criteria evidence and test evidence",
+        "every rejected ticket has been reworked into review or converted to a documented blocked/escalated outcome",
+        "Codex goal completion did not replace the CT2 done transition",
+    ],
+    "ct2-lens-cx": [
+        "every in-scope ticket that reached .ct2/in-review/ has a matching cx sidecar for its review round",
+        "each cx sidecar was written before reading the matching cc sidecar",
+        "if both sidecars exist, the reconciler ran or its blocker is recorded",
+        "upstream in-scope tickets are terminal, or the scope explicitly reviews only the snapshot already in in-review",
+    ],
+    "ct2-helm-auto-cx": [
+        "planning ledger maps initial goal conditions to produced ticket ids and evidence",
+        "ticket count or stopping rule is satisfied",
+        "each produced ticket passes quality rubric and touched-files overlap check",
+        "each produced ticket final path is recorded as sealed or draft by policy",
+        "duplicate, overlapping, and speculative candidates are rejected before sealing",
+    ],
+    "maintenance": [
+        "stated repository maintenance objective is complete",
+        "prompt-to-artifact completion audit maps every requirement to concrete file, command, test, PR, or sidecar evidence",
+        "no required work remains unverified",
+    ],
+}
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def slugify(text: str, role: str) -> str:
+    raw = re.sub(r"[^a-zA-Z0-9]+", "-", text.lower()).strip("-")
+    raw = re.sub(r"-+", "-", raw)[:48].strip("-") or "goal"
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{raw}-{role.replace('ct2-', '')}-{ts}"
+
+
+def load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def atomic_write(ct2_dir: Path, path: Path, data: dict) -> None:
+    tmp_dir = ct2_dir / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix="codex-goal-", dir=str(tmp_dir))
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    os.replace(tmp_name, path)
+
+
+def ensure_ct2(project_dir: Path) -> Path:
+    ct2_dir = project_dir / ".ct2"
+    if not ct2_dir.is_dir():
+        print(f"ct2-codex-goal: .ct2/ not found in {project_dir}", file=sys.stderr)
+        raise SystemExit(1)
+    for rel in ("codex/threads", "codex/goals", "codex/scopes", "codex/ledgers", ".tmp"):
+        (ct2_dir / rel).mkdir(parents=True, exist_ok=True)
+    return ct2_dir
+
+
+def capture_tickets(ct2_dir: Path, role: str, states: tuple[str, ...]) -> list[dict[str, str]]:
+    tickets: list[dict[str, str]] = []
+    for state in states:
+        for path in sorted((ct2_dir / state).glob("*.md")):
+            ticket_id = re.match(r"^(\d+)", path.stem)
+            tickets.append(
+                {
+                    "id": ticket_id.group(1) if ticket_id else path.stem,
+                    "state_at_capture": state,
+                    "path_at_capture": f".ct2/{state}/{path.name}",
+                    "terminal_required": TERMINAL_BY_ROLE[role],
+                }
+            )
+    return tickets
+
+
+def cmd_start(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    role = args.role
+    if role not in ROLE_DEFAULTS:
+        print(f"ct2-codex-goal: unknown role {role}", file=sys.stderr)
+        return 1
+
+    objective = " ".join(args.objective).strip()
+    if not objective:
+        print("ct2-codex-goal: objective is required", file=sys.stderr)
+        return 1
+
+    defaults = ROLE_DEFAULTS[role]
+    scope_mode = args.scope_mode or defaults["scope_mode"]
+    goal_slug = args.goal_slug or slugify(objective, role)
+    scope_id = args.scope_id or goal_slug
+    ticket_states = tuple(args.ticket_state or defaults["states"])
+    captured = capture_tickets(ct2_dir, role, ticket_states)
+    created = now()
+
+    scope = {
+        "scope_id": scope_id,
+        "goal_slug": goal_slug,
+        "role": role,
+        "mode": scope_mode,
+        "created": created,
+        "ticket_states": list(ticket_states),
+        "tickets": captured,
+        "completion_conditions": args.completion_condition
+        or ROLE_COMPLETION_CONDITIONS[role],
+    }
+    goal = {
+        "goal_slug": goal_slug,
+        "scope_id": scope_id,
+        "role": role,
+        "mode": args.mode,
+        "objective": objective,
+        "status": "active",
+        "token_budget": args.token_budget,
+        "tokens_used": 0,
+        "time_used_seconds": 0,
+        "created": created,
+        "updated": created,
+        "wait_state": None,
+    }
+    thread_path = ct2_dir / "codex" / "threads" / f"{role}.json"
+    previous_thread = load_json(thread_path) if thread_path.exists() else {}
+    thread = {
+        "role": role,
+        "mode": args.mode,
+        "thread_id": args.thread_id or previous_thread.get("thread_id"),
+        "cwd": str(project_dir),
+        "scope_id": scope_id,
+        "tickets": [ticket["path_at_capture"] for ticket in captured],
+        "goal": {
+            "objective": objective,
+            "status": "active",
+            "token_budget": args.token_budget,
+            "tokens_used": 0,
+            "time_used_seconds": 0,
+        },
+        "wait_state": None,
+        "updated": created,
+    }
+    ledger = {
+        "goal_slug": goal_slug,
+        "role": role,
+        "created": created,
+        "events": [
+            {
+                "timestamp": created,
+                "type": "goal_started",
+                "objective": objective,
+                "scope_id": scope_id,
+                "tickets_captured": len(captured),
+            }
+        ],
+    }
+
+    atomic_write(ct2_dir, ct2_dir / "codex" / "scopes" / f"{scope_id}.json", scope)
+    atomic_write(ct2_dir, ct2_dir / "codex" / "goals" / f"{goal_slug}-{role}.json", goal)
+    atomic_write(ct2_dir, thread_path, thread)
+    atomic_write(ct2_dir, ct2_dir / "codex" / "ledgers" / f"{goal_slug}-{role}.json", ledger)
+
+    print(f"ct2-codex-goal: started {role} goal")
+    print(f"  goal:  {goal_slug}")
+    print(f"  scope: {scope_id} ({scope_mode}, tickets={len(captured)})")
+    print("  next:  start Codex and set the matching /goal objective before invoking the role skill")
+    return 0
+
+
+def find_goal(ct2_dir: Path, goal_slug: str, role: str) -> Path:
+    path = ct2_dir / "codex" / "goals" / f"{goal_slug}-{role}.json"
+    if not path.exists():
+        print(f"ct2-codex-goal: goal not found: {path}", file=sys.stderr)
+        raise SystemExit(1)
+    return path
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    goals = sorted((ct2_dir / "codex" / "goals").glob("*.json"))
+    if not goals:
+        print("ct2-codex-goal: no active local Codex goal metadata")
+        return 0
+    for path in goals:
+        goal = load_json(path)
+        print(
+            f"{goal.get('goal_slug')} role={goal.get('role')} "
+            f"status={goal.get('status')} wait={goal.get('wait_state') or '-'} "
+            f"scope={goal.get('scope_id')}"
+        )
+    return 0
+
+
+def cmd_set_status(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    path = find_goal(ct2_dir, args.goal_slug, args.role)
+    goal = load_json(path)
+    goal["status"] = args.status
+    goal["updated"] = now()
+    if args.wait_state:
+        goal["wait_state"] = args.wait_state
+    elif args.status == "active":
+        goal["wait_state"] = None
+    atomic_write(ct2_dir, path, goal)
+    thread_path = ct2_dir / "codex" / "threads" / f"{args.role}.json"
+    if thread_path.exists():
+        thread = load_json(thread_path)
+        thread_goal = thread.get("goal") if isinstance(thread.get("goal"), dict) else {}
+        thread_goal["status"] = args.status
+        thread["goal"] = thread_goal
+        thread["wait_state"] = goal.get("wait_state")
+        thread["updated"] = goal["updated"]
+        atomic_write(ct2_dir, thread_path, thread)
+    print(f"ct2-codex-goal: {args.goal_slug} {args.role} -> {args.status}")
+    return 0
+
+
+def cmd_clear(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    path = find_goal(ct2_dir, args.goal_slug, args.role)
+    goal = load_json(path)
+    goal["status"] = "cleared"
+    goal["updated"] = now()
+    archive = ct2_dir / "codex" / "ledgers" / f"{args.goal_slug}-{args.role}.cleared.json"
+    atomic_write(ct2_dir, archive, goal)
+    path.unlink()
+    thread_path = ct2_dir / "codex" / "threads" / f"{args.role}.json"
+    if thread_path.exists():
+        thread = load_json(thread_path)
+        thread_goal = thread.get("goal") if isinstance(thread.get("goal"), dict) else {}
+        thread_goal["status"] = "cleared"
+        thread["goal"] = thread_goal
+        thread["wait_state"] = None
+        thread["updated"] = goal["updated"]
+        atomic_write(ct2_dir, thread_path, thread)
+    print(f"ct2-codex-goal: cleared {args.goal_slug} {args.role}")
+    return 0
+
+
+def ticket_current_path(ct2_dir: Path, filename: str) -> tuple[str | None, str | None]:
+    for state in ("draft", "backlog", "in-progress", "in-review", "rejected", "escalated", "done"):
+        path = ct2_dir / state / filename
+        if path.exists():
+            return state, f".ct2/{state}/{filename}"
+    return None, None
+
+
+def read_round(path: Path) -> str:
+    try:
+        match = re.search(r"^review-round:\s*(\d+)", path.read_text(encoding="utf-8"), re.MULTILINE)
+        return match.group(1) if match else "0"
+    except OSError:
+        return "0"
+
+
+def cmd_audit(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    goal_path = find_goal(ct2_dir, args.goal_slug, args.role)
+    goal = load_json(goal_path)
+    scope_id = goal.get("scope_id")
+    scope = load_json(ct2_dir / "codex" / "scopes" / f"{scope_id}.json") if scope_id else {}
+    tickets = scope.get("tickets", []) if isinstance(scope.get("tickets"), list) else []
+    terminal_states = {"done", "escalated"}
+    nonterminal_states = {"draft", "backlog", "in-progress", "in-review", "rejected"}
+    entries = []
+    complete = True
+
+    for ticket in tickets:
+        captured_path = ticket.get("path_at_capture", "")
+        filename = Path(captured_path).name
+        state, current = ticket_current_path(ct2_dir, filename)
+        entry = {
+            "ticket": filename,
+            "captured_path": captured_path,
+            "current_path": current,
+            "state": state,
+            "checks": [],
+        }
+        if state is None:
+            entry["checks"].append({"name": "ticket_exists", "ok": False, "evidence": "not found in CT2 state directories"})
+            complete = False
+        elif args.role == "ct2-forge":
+            ok = state in terminal_states
+            entry["checks"].append({"name": "terminal_state", "ok": ok, "evidence": state})
+            if state in nonterminal_states:
+                complete = False
+            if state == "done":
+                stem = filename[:-3] if filename.endswith(".md") else filename
+                ticket_id = re.match(r"^(\d+)", stem)
+                review_round = read_round(ct2_dir / state / filename)
+                tid = ticket_id.group(1) if ticket_id else stem
+                cc = ct2_dir / "reviews" / f"{tid}-cc-r{review_round}.md"
+                cx = ct2_dir / "reviews" / f"{tid}-cx-r{review_round}.md"
+                sidecars_ok = cc.exists() and cx.exists()
+                entry["checks"].append({"name": "dual_sidecars_exist", "ok": sidecars_ok, "evidence": [str(cc), str(cx)]})
+                if not sidecars_ok:
+                    complete = False
+        elif args.role == "ct2-lens-cx":
+            if state in {"in-review", "done", "rejected", "escalated"}:
+                stem = filename[:-3] if filename.endswith(".md") else filename
+                ticket_id = re.match(r"^(\d+)", stem)
+                review_round = read_round(ct2_dir / state / filename)
+                tid = ticket_id.group(1) if ticket_id else stem
+                cx = ct2_dir / "reviews" / f"{tid}-cx-r{review_round}.md"
+                ok = cx.exists()
+                entry["checks"].append({"name": "cx_sidecar_exists", "ok": ok, "evidence": str(cx)})
+                if not ok:
+                    complete = False
+            elif state in {"backlog", "in-progress", "rejected"}:
+                entry["checks"].append({"name": "upstream_terminal_or_snapshot_only", "ok": False, "evidence": state})
+                complete = False
+        else:
+            ok = state in {"draft", "backlog", "done", "escalated"}
+            entry["checks"].append({"name": "state_recorded", "ok": ok, "evidence": state})
+        entries.append(entry)
+
+    audit = {
+        "goal_slug": args.goal_slug,
+        "role": args.role,
+        "objective": goal.get("objective"),
+        "scope_id": scope_id,
+        "completion_conditions": scope.get("completion_conditions", []),
+        "complete": complete,
+        "tickets": entries,
+        "audited": now(),
+    }
+    atomic_write(ct2_dir, ct2_dir / "codex" / "ledgers" / f"{args.goal_slug}-{args.role}.audit.json", audit)
+    print(json.dumps(audit, indent=2, sort_keys=True))
+    return 0 if complete else 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Manage CT2-local Codex goal metadata")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    start = sub.add_parser("start")
+    start.add_argument("role", choices=sorted(ROLE_DEFAULTS))
+    start.add_argument("objective", nargs="+")
+    start.add_argument("--project-dir", default=".")
+    start.add_argument("--mode", choices=("tui", "exec", "app-server"), default="tui")
+    start.add_argument("--scope-mode", choices=("snapshot", "live", "production"))
+    start.add_argument("--scope-id")
+    start.add_argument("--goal-slug")
+    start.add_argument("--thread-id")
+    start.add_argument("--token-budget", type=int)
+    start.add_argument("--ticket-state", action="append", choices=("draft", "backlog", "rejected", "in-progress", "in-review", "done", "escalated"))
+    start.add_argument("--completion-condition", action="append")
+    start.set_defaults(func=cmd_start)
+
+    status = sub.add_parser("status")
+    status.add_argument("--project-dir", default=".")
+    status.set_defaults(func=cmd_status)
+
+    for command, status_value in (("pause", "paused"), ("resume", "active"), ("budget-limited", "budgetLimited")):
+        p = sub.add_parser(command)
+        p.add_argument("goal_slug")
+        p.add_argument("role", choices=sorted(ROLE_DEFAULTS))
+        p.add_argument("--project-dir", default=".")
+        p.add_argument("--wait-state")
+        p.set_defaults(func=cmd_set_status, status=status_value)
+
+    clear = sub.add_parser("clear")
+    clear.add_argument("goal_slug")
+    clear.add_argument("role", choices=sorted(ROLE_DEFAULTS))
+    clear.add_argument("--project-dir", default=".")
+    clear.set_defaults(func=cmd_clear)
+
+    audit = sub.add_parser("audit")
+    audit.add_argument("goal_slug")
+    audit.add_argument("role", choices=sorted(ROLE_DEFAULTS))
+    audit.add_argument("--project-dir", default=".")
+    audit.set_defaults(func=cmd_audit)
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

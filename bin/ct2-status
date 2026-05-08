@@ -6,6 +6,7 @@ import sys
 import os
 import re
 import time
+import json
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -175,6 +176,63 @@ def inbox_summary():
     if not has_unread:
         print("  (no unread messages)")
 
+def load_json(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+def codex_summary():
+    codex_dir = ct2_dir / "codex"
+    if not codex_dir.is_dir():
+        print("CODEX")
+        print("  (no Codex metadata)")
+        return
+
+    print("CODEX")
+    goal_dir = codex_dir / "goals"
+    goals = sorted(goal_dir.glob("*.json")) if goal_dir.is_dir() else []
+    if goals:
+        for goal_path in goals:
+            goal = load_json(goal_path)
+            role = goal.get("role", "?")
+            status = goal.get("status", "?")
+            wait = goal.get("wait_state") or "-"
+            scope = goal.get("scope_id") or "-"
+            slug = goal.get("goal_slug") or goal_path.stem
+            updated = goal.get("updated") or goal.get("created")
+            print(f"  goal {slug} role={role} status={status} wait={wait} scope={scope} updated={updated}")
+    else:
+        print("  goals: none")
+
+    thread_dir = codex_dir / "threads"
+    threads = sorted(thread_dir.glob("*.json")) if thread_dir.is_dir() else []
+    for thread_path in threads:
+        thread = load_json(thread_path)
+        role = thread.get("role", thread_path.stem)
+        mode = thread.get("mode", "?")
+        thread_id = thread.get("thread_id") or "-"
+        goal = thread.get("goal") or {}
+        goal_status = goal.get("status", "-") if isinstance(goal, dict) else "-"
+        wait = thread.get("wait_state") or "-"
+        print(f"  thread {role} mode={mode} thread={thread_id} goal={goal_status} wait={wait}")
+
+    preflight_path = codex_dir / "preflight.json"
+    if preflight_path.exists():
+        preflight = load_json(preflight_path)
+        version = preflight.get("codex_version") or "unknown"
+        req = preflight.get("request_input_setup") or {}
+        req_state = req.get("state", "?") if isinstance(req, dict) else "?"
+        degradations = preflight.get("degradations") or []
+        checked = preflight.get("checked_at") or "unknown"
+        print(f"  preflight codex={version} request-input={req_state} checked={checked}")
+        if degradations:
+            print(f"  degraded: {len(degradations)} warning(s)")
+            for item in degradations[:3]:
+                print(f"    - {item}")
+            if len(degradations) > 3:
+                print(f"    - ... {len(degradations) - 3} more")
+
 # ── Output ────────────────────────────────────────────────────────────────────
 print(f"CT2 Status: {project_dir}")
 print(SEP)
@@ -194,4 +252,6 @@ print(f"Lens-CX:  {heartbeat_status('lens-cx')}")
 print(SEP)
 print("INBOX")
 inbox_summary()
+print(SEP)
+codex_summary()
 print(SEP)
