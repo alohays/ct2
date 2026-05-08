@@ -301,7 +301,7 @@ CT2_DIR="${PROJECT_DIR}/.ct2"
 CODEX_CMD="${CT2_CODEX_CMD:-codex}"
 CODEX_ARGS="${CT2_CODEX_ARGS:-}"
 if [[ -z "$CODEX_ARGS" ]]; then
-  # Codex 0.121 rejects `--add-dir` under read-only; lens-cx needs .ct2 writes.
+  # Lens-cx needs .ct2 writes for sidecars and heartbeats.
   CODEX_ARGS="--sandbox workspace-write"
 fi
 

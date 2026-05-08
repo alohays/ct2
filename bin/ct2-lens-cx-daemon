@@ -199,9 +199,8 @@ PROMPT
 
   # Invoke codex to produce the review
   local tmp_review; tmp_review=$(mktemp "${CT2_DIR}/.tmp/cx-review-XXXXXX")
-  if (cd "$PROJECT_DIR" && echo "$review_prompt" | "$TIMEOUT_CMD" "$CODEX_TIMEOUT" "$CODEX_CMD" exec --color never -s read-only - > "$tmp_review") 2>>"$DAEMON_LOG"; then
-    # Validate verdict field in output
-    if grep -qE '^verdict:\s*(approved|rejected)' "$tmp_review"; then
+  if (cd "$PROJECT_DIR" && echo "$review_prompt" | "$TIMEOUT_CMD" "$CODEX_TIMEOUT" "$CODEX_CMD" exec --color never --sandbox read-only --output-last-message "$tmp_review" - >/dev/null) 2>>"$DAEMON_LOG"; then
+    if "${BASH_SOURCE%/*}/_ct2_validate_review_sidecar.py" "$tmp_review" ct2-lens-cx "$round" "$ticket_stem" >>"$DAEMON_LOG" 2>&1; then
       mv -n "$tmp_review" "$cx_sidecar" 2>/dev/null
       if [[ -f "$tmp_review" ]]; then
         log "warning: sidecar already exists for $(basename "$cx_sidecar"); skipping"
@@ -211,7 +210,7 @@ PROMPT
       log "sidecar written: $(basename "$cx_sidecar")"
       reconcile_ticket "$ticket_path" "$ticket_id" "$round"
     else
-      log "warning: codex output missing verdict field; retrying next cycle"
+      log "warning: codex output failed sidecar validation; retrying next cycle"
       rm -f "$tmp_review"
     fi
   else
