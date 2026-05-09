@@ -1,117 +1,126 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="720" viewBox="0 0 1600 720" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="760" viewBox="0 0 1600 760" role="img" aria-labelledby="title desc">
   <title id="title">CT2 ticket state machine</title>
-  <desc id="desc">The CT2 ticket lifecycle: draft to backlog to in-progress to in-review, with approved, rejected, escalated, revise, and duration circuit breaker transitions.</desc>
+  <desc id="desc">A precise CT2 state machine diagram showing the normal ticket path, review outcomes, rejected rework, duration circuit breaker, and manual ct2-revise recovery.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f7fbfa"/>
-      <stop offset="1" stop-color="#f8f4ed"/>
+      <stop offset="0" stop-color="#fbfaf6"/>
+      <stop offset="0.62" stop-color="#f5f8f8"/>
+      <stop offset="1" stop-color="#faf6ef"/>
     </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
-      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#102c34" flood-opacity="0.13"/>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#20333a" flood-opacity="0.08"/>
     </filter>
-    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-      <path d="M40 0H0v40" fill="none" stroke="#193941" stroke-width="1" opacity="0.05"/>
-    </pattern>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8.4" refY="5" markerWidth="9" markerHeight="9" orient="auto">
-      <path d="M0 0 L10 5 L0 10 z" fill="#193941"/>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.4" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#20333a"/>
+    </marker>
+    <marker id="mutedArrow" viewBox="0 0 10 10" refX="8.4" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#687c80"/>
     </marker>
     <style>
-      .title { font: 800 44px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #193941; letter-spacing: 0; }
-      .subtitle { font: 700 21px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #486872; letter-spacing: 0; }
-      .node { font: 800 24px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #193941; letter-spacing: 0; }
-      .small { font: 700 15px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #4d6870; letter-spacing: 0; }
-      .micro { font: 800 13px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #4d6870; letter-spacing: 0; }
-      .box { fill: #ffffff; stroke: #193941; stroke-width: 4; filter: url(#shadow); }
-      .arrow { fill: none; stroke: #193941; stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
-      .softarrow { fill: none; stroke: #486872; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .title { font: 800 44px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #20333a; letter-spacing: 0; }
+      .subtitle { font: 650 20px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526a70; letter-spacing: 0; }
+      .section { font: 800 14px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #687c80; letter-spacing: 0.8px; text-transform: uppercase; }
+      .stateName { font: 800 22px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #20333a; letter-spacing: 0; }
+      .stateNote { font: 650 14px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526a70; letter-spacing: 0; }
+      .edgeText { font: 750 13px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526a70; letter-spacing: 0; }
+      .legend { font: 650 14px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526a70; letter-spacing: 0; }
+      .state { fill: #fffefa; stroke: #20333a; stroke-width: 2.8; filter: url(#softShadow); }
+      .review { fill: #f4fbfa; stroke: #20333a; stroke-width: 2.8; filter: url(#softShadow); }
+      .done { fill: #eaf7ef; stroke: #2d6b4f; stroke-width: 2.8; filter: url(#softShadow); }
+      .rejected { fill: #fff5df; stroke: #7a5b20; stroke-width: 2.6; filter: url(#softShadow); }
+      .escalated { fill: #fff0ea; stroke: #7a4a3d; stroke-width: 2.6; filter: url(#softShadow); }
+      .gate { fill: #fffefa; stroke: #20333a; stroke-width: 2.8; filter: url(#softShadow); }
+      .arrow { fill: none; stroke: #20333a; stroke-width: 3.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .muted { fill: none; stroke: #687c80; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#mutedArrow); }
+      .dashed { fill: none; stroke: #687c80; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 8 9; marker-end: url(#mutedArrow); }
+      .rule { stroke: #d7e1e0; stroke-width: 2; }
+      .track { stroke: #d7e1e0; stroke-width: 2; stroke-dasharray: 4 8; }
     </style>
   </defs>
 
-  <rect width="1600" height="720" fill="url(#bg)"/>
-  <rect width="1600" height="720" fill="url(#grid)"/>
-  <text x="72" y="72" class="title">Ticket State Machine</text>
-  <text x="72" y="110" class="subtitle">file moves are the protocol; both reviews are required for done</text>
+  <rect width="1600" height="760" fill="url(#bg)"/>
+  <text x="76" y="76" class="title">Ticket State Machine</text>
+  <text x="76" y="112" class="subtitle">State is the containing directory. Automated transitions are atomic mv operations.</text>
+  <line x1="76" y1="146" x2="1524" y2="146" class="rule"/>
 
-  <g transform="translate(96 246)">
-    <rect x="0" y="0" width="174" height="94" rx="10" class="box"/>
-    <text x="56" y="40" class="node">draft</text>
-    <text x="42" y="66" class="small">helm WIP</text>
-  </g>
-  <g transform="translate(326 246)">
-    <rect x="0" y="0" width="190" height="94" rx="10" class="box"/>
-    <text x="48" y="40" class="node">backlog</text>
-    <text x="34" y="66" class="small">sealed queue</text>
-  </g>
-  <g transform="translate(578 246)">
-    <rect x="0" y="0" width="212" height="94" rx="10" class="box"/>
-    <text x="36" y="40" class="node">in-progress</text>
-    <text x="40" y="66" class="small">forge owns one</text>
-  </g>
-  <g transform="translate(856 246)">
-    <rect x="0" y="0" width="190" height="94" rx="10" class="box"/>
-    <text x="34" y="40" class="node">in-review</text>
-    <text x="26" y="66" class="small">dual lenses scan</text>
-  </g>
-  <g transform="translate(1324 246)">
-    <rect x="0" y="0" width="174" height="94" rx="10" fill="#eafff2" stroke="#193941" stroke-width="4" filter="url(#shadow)"/>
-    <text x="58" y="40" class="node">done</text>
-    <text x="32" y="66" class="small">both approve</text>
-  </g>
+  <text x="88" y="190" class="section">normal path</text>
+  <line x1="96" y1="296" x2="1468" y2="296" class="track"/>
 
-  <path class="arrow" d="M270 293 H304"/>
-  <text x="286" y="274" class="micro">ct2-seal</text>
-  <path class="arrow" d="M516 293 H556"/>
-  <text x="526" y="274" class="micro">pickup</text>
-  <path class="arrow" d="M790 293 H834"/>
-  <text x="792" y="274" class="micro">submit</text>
-  <path class="arrow" d="M1046 293 H1302"/>
-  <text x="1090" y="274" class="micro">cc approved AND cx approved</text>
-
-  <g transform="translate(1088 182)">
-    <rect x="0" y="0" width="96" height="44" rx="8" fill="#eafff2" stroke="#193941" stroke-width="3"/>
-    <text x="23" y="29" class="micro">cc sidecar</text>
-    <rect x="116" y="0" width="96" height="44" rx="8" fill="#fff1eb" stroke="#193941" stroke-width="3"/>
-    <text x="139" y="29" class="micro">cx sidecar</text>
+  <g transform="translate(96 250)">
+    <rect x="0" y="0" width="166" height="92" rx="10" class="state"/>
+    <text x="50" y="37" class="stateName">draft/</text>
+    <text x="35" y="62" class="stateNote">helm authors</text>
   </g>
-  <path class="softarrow" d="M944 246 C980 204 1028 190 1082 204"/>
-  <path class="softarrow" d="M1002 246 C1040 224 1086 214 1196 204"/>
-
-  <g transform="translate(884 456)">
-    <rect x="0" y="0" width="190" height="94" rx="10" fill="#fff4df" stroke="#193941" stroke-width="4" filter="url(#shadow)"/>
-    <text x="44" y="40" class="node">rejected</text>
-    <text x="26" y="66" class="small">any lens rejects</text>
+  <g transform="translate(314 250)">
+    <rect x="0" y="0" width="178" height="92" rx="10" class="state"/>
+    <text x="45" y="37" class="stateName">backlog/</text>
+    <text x="32" y="62" class="stateNote">sealed queue</text>
   </g>
-  <g transform="translate(1160 456)">
-    <rect x="0" y="0" width="206" height="94" rx="10" fill="#fff1eb" stroke="#193941" stroke-width="4" filter="url(#shadow)"/>
-    <text x="38" y="40" class="node">escalated</text>
-    <text x="24" y="66" class="small">max rounds reached</text>
+  <g transform="translate(550 250)">
+    <rect x="0" y="0" width="214" height="92" rx="10" class="state"/>
+    <text x="34" y="37" class="stateName">in-progress/</text>
+    <text x="40" y="62" class="stateNote">forge working</text>
   </g>
-  <g transform="translate(440 456)">
-    <rect x="0" y="0" width="210" height="94" rx="10" fill="#f8fffc" stroke="#193941" stroke-width="4" filter="url(#shadow)"/>
-    <text x="42" y="40" class="node">ct2-revise</text>
-    <text x="34" y="66" class="small">archive and reset</text>
+  <g transform="translate(830 250)">
+    <rect x="0" y="0" width="190" height="92" rx="10" class="review"/>
+    <text x="34" y="37" class="stateName">in-review/</text>
+    <text x="30" y="62" class="stateNote">dual review</text>
+  </g>
+  <g transform="translate(1120 238)">
+    <path d="M58 0 L116 58 L58 116 L0 58 Z" class="gate"/>
+    <text x="31" y="54" class="edgeText">reconciler</text>
+    <text x="37" y="73" class="edgeText">verdict</text>
+  </g>
+  <g transform="translate(1360 250)">
+    <rect x="0" y="0" width="156" height="92" rx="10" class="done"/>
+    <text x="48" y="37" class="stateName">done/</text>
+    <text x="25" y="62" class="stateNote">both approve</text>
   </g>
 
-  <path class="arrow" d="M945 340 C942 380 950 414 968 444"/>
-  <text x="984" y="394" class="micro">rejected verdict</text>
-  <path class="arrow" d="M1074 503 H1138"/>
-  <text x="1084" y="484" class="micro">round limit</text>
-  <path class="arrow" d="M884 504 C792 504 722 430 690 354"/>
-  <text x="708" y="462" class="micro">rework increments round</text>
-  <path class="arrow" d="M548 456 C430 410 276 394 184 354"/>
-  <text x="254" y="426" class="micro">human-triggered reset to draft</text>
-  <path class="softarrow" d="M1260 550 C1054 604 806 596 652 524"/>
-  <text x="892" y="594" class="micro">ct2-revise after escalation</text>
+  <path class="arrow" d="M262 296 H292"/>
+  <text x="274" y="234" class="edgeText">ct2-seal</text>
+  <path class="arrow" d="M492 296 H528"/>
+  <text x="502" y="234" class="edgeText">forge pickup</text>
+  <path class="arrow" d="M764 296 H808"/>
+  <text x="775" y="234" class="edgeText">all ACs checked</text>
+  <path class="arrow" d="M1020 296 H1098"/>
+  <text x="1032" y="234" class="edgeText">both sidecars present</text>
+  <path class="arrow" d="M1236 296 H1338"/>
+  <text x="1260" y="234" class="edgeText">cc AND cx approve</text>
 
-  <path class="softarrow" d="M690 340 C620 392 510 394 430 350"/>
-  <text x="480" y="400" class="micro">duration circuit breaker returns to backlog</text>
+  <text x="88" y="420" class="section">review outcomes and recovery</text>
+  <g transform="translate(844 478)">
+    <rect x="0" y="0" width="184" height="88" rx="10" class="rejected"/>
+    <text x="42" y="36" class="stateName">rejected/</text>
+    <text x="31" y="61" class="stateNote">any reviewer rejects</text>
+  </g>
+  <g transform="translate(1092 478)">
+    <rect x="0" y="0" width="194" height="88" rx="10" class="escalated"/>
+    <text x="34" y="36" class="stateName">escalated/</text>
+    <text x="34" y="61" class="stateNote">review-round limit</text>
+  </g>
 
-  <g transform="translate(144 612)">
-    <rect x="0" y="0" width="258" height="50" rx="9" fill="#ffffff" stroke="#193941" stroke-width="3"/>
-    <text x="37" y="32" class="small">atomic mv transitions</text>
-    <rect x="304" y="0" width="258" height="50" rx="9" fill="#ffffff" stroke="#193941" stroke-width="3"/>
-    <text x="348" y="32" class="small">state = directory</text>
-    <rect x="608" y="0" width="280" height="50" rx="9" fill="#ffffff" stroke="#193941" stroke-width="3"/>
-    <text x="647" y="32" class="small">immutable sidecars</text>
+  <path class="dashed" d="M1178 354 V436 H936 V462"/>
+  <text x="944" y="450" class="edgeText">any rejected</text>
+  <path class="dashed" d="M1178 354 V436 H1189 V462"/>
+  <text x="1194" y="450" class="edgeText">max rounds</text>
+
+  <path class="dashed" d="M844 522 H660 C630 522 606 498 606 468 V364"/>
+  <text x="662" y="506" class="edgeText">rework: review-round++</text>
+
+  <path class="muted" d="M660 250 C632 204 548 194 404 194 C376 194 360 214 360 238"/>
+  <text x="424" y="178" class="edgeText">duration circuit breaker -> backlog/</text>
+
+  <path class="dashed" d="M936 566 V626 H170 V364"/>
+  <path class="dashed" d="M1189 566 V626 H170 V364"/>
+  <text x="216" y="612" class="edgeText">ct2-revise: archive sidecars, reset frontmatter, return to draft/</text>
+
+  <g transform="translate(96 678)">
+    <rect x="0" y="0" width="336" height="46" rx="9" fill="#fffefa" stroke="#9baeb0" stroke-width="2"/>
+    <text x="24" y="29" class="legend">done/ has only one path: both reviewers approve</text>
+    <rect x="370" y="0" width="258" height="46" rx="9" fill="#fffefa" stroke="#9baeb0" stroke-width="2"/>
+    <text x="394" y="29" class="legend">state = containing directory</text>
+    <rect x="662" y="0" width="296" height="46" rx="9" fill="#fffefa" stroke="#9baeb0" stroke-width="2"/>
+    <text x="686" y="29" class="legend">review sidecars are immutable</text>
   </g>
 </svg>
