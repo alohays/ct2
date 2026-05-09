@@ -2,7 +2,7 @@
 
 **Multi-session AI orchestration harness with dual-review workflow.**
 
-![CT2 tiny ticket railway](docs/assets/ct2-hero-meme.svg)
+![CT2 filesystem switchyard](docs/assets/ct2-hero-switchyard-labeled.png)
 
 CT2 enables multiple AI agent sessions to divide responsibilities and perform long-running autonomous development on a shared codebase. Three role-based sessions — planner, engineer, and reviewer — communicate through a shared `.ct2/` directory, following a Kanban-style ticket state machine and a dual-approval review protocol.
 
@@ -10,39 +10,12 @@ While the user is away, engineer and reviewer sessions autonomously process tick
 
 ## Architecture
 
-![CT2 architecture map](docs/assets/ct2-architecture-map.svg)
+![CT2 protocol map](docs/assets/ct2-protocol-map.svg)
 
-```
-User
-  │
-  ▼
-ct2-helm (planner)            ← Interactive: dialogue with user, author tickets
-  │ ct2-seal
-  ▼
-.ct2/backlog/                 ← Shared filesystem (single source of truth)
-  │
-  ▼
-ct2-forge (engineer)          ← Autonomous: picks up tickets, implements, submits
-  │
-  ▼
-.ct2/in-review/
-  │
-  ├─────────────────────┐
-  ▼                     ▼
-ct2-lens-cc           ct2-lens-cx
-(Claude Code)         (Codex CLI)
-  │                     │
-  ▼                     ▼
-reviews/{id}-cc.md    reviews/{id}-cx.md
-  │                     │
-  └────────┬────────────┘
-           ▼
-     reconciler
-           │
-     ┌─────┼──────────┐
-     ▼     ▼          ▼
-   done  rejected  escalated
-```
+CT2 treats the project-local `.ct2/` directory as the coordination protocol:
+tickets move between state directories with atomic `mv`, agents write durable
+sidecar files, and the reconciler is the only automatic path into terminal
+states.
 
 **Key design decisions:**
 
@@ -270,23 +243,7 @@ Codex metadata output, and plugin/skill contract shape.
 
 ## State Machine
 
-```
-  ┌──────────────────────── ct2-revise ────────────────────────┐
-  │                        (human-triggered)                    │
-  ▼                                                             │
-draft → backlog → in-progress → in-review → done                │
-                      ▲             │                           │
-                      │             ▼                           │
-                      │         ┌────────┴──────┐               │
-                      │         ▼               ▼               │
-                      │      rejected ───► in-progress          │
-                      │     (rework cycle, review-round++)      │
-                      │                                         │
-                      └── duration CB bounce (backlog)          │
-                                                                │
-                              escalated ─────────────────── ────┘
-                              (max_review_rounds)
-```
+![CT2 ticket state machine](docs/assets/ct2-state-machine.svg)
 
 - **`done`** is reachable only when both reviewers approve.
 - **`escalated`** triggers when `max_review_rounds` is exceeded — requires human

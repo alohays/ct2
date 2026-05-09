@@ -1,0 +1,176 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="920" viewBox="0 0 1600 920" role="img" aria-labelledby="title desc">
+  <title id="title">CT2 protocol architecture</title>
+  <desc id="desc">A clean architecture diagram for CT2 showing role ownership, the .ct2 filesystem ledger, atomic ticket state transitions, independent review sidecars, reconciliation, and terminal outcomes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbfaf6"/>
+      <stop offset="0.58" stop-color="#f4f8f8"/>
+      <stop offset="1" stop-color="#faf7f0"/>
+    </linearGradient>
+    <linearGradient id="ledger" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#edf6f4"/>
+      <stop offset="0.55" stop-color="#e4f0f1"/>
+      <stop offset="1" stop-color="#f1f5ec"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#20333a" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.4" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#20333a"/>
+    </marker>
+    <marker id="arrowMuted" viewBox="0 0 10 10" refX="8.4" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#64777b"/>
+    </marker>
+    <style>
+      .title { font: 800 44px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #20333a; letter-spacing: 0; }
+      .subtitle { font: 650 20px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526a70; letter-spacing: 0; }
+      .section { font: 800 15px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #64777b; letter-spacing: 0.7px; text-transform: uppercase; }
+      .node { font: 800 23px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #20333a; letter-spacing: 0; }
+      .label { font: 750 17px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #20333a; letter-spacing: 0; }
+      .small { font: 650 15px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526a70; letter-spacing: 0; }
+      .micro { font: 750 13px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #64777b; letter-spacing: 0; }
+      .mono { font: 800 22px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #20333a; letter-spacing: 0; }
+      .role { fill: #fffefa; stroke: #20333a; stroke-width: 2.8; filter: url(#softShadow); }
+      .state { fill: #fffefa; stroke: #20333a; stroke-width: 2.8; filter: url(#softShadow); }
+      .artifact { fill: #f9fbfa; stroke: #9baeb0; stroke-width: 2.2; }
+      .approved { fill: #eaf7ef; stroke: #2d6b4f; stroke-width: 2.8; filter: url(#softShadow); }
+      .rejected { fill: #fff5df; stroke: #7a5b20; stroke-width: 2.6; }
+      .escalated { fill: #fff0ea; stroke: #7a4a3d; stroke-width: 2.6; }
+      .gate { fill: #fffefa; stroke: #20333a; stroke-width: 2.8; filter: url(#softShadow); }
+      .arrow { fill: none; stroke: #20333a; stroke-width: 3.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .thin { fill: none; stroke: #64777b; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowMuted); }
+      .dash { fill: none; stroke: #64777b; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 8 9; marker-end: url(#arrowMuted); }
+      .rule { stroke: #d7e1e0; stroke-width: 2; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="920" fill="url(#bg)"/>
+  <text x="76" y="76" class="title">CT2 Architecture</text>
+  <text x="76" y="112" class="subtitle">A project-local filesystem protocol for planning, building, independent review, and reconciliation.</text>
+  <line x1="76" y1="146" x2="1524" y2="146" class="rule"/>
+
+  <text x="84" y="186" class="section">role ownership</text>
+  <g transform="translate(126 216)">
+    <rect x="0" y="0" width="210" height="92" rx="10" class="role"/>
+    <text x="34" y="38" class="node">ct2-helm</text>
+    <text x="34" y="64" class="small">author and seal tickets</text>
+  </g>
+  <g transform="translate(500 216)">
+    <rect x="0" y="0" width="210" height="92" rx="10" class="role"/>
+    <text x="34" y="38" class="node">ct2-forge</text>
+    <text x="34" y="64" class="small">implement one ticket</text>
+  </g>
+  <g transform="translate(872 216)">
+    <rect x="0" y="0" width="258" height="92" rx="10" class="role"/>
+    <text x="34" y="38" class="node">lens-cc + lens-cx</text>
+    <text x="34" y="64" class="small">review independently</text>
+  </g>
+  <g transform="translate(1288 216)">
+    <rect x="0" y="0" width="210" height="92" rx="10" class="role"/>
+    <text x="34" y="38" class="node">reconciler</text>
+    <text x="34" y="64" class="small">issue final verdict</text>
+  </g>
+
+  <path class="thin" d="M231 308 V356"/>
+  <path class="thin" d="M605 308 V356"/>
+  <path class="thin" d="M1001 308 V356"/>
+  <path class="thin" d="M1393 308 V338 H1264 V462"/>
+
+  <g transform="translate(76 356)">
+    <rect x="0" y="0" width="1448" height="300" rx="16" fill="url(#ledger)" stroke="#b9cdca" stroke-width="2.5"/>
+    <text x="34" y="46" class="section">project-local protocol ledger</text>
+    <text x="34" y="82" class="mono">.ct2/</text>
+    <text x="136" y="82" class="small">ticket state is represented by the directory that contains the file</text>
+  </g>
+
+  <g transform="translate(138 486)">
+    <rect x="0" y="0" width="156" height="82" rx="10" class="state"/>
+    <text x="48" y="34" class="label">draft/</text>
+    <text x="30" y="58" class="micro">ticket authored</text>
+  </g>
+  <g transform="translate(340 486)">
+    <rect x="0" y="0" width="168" height="82" rx="10" class="state"/>
+    <text x="47" y="34" class="label">backlog/</text>
+    <text x="34" y="58" class="micro">sealed queue</text>
+  </g>
+  <g transform="translate(560 486)">
+    <rect x="0" y="0" width="194" height="82" rx="10" class="state"/>
+    <text x="32" y="34" class="label">in-progress/</text>
+    <text x="42" y="58" class="micro">forge working</text>
+  </g>
+  <g transform="translate(810 486)">
+    <rect x="0" y="0" width="174" height="82" rx="10" class="state"/>
+    <text x="34" y="34" class="label">in-review/</text>
+    <text x="29" y="58" class="micro">sidecars pending</text>
+  </g>
+
+  <path class="arrow" d="M294 527 H318"/>
+  <text x="295" y="466" class="micro">ct2-seal</text>
+  <path class="arrow" d="M508 527 H538"/>
+  <text x="516" y="466" class="micro">pickup</text>
+  <path class="arrow" d="M754 527 H788"/>
+  <text x="759" y="466" class="micro">submit</text>
+
+  <path class="thin" d="M984 527 H1010"/>
+  <path class="thin" d="M1010 527 V432"/>
+  <path class="thin" d="M1010 527 V622"/>
+  <path class="thin" d="M1010 432 H1038"/>
+  <path class="thin" d="M1010 622 H1038"/>
+
+  <g transform="translate(1040 404)">
+    <rect x="0" y="0" width="126" height="58" rx="8" fill="#eaf7ef" stroke="#6c9380" stroke-width="2.4"/>
+    <text x="25" y="25" class="micro">reviews/</text>
+    <text x="21" y="44" class="micro">{id}-cc.md</text>
+  </g>
+  <g transform="translate(1040 592)">
+    <rect x="0" y="0" width="126" height="58" rx="8" fill="#fff1eb" stroke="#ad7b6e" stroke-width="2.4"/>
+    <text x="25" y="25" class="micro">reviews/</text>
+    <text x="21" y="44" class="micro">{id}-cx.md</text>
+  </g>
+
+  <g transform="translate(1212 476)">
+    <path d="M52 0 L104 52 L52 104 L0 52 Z" class="gate"/>
+    <text x="26" y="49" class="micro">AND</text>
+    <text x="23" y="68" class="micro">gate</text>
+  </g>
+  <path class="thin" d="M1166 433 H1212"/>
+  <path class="thin" d="M1166 621 H1212"/>
+
+  <g transform="translate(1368 486)">
+    <rect x="0" y="0" width="126" height="82" rx="10" class="approved"/>
+    <text x="35" y="34" class="label">done/</text>
+    <text x="22" y="58" class="micro">both approve</text>
+  </g>
+  <path class="arrow" d="M1316 528 H1346"/>
+
+  <g transform="translate(1128 692)">
+    <rect x="0" y="0" width="146" height="56" rx="9" class="rejected"/>
+    <text x="30" y="24" class="label">rejected/</text>
+    <text x="26" y="43" class="micro">any rejection</text>
+  </g>
+  <g transform="translate(1312 692)">
+    <rect x="0" y="0" width="146" height="56" rx="9" class="escalated"/>
+    <text x="24" y="24" class="label">escalated/</text>
+    <text x="31" y="43" class="micro">round limit</text>
+  </g>
+  <path class="dash" d="M1255 580 V670 H1201 V688"/>
+  <path class="dash" d="M1273 580 V670 H1385 V688"/>
+
+  <g transform="translate(96 720)">
+    <rect x="0" y="0" width="292" height="62" rx="10" class="artifact"/>
+    <text x="28" y="26" class="label">atomic mv</text>
+    <text x="28" y="47" class="micro">state changes are renames</text>
+  </g>
+  <g transform="translate(424 720)">
+    <rect x="0" y="0" width="292" height="62" rx="10" class="artifact"/>
+    <text x="28" y="26" class="label">tmpfile then mv</text>
+    <text x="28" y="47" class="micro">messages land atomically</text>
+  </g>
+  <g transform="translate(752 720)">
+    <rect x="0" y="0" width="292" height="62" rx="10" class="artifact"/>
+    <text x="28" y="26" class="label">immutable sidecars</text>
+    <text x="28" y="47" class="micro">reviewers do not edit tickets</text>
+  </g>
+
+  <text x="96" y="842" class="small">Terminal rule: done/ is reachable only when lens-cc and lens-cx both approve the same review round.</text>
+</svg>
