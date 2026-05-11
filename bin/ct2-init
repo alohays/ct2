@@ -38,7 +38,14 @@ else
 fi
 
 # ── Create Kanban directories ──────────────────────────────────────────────────
-for dir in draft backlog in-progress in-review rejected escalated done reviews reviews/.archive worktrees logs; do
+for dir in \
+  draft backlog in-progress in-review rejected escalated done \
+  reviews reviews/.archive worktrees logs \
+  runtime runtime/artifacts runtime/provider-hooks telemetry evidence evidence/commands evidence/artifacts evidence/screenshots evidence/verifiers evidence/hooks \
+  decisions/pending decisions/answered decisions/expired decisions/audit \
+  plans watchers postmortems \
+  evals/ct2-helm evals/ct2-forge evals/ct2-lens-cc evals/ct2-lens-cx
+do
   mkdir -p "${CT2_DIR}/${dir}"
 done
 
@@ -69,6 +76,24 @@ _copy_if_missing "${CT2_REPO_DIR}/config/harness.yaml"          "${CT2_DIR}/conf
 _copy_if_missing "${CT2_REPO_DIR}/config/ct2-lens-cc-role.md"   "${CT2_DIR}/config/ct2-lens-cc-role.md"
 _copy_if_missing "${CT2_REPO_DIR}/config/ct2-lens-cx-role.md"   "${CT2_DIR}/config/ct2-lens-cx-role.md"
 _copy_if_missing "${CT2_REPO_DIR}/config/ct2-reconciler-ref.md" "${CT2_DIR}/config/ct2-reconciler-ref.md"
+
+# ── Copy default VAO eval cases and watcher templates ────────────────────────
+for role in ct2-helm ct2-forge ct2-lens-cc ct2-lens-cx; do
+  mkdir -p "${CT2_DIR}/evals/${role}/cases"
+  if [[ -d "${CT2_REPO_DIR}/config/evals/${role}" ]]; then
+    for src in "${CT2_REPO_DIR}/config/evals/${role}"/*.json; do
+      [[ -e "$src" ]] || continue
+      _copy_if_missing "$src" "${CT2_DIR}/evals/${role}/cases/$(basename "$src")"
+    done
+  fi
+done
+
+if [[ -d "${CT2_REPO_DIR}/config/watchers" ]]; then
+  for src in "${CT2_REPO_DIR}/config/watchers"/*.json; do
+    [[ -e "$src" ]] || continue
+    _copy_if_missing "$src" "${CT2_DIR}/watchers/$(basename "$src")"
+  done
+fi
 
 # ── Copy ticket template ───────────────────────────────────────────────────────
 _copy_if_missing "${CT2_REPO_DIR}/templates/ticket.md" "${CT2_DIR}/ticket.template.md"
