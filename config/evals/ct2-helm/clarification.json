@@ -1,0 +1,19 @@
+{
+  "schema_version": "1",
+  "case_id": "ct2-helm-clarification",
+  "role": "ct2-helm",
+  "target": "codex-plugin/skills/ct2-helm/SKILL.md",
+  "input": {
+    "task": "author a ticket from ambiguous user intent"
+  },
+  "expected_output": {
+    "ok": true,
+    "requires_bounded_clarification": true
+  },
+  "expected_contains": [
+    "request_user_input",
+    "Do not guess",
+    "ct2-seal"
+  ],
+  "forbidden_contains": []
+}

@@ -1,0 +1,19 @@
+{
+  "schema_version": "1",
+  "case_id": "ct2-lens-cx-independent-review",
+  "role": "ct2-lens-cx",
+  "target": "config/ct2-lens-cx-role.md",
+  "input": {
+    "task": "review an in-review ticket"
+  },
+  "expected_output": {
+    "ok": true,
+    "requires_independent_sidecar": true
+  },
+  "expected_contains": [
+    "independent review",
+    "structured verdict sidecar",
+    "before"
+  ],
+  "forbidden_contains": []
+}

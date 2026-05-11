@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""Audit CT2 tickets for required plan evidence."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from _ct2_vao import ensure_ct2, read_frontmatter, ticket_id_from_name, now
+
+
+PLAN_STATES = ("in-progress", "in-review", "done")
+
+
+def has_plan_exempt(path: Path) -> bool:
+    text = path.read_text(encoding="utf-8", errors="ignore").lower()
+    return "plan-exempt" in text
+
+
+def plan_exists(ct2_dir: Path, ticket_id: str, round_num: str) -> bool:
+    for suffix in ("md", "json"):
+        if (ct2_dir / "plans" / f"{ticket_id}-r{round_num}.{suffix}").exists():
+            return True
+    return False
+
+
+def audit(ct2_dir: Path) -> dict:
+    tickets = []
+    complete = True
+    for state in PLAN_STATES:
+        for path in sorted((ct2_dir / state).glob("*.md")):
+            fm = read_frontmatter(path)
+            ticket_id = ticket_id_from_name(path)
+            round_num = str(fm.get("review-round", "0"))
+            exempt = has_plan_exempt(path)
+            present = plan_exists(ct2_dir, ticket_id, round_num)
+            ok = exempt or present
+            complete = complete and ok
+            tickets.append(
+                {
+                    "ticket": path.name,
+                    "state": state,
+                    "round": round_num,
+                    "plan_required": not exempt,
+                    "plan_exists": present,
+                    "ok": ok,
+                }
+            )
+    return {
+        "schema_version": "1",
+        "audited_at": now(),
+        "complete": complete,
+        "tickets_checked": len(tickets),
+        "tickets": tickets,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Audit CT2 plan evidence")
+    parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    report = audit(ct2_dir)
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print("CT2 Plan Audit")
+        print(f"  tickets_checked: {report['tickets_checked']}")
+        print(f"  complete: {report['complete']}")
+        for ticket in report["tickets"]:
+            marker = "ok" if ticket["ok"] else "missing"
+            print(f"  {marker}: {ticket['ticket']} state={ticket['state']} round={ticket['round']}")
+    return 0 if report["complete"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

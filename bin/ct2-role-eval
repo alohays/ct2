@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""Run CT2 role definition regression evals."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+from _ct2_vao import append_jsonl, atomic_write_json, ensure_ct2, new_id, now, relative_to_project
+
+
+ROLES = ("ct2-helm", "ct2-forge", "ct2-lens-cc", "ct2-lens-cx")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_CASE_ROOT = REPO_ROOT / "config" / "evals"
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def parse_override(items: list[str] | None) -> dict[str, Path]:
+    overrides: dict[str, Path] = {}
+    for item in items or []:
+        if "=" not in item:
+            raise SystemExit("ct2-role-eval: --target-override must be role=path")
+        role, raw_path = item.split("=", 1)
+        if role not in ROLES:
+            raise SystemExit(f"ct2-role-eval: unsupported role override {role}")
+        overrides[role] = Path(raw_path).resolve()
+    return overrides
+
+
+def install_default_cases(ct2_dir: Path, roles: list[str]) -> None:
+    for role in roles:
+        src_dir = DEFAULT_CASE_ROOT / role
+        if not src_dir.is_dir():
+            continue
+        dest_dir = ct2_dir / "evals" / role / "cases"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for src in sorted(src_dir.glob("*.json")):
+            dest = dest_dir / src.name
+            if not dest.exists():
+                atomic_write_json(ct2_dir, dest, read_json(src), "role-eval-case-")
+
+
+def load_cases(ct2_dir: Path, roles: list[str], case_dir: Path | None) -> list[dict[str, Any]]:
+    cases: list[dict[str, Any]] = []
+    roots: list[Path] = []
+    if case_dir:
+        roots.append(case_dir)
+    else:
+        roots.extend(ct2_dir / "evals" / role / "cases" for role in roles)
+    for root in roots:
+        for path in sorted(root.glob("*.json")):
+            case = read_json(path)
+            case["_case_path"] = str(path)
+            if case.get("role") in roles:
+                cases.append(case)
+    return cases
+
+
+def resolve_target(project_dir: Path, role: str, target: str, overrides: dict[str, Path]) -> Path:
+    if role in overrides:
+        return overrides[role]
+    target_path = Path(target)
+    if target_path.is_absolute():
+        return target_path
+    if str(target).startswith(".ct2/"):
+        return project_dir / target_path
+    return REPO_ROOT / target_path
+
+
+def evaluate_case(project_dir: Path, case: dict[str, Any], overrides: dict[str, Path]) -> dict[str, Any]:
+    role = str(case["role"])
+    target = resolve_target(project_dir, role, str(case["target"]), overrides)
+    checks = []
+    if not target.exists():
+        return {
+            "case_id": case.get("case_id"),
+            "role": role,
+            "target": str(target),
+            "ok": False,
+            "checks": [{"type": "target_exists", "ok": False, "expected": str(target)}],
+        }
+
+    text = target.read_text(encoding="utf-8", errors="ignore")
+    for needle in case.get("expected_contains", []):
+        checks.append({"type": "contains", "expected": needle, "ok": needle in text})
+    for needle in case.get("forbidden_contains", []):
+        checks.append({"type": "not_contains", "expected": needle, "ok": needle not in text})
+
+    ok = all(check["ok"] for check in checks)
+    return {
+        "case_id": case.get("case_id"),
+        "role": role,
+        "target": relative_to_project(REPO_ROOT, target),
+        "input": case.get("input", {}),
+        "expected_output": case.get("expected_output", {"ok": True}),
+        "actual_output": {"ok": ok, "checks_passed": sum(1 for check in checks if check["ok"]), "checks": len(checks)},
+        "ok": ok,
+        "checks": checks,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run CT2 role eval fixtures")
+    parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument("--role", action="append", choices=ROLES)
+    parser.add_argument("--case-dir")
+    parser.add_argument("--target-override", action="append", help="Override target path for a role: role=/path/to/file")
+    parser.add_argument("--no-install-defaults", action="store_true")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    roles = args.role or list(ROLES)
+    overrides = parse_override(args.target_override)
+    if not args.no_install_defaults and not args.case_dir:
+        install_default_cases(ct2_dir, roles)
+
+    case_dir = Path(args.case_dir).resolve() if args.case_dir else None
+    cases = load_cases(ct2_dir, roles, case_dir)
+    run_id = new_id("eval")
+    results = [evaluate_case(project_dir, case, overrides) for case in cases]
+    complete = bool(results) and all(result["ok"] for result in results)
+    report = {
+        "schema_version": "1",
+        "id": run_id,
+        "generated_at": now(),
+        "complete": complete,
+        "roles": roles,
+        "case_count": len(results),
+        "failed": [result["case_id"] for result in results if not result["ok"]],
+        "results": results,
+    }
+    append_jsonl(ct2_dir, ct2_dir / "evals" / "results.jsonl", report)
+    for role in roles:
+        role_results = [result for result in results if result["role"] == role]
+        if role_results:
+            append_jsonl(
+                ct2_dir,
+                ct2_dir / "evals" / role / "results.jsonl",
+                {**report, "results": role_results, "case_count": len(role_results)},
+            )
+
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print("CT2 Role Evals")
+        print(f"  cases: {report['case_count']}")
+        print(f"  complete: {report['complete']}")
+        for result in results:
+            marker = "ok" if result["ok"] else "fail"
+            print(f"  {marker}: {result['role']} {result['case_id']}")
+    return 0 if complete else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
