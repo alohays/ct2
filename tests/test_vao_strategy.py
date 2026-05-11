@@ -563,6 +563,48 @@ esac
         self.assertTrue((project / ".ct2" / "decisions" / "answered" / f"{decision_id}.json").is_file())
         self.assertTrue((project / ".ct2" / "decisions" / "audit" / f"{decision_id}.json").is_file())
 
+    def test_decision_answer_audit_failure_does_not_leave_duplicate_states(self):
+        project = self.make_project()
+        ask = run_cmd(
+            [
+                PYTHON,
+                REPO_ROOT / "bin" / "ct2-decision",
+                "ask",
+                "--project-dir",
+                project,
+                "--provider",
+                "codex",
+                "--role",
+                "ct2-forge",
+                "--ticket",
+                "001",
+                "--question",
+                "Proceed?",
+                "--option",
+                "yes",
+                "--json",
+            ]
+        )
+        self.assertEqual(ask.returncode, 0, ask.stderr)
+        decision_id = json.loads(ask.stdout)["id"]
+        module = load_script_module("ct2_decision_atomic", "bin/ct2-decision")
+        original = module.atomic_write_json
+
+        def fail_audit(ct2_dir, dest, data, prefix="ct2-json-"):
+            if dest.parent.name == "audit":
+                raise RuntimeError("simulated audit failure")
+            return original(ct2_dir, dest, data, prefix)
+
+        args = argparse.Namespace(project_dir=str(project), decision_id=decision_id, choice="yes", json=True)
+        with mock.patch.object(module, "atomic_write_json", fail_audit):
+            with self.assertRaises(RuntimeError):
+                module.cmd_answer(args)
+        pending = project / ".ct2" / "decisions" / "pending" / f"{decision_id}.json"
+        answered = project / ".ct2" / "decisions" / "answered" / f"{decision_id}.json"
+        self.assertFalse(pending.exists() and answered.exists())
+        self.assertFalse(pending.exists())
+        self.assertTrue(answered.exists())
+
     def test_decision_bridge_formats_codex_and_claude_provider_payloads(self):
         project = self.make_project()
         ask = run_cmd(
@@ -625,6 +667,54 @@ esac
         codex_payload = json.loads(codex.stdout)
         self.assertEqual("item/tool/requestUserInput", codex_payload["method"])
         self.assertEqual("choice", codex_payload["params"]["questions"][0]["id"])
+
+    def test_app_driver_decision_records_format_and_validate_choices(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        module = load_script_module("ct2_codex_app_driver_decisions", "bin/ct2-codex-app-driver")
+        decision_id = module.write_decision_record(
+            ct2,
+            "ct2-forge",
+            [
+                {
+                    "id": "scope",
+                    "question": "Which scope?",
+                    "options": [{"label": "narrow", "description": "Keep it small."}],
+                }
+            ],
+        )
+        formatted = run_cmd(
+            [
+                PYTHON,
+                REPO_ROOT / "bin" / "ct2-decision",
+                "format",
+                decision_id,
+                "--project-dir",
+                project,
+                "--provider",
+                "codex",
+                "--json",
+            ]
+        )
+        self.assertEqual(formatted.returncode, 0, formatted.stderr)
+        payload = json.loads(formatted.stdout)
+        question = payload["params"]["questions"][0]
+        self.assertEqual("Which scope?", question["question"])
+        self.assertEqual("narrow", question["options"][0]["label"])
+
+        invalid = run_cmd(
+            [
+                PYTHON,
+                REPO_ROOT / "bin" / "ct2-decision",
+                "answer",
+                decision_id,
+                "--project-dir",
+                project,
+                "--choice",
+                "wide",
+            ]
+        )
+        self.assertEqual(invalid.returncode, 1)
 
     def test_advisory_bridge_writes_inbox_without_ticket_state_mutation(self):
         project = self.make_project()

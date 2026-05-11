@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -23,8 +24,45 @@ def find_record(ct2_dir: Path, decision_id: str) -> tuple[Path, dict] | None:
     return None
 
 
+def option_label(option: object) -> str:
+    if isinstance(option, dict):
+        for key in ("label", "value", "id"):
+            if option.get(key) is not None:
+                return str(option[key])
+        return json.dumps(option, sort_keys=True)
+    return str(option)
+
+
+def normalized_questions(record: dict) -> list[dict]:
+    questions = record.get("questions")
+    if isinstance(questions, list) and questions:
+        normalized = []
+        for idx, question in enumerate(questions):
+            if not isinstance(question, dict):
+                continue
+            options = [option_label(option) for option in question.get("options") or []]
+            normalized.append(
+                {
+                    "id": str(question.get("id") or f"choice_{idx + 1}"),
+                    "question": question.get("question"),
+                    "options": options,
+                    "secret": bool(question.get("secret")),
+                }
+            )
+        if normalized:
+            return normalized
+    return [
+        {
+            "id": "choice",
+            "question": record.get("question"),
+            "options": [option_label(option) for option in record.get("options") or []],
+            "secret": False,
+        }
+    ]
+
+
 def provider_payload(record: dict, provider: str) -> dict:
-    options = [str(option) for option in record.get("options") or []]
+    questions = normalized_questions(record)
     if provider == "codex":
         return {
             "provider": "codex",
@@ -33,24 +71,26 @@ def provider_payload(record: dict, provider: str) -> dict:
                 "questions": [
                     {
                         "header": str(record.get("kind") or "Decision")[:12],
-                        "id": "choice",
-                        "question": record.get("question"),
+                        "id": question["id"],
+                        "question": question["question"],
                         "options": [
                             {"label": option, "description": f"Select {option}."}
-                            for option in options[:3]
+                            for option in question["options"][:3]
                         ],
                     }
+                    for question in questions
                 ]
             },
             "decision_id": record.get("id"),
         }
     if provider == "claude":
+        question = questions[0]
         return {
             "provider": "claude",
             "tool": "AskUserQuestion",
             "arguments": {
-                "question": record.get("question"),
-                "options": options,
+                "question": question["question"],
+                "options": question["options"],
                 "metadata": {
                     "decision_id": record.get("id"),
                     "role": record.get("role"),
@@ -95,16 +135,18 @@ def cmd_answer(args: argparse.Namespace) -> int:
         print(f"ct2-decision: pending decision not found: {args.decision_id}", file=sys.stderr)
         return 1
     record = read_json(pending)
-    options = record.get("options") or []
+    options = [option for question in normalized_questions(record) for option in question.get("options", [])]
     if options and args.choice not in options:
         print(f"ct2-decision: choice must be one of: {', '.join(options)}", file=sys.stderr)
         return 1
     record.update({"status": "answered", "answered_at": now(), "choice": args.choice})
     answered = ct2_dir / "decisions" / "answered" / pending.name
     audit = ct2_dir / "decisions" / "audit" / pending.name
-    atomic_write_json(ct2_dir, answered, record, "decision-answer-")
-    atomic_write_json(ct2_dir, audit, record, "decision-audit-")
-    pending.unlink()
+    answered.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(ct2_dir, pending, record, "decision-answer-")
+    os.replace(pending, answered)
+    final_record = read_json(answered)
+    atomic_write_json(ct2_dir, audit, final_record, "decision-audit-")
     if args.json:
         print(json.dumps(record, indent=2, sort_keys=True))
     else:

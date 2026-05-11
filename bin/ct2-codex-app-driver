@@ -123,6 +123,23 @@ timestamp: {utc_now()}
 def write_decision_record(ct2_dir: Path, role: str, questions: list[dict[str, Any]]) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     decision_id = f"decision-{ts}-{os.getpid()}-{next(tempfile._get_candidate_names())[:8]}"
+    normalized_questions = []
+    for idx, question in enumerate(questions):
+        options = []
+        for option in question.get("options") or []:
+            if isinstance(option, dict):
+                options.append(str(option.get("label") or option.get("value") or option.get("id") or option))
+            else:
+                options.append(str(option))
+        normalized_questions.append(
+            {
+                "id": str(question.get("id") or f"choice_{idx + 1}"),
+                "question": question.get("question"),
+                "options": options,
+                "secret": bool(question.get("secret")),
+            }
+        )
+    primary = normalized_questions[0] if normalized_questions else {"question": None, "options": []}
     record = {
         "id": decision_id,
         "schema_version": "1",
@@ -131,16 +148,10 @@ def write_decision_record(ct2_dir: Path, role: str, questions: list[dict[str, An
         "role": role,
         "ticket": "codex-app-server",
         "kind": "requestUserInput",
+        "question": primary.get("question"),
+        "options": primary.get("options") or [],
         "created_at": utc_now(),
-        "questions": [
-            {
-                "id": q.get("id"),
-                "question": q.get("question"),
-                "options": q.get("options") or [],
-                "secret": bool(q.get("secret")),
-            }
-            for q in questions
-        ],
+        "questions": normalized_questions,
     }
     atomic_write_json(ct2_dir, ct2_dir / "decisions" / "pending" / f"{decision_id}.json", record)
     return decision_id
