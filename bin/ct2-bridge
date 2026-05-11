@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Notify-only CT2 external bridge."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from _ct2_vao import append_jsonl, atomic_write_text, ensure_ct2, new_id, now
+
+
+ALLOWED_TO = {"ct2-helm", "ct2-forge", "ct2-lens-cc", "ct2-lens-cx", "ct2-helm-auto-cx"}
+
+
+def write_inbox(ct2_dir: Path, to_role: str, from_role: str, msg_type: str, ticket: str, subject: str, body: str) -> Path:
+    msg_id = new_id("msg")
+    dest = ct2_dir / "inbox" / to_role / f"{msg_id}.md"
+    text = f"""---
+id: {msg_id}
+from: {from_role}
+to: {to_role}
+type: {msg_type}
+ticket: {ticket}
+timestamp: {now()}
+---
+
+## Subject
+{subject}
+
+## Body
+{body}
+"""
+    atomic_write_text(ct2_dir, dest, text, "bridge-inbox-")
+    return dest
+
+
+def cmd_notify(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    if args.to not in ALLOWED_TO:
+        print(f"ct2-bridge: unsupported recipient {args.to}", file=sys.stderr)
+        return 1
+    msg_path = write_inbox(ct2_dir, args.to, f"bridge:{args.source}", "info", args.ticket or "-", args.subject, args.body)
+    event = {
+        "id": new_id("event"),
+        "timestamp": now(),
+        "type": "advisory_notification",
+        "source": args.source,
+        "to": args.to,
+        "ticket": args.ticket,
+        "subject": args.subject,
+        "message_path": f".ct2/inbox/{args.to}/{msg_path.name}",
+        "state_mutation": False,
+    }
+    append_jsonl(ct2_dir, ct2_dir / "telemetry" / "events.jsonl", event)
+    if args.json:
+        print(json.dumps(event, indent=2, sort_keys=True))
+    else:
+        print(f"ct2-bridge: notified {args.to} ({event['message_path']})")
+    return 0
+
+
+def cmd_state_move(args: argparse.Namespace) -> int:
+    print("ct2-bridge: advisory-only bridge cannot mutate ticket state", file=sys.stderr)
+    return 2
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="CT2 advisory external bridge")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    notify = sub.add_parser("notify")
+    notify.add_argument("--project-dir", default=".")
+    notify.add_argument("--source", required=True)
+    notify.add_argument("--to", required=True)
+    notify.add_argument("--ticket")
+    notify.add_argument("--subject", required=True)
+    notify.add_argument("--body", required=True)
+    notify.add_argument("--json", action="store_true")
+    notify.set_defaults(func=cmd_notify)
+
+    state_move = sub.add_parser("state-move")
+    state_move.add_argument("--project-dir", default=".")
+    state_move.add_argument("--ticket", required=True)
+    state_move.add_argument("--to-state", required=True)
+    state_move.add_argument("--json", action="store_true")
+    state_move.set_defaults(func=cmd_state_move)
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

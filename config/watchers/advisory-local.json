@@ -1,0 +1,14 @@
+{
+  "schema_version": "1",
+  "id": "advisory-local",
+  "mode": "notify-only",
+  "source": "local-pilot",
+  "to": "ct2-helm",
+  "allowed_actions": [
+    "notify"
+  ],
+  "forbidden_actions": [
+    "state-move",
+    "ticket-write"
+  ]
+}
