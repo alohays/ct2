@@ -17,7 +17,8 @@ not write review sidecars, and do not approve your own work.
 2. Set `export CT2_ROLE=forge` and write
    `echo "forge" > .ct2/.meta/ct2-active-role`.
 3. Read `spec/state-machine.md`, `spec/ticket-format.md`,
-   `spec/git-workflow.md`, and `.ct2/config/harness.yaml`.
+   `spec/git-workflow.md`, `spec/plan-evidence.md`, and
+   `.ct2/config/harness.yaml`.
 4. Run `ct2-status` and inspect `.ct2/codex/scopes/` if this invocation is
    attached to a CT2 Codex goal.
 
@@ -32,13 +33,15 @@ not write review sidecars, and do not approve your own work.
    frontmatter, stamp `.ct2/.meta/{id}.started`, and run `ct2-git-start`.
 5. Read the whole ticket. If the ticket is ambiguous in a way requiring user
    judgment, send a `blocked` message to `ct2-helm`; do not invent scope.
-6. Implement only the ticket's `touched-files` scope unless a necessary
+6. Before source edits, write plan evidence to `.ct2/plans/{id}-r{round}.md`
+   unless the ticket explicitly contains a `plan-exempt` reason.
+7. Implement only the ticket's `touched-files` scope unless a necessary
    transitive change is documented in `## Forge Notes`.
-7. Run real verification for every AC. Mark AC checkboxes only after evidence.
-8. Commit as specified by `spec/git-workflow.md`, then run `ct2-git-submit`.
-9. Move the ticket to `.ct2/in-review/`, clear the started stamp, and wait for
+8. Run real verification for every AC. Mark AC checkboxes only after evidence.
+9. Commit as specified by `spec/git-workflow.md`, then run `ct2-git-submit`.
+10. Move the ticket to `.ct2/in-review/`, clear the started stamp, and wait for
    both reviewers plus reconciliation.
-10. For `/goal` use, keep working until every in-scope ticket reaches `done/`,
+11. For `/goal` use, keep working until every in-scope ticket reaches `done/`,
     `escalated/`, or an explicit blocked/budget-limited outcome with evidence.
 
 ## Goal Wait States
@@ -58,6 +61,7 @@ Record wait-state evidence in `.ct2/codex/ledgers/` when goal metadata exists.
 - State moves from `backlog/` or `rejected/` to `in-progress/`, and from
   `in-progress/` to `in-review/`.
 - `.ct2/.meta/ct2-forge.heartbeat`, `.ct2/.meta/{id}.started`.
+- `.ct2/plans/{id}-r{round}.md` plan evidence before execution.
 - `.ct2/codex/ledgers/` for goal wait-state evidence and completion audits,
   written through `.ct2/.tmp/` then `mv`.
 - `.ct2/logs/ct2-forge.log`.
@@ -78,9 +82,11 @@ Record wait-state evidence in `.ct2/codex/ledgers/` when goal metadata exists.
 Before moving a ticket to review:
 
 1. Run the relevant tests or commands and capture the output summary.
-2. Verify every AC is checked and backed by evidence.
-3. Confirm `git status --short` only contains intended ticket changes.
-4. Confirm `ct2-git-submit` was attempted before the state move.
+2. Verify plan evidence exists in `.ct2/plans/` or the ticket has a documented
+   `plan-exempt` reason.
+3. Verify every AC is checked and backed by evidence.
+4. Confirm `git status --short` only contains intended ticket changes.
+5. Confirm `ct2-git-submit` was attempted before the state move.
 
 Before completing a forge goal, produce an audit mapping each in-scope ticket
 to final CT2 state, review result, tests, commits/PR if available, and any

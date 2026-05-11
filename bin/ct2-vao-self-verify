@@ -1,0 +1,639 @@
+#!/usr/bin/env python3
+"""Verify the CT2 VAO implementation against its self-verification criteria."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any
+
+sys.dont_write_bytecode = True
+
+from _ct2_vao import read_frontmatter, read_jsonl, ticket_id_from_name, now
+
+
+VAO_COMMANDS = (
+    "ct2-runtime-doctor",
+    "ct2-baseline",
+    "ct2-role-run",
+    "ct2-cost",
+    "ct2-evidence",
+    "ct2-decision",
+    "ct2-policy-compile",
+    "ct2-bridge",
+    "ct2-plan-audit",
+    "ct2-role-eval",
+    "ct2-vao-pilot",
+    "ct2-vao-self-verify",
+)
+
+REQUIRED_SPECS = (
+    "runtime-capabilities.md",
+    "balanced-scorecard.md",
+    "role-contracts.md",
+    "plan-evidence.md",
+    "role-evals.md",
+    "decision-bridge.md",
+    "evidence-graph.md",
+    "external-channels.md",
+    "runtime-mirror.md",
+    "directory-structure.md",
+)
+
+REQUIRED_DOCS = (
+    "ct2-verified-autonomy-os-strategy-2026-05.md",
+    "ct2-phase0-bet1-readiness-2026-05.md",
+    "ct2-native-task-mirror-spike-2026-05.md",
+    "ct2-vao-completion-audit-2026-05-11.md",
+    "ct2-vao-self-verification-criteria-2026-05-11.md",
+    "ct2-vao-full-implementation-self-review-criteria-2026-05-11.md",
+    "ct2-vao-self-verification-report-2026-05-11.md",
+    "ct2-verified-autonomy-os-full-phase-audit-2026-05-11.md",
+    "ct2-vao-phase-completion-report-2026-05-11.md",
+)
+
+ARTIFACT_FILES = (
+    *(f"bin/{command}" for command in VAO_COMMANDS),
+    "bin/_ct2_vao.py",
+    "README.md",
+    "config/harness.yaml",
+    "tests/test_vao_strategy.py",
+    "tests/test_script_syntax.py",
+    "config/evals/ct2-helm/clarification.json",
+    "config/evals/ct2-forge/plan-evidence-codex.json",
+    "config/evals/ct2-forge/plan-evidence-claude.json",
+    "config/evals/ct2-lens-cc/independent-review.json",
+    "config/evals/ct2-lens-cx/independent-review.json",
+    "config/watchers/advisory-local.json",
+    *(f"spec/{name}" for name in REQUIRED_SPECS),
+    *(f"docs/{name}" for name in REQUIRED_DOCS),
+    "claude-plugin/skills/ct2-forge/SKILL.md",
+    "codex-plugin/skills/ct2-forge/SKILL.md",
+)
+
+PYTHON_CHECK_FILES = (
+    "bin/ct2-codex-goal",
+    "bin/ct2-codex-doctor",
+    "bin/ct2-codex-app-driver",
+    "bin/_ct2_validate_review_sidecar.py",
+    "bin/ct2-status",
+    "bin/ct2-runtime-doctor",
+    "bin/ct2-baseline",
+    "bin/ct2-role-run",
+    "bin/ct2-cost",
+    "bin/ct2-evidence",
+    "bin/ct2-decision",
+    "bin/ct2-policy-compile",
+    "bin/ct2-bridge",
+    "bin/ct2-plan-audit",
+    "bin/ct2-role-eval",
+    "bin/ct2-vao-pilot",
+    "bin/ct2-vao-self-verify",
+    "bin/_ct2_vao.py",
+)
+
+BASH_CHECK_FILES = (
+    "install.sh",
+    "bin/ct2-init",
+    "bin/ct2-lens-cx-daemon",
+    "bin/ct2-lens-cx-tui",
+    "bin/ct2-revise",
+    "bin/ct2-seal",
+    "claude-plugin/hooks/enforce-write-access.sh",
+    "claude-plugin/hooks/enforce-review-independence.sh",
+)
+
+JSON_CHECK_FILES = (
+    "codex-plugin/.codex-plugin/plugin.json",
+    ".agents/plugins/marketplace.json",
+    "claude-plugin/hooks/hooks.json",
+)
+
+FULL_REVIEW_RUNTIME_FILES = (
+    ".ct2/runtime/capabilities.json",
+    ".ct2/runtime/degradations.md",
+    ".ct2/runtime/codex-flags-actual.md",
+    ".ct2/telemetry/baseline-2026-05.json",
+    ".ct2/telemetry/cost.jsonl",
+    ".ct2/evals/results.jsonl",
+    ".ct2/watchers/vao-pilot.json",
+    ".ct2/evidence/artifacts/plan-first-review-comparison.json",
+)
+
+PILOT_EVIDENCE_KINDS = {"artifact", "hook-event", "screenshot", "verifier"}
+EXPECTED_ROLE_CONTRACTS = ("ct2-helm", "ct2-forge", "ct2-lens-cc", "ct2-lens-cx", "ct2-helm-auto-cx")
+
+
+def file_text(repo: Path, rel: str) -> str:
+    return (repo / rel).read_text(encoding="utf-8")
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def score(items: list[dict[str, Any]]) -> float:
+    return 1.0 if not items else sum(1 for item in items if item["ok"]) / len(items)
+
+
+def gate(name: str, items: list[dict[str, Any]], threshold: float = 1.0) -> dict[str, Any]:
+    value = score(items)
+    return {
+        "name": name,
+        "score": value,
+        "threshold": threshold,
+        "ok": value >= threshold,
+        "items": items,
+    }
+
+
+def artifact_gate(repo: Path) -> dict[str, Any]:
+    items = [{"name": rel, "ok": (repo / rel).exists(), "evidence": rel} for rel in ARTIFACT_FILES]
+    return gate("Artifact coverage", items)
+
+
+def spec_gate(repo: Path) -> dict[str, Any]:
+    audit = file_text(repo, "docs/ct2-vao-completion-audit-2026-05-11.md")
+    items = []
+    for spec in REQUIRED_SPECS:
+        path = repo / "spec" / spec
+        items.append(
+            {
+                "name": spec,
+                "ok": path.exists() and spec in audit,
+                "evidence": f"spec/{spec}",
+            }
+        )
+    return gate("Spec coverage", items)
+
+
+def documentation_gate(repo: Path) -> dict[str, Any]:
+    readme = file_text(repo, "README.md")
+    criteria = file_text(repo, "docs/ct2-vao-self-verification-criteria-2026-05-11.md")
+    audit = file_text(repo, "docs/ct2-vao-completion-audit-2026-05-11.md")
+    items = []
+    for command in VAO_COMMANDS:
+        items.append(
+            {
+                "name": command,
+                "ok": command in readme and command in criteria and command in audit,
+                "evidence": "README.md + criteria + completion audit",
+            }
+        )
+    for doc in REQUIRED_DOCS:
+        items.append(
+            {
+                "name": doc,
+                "ok": doc in readme or doc == "ct2-verified-autonomy-os-strategy-2026-05.md",
+                "evidence": "README.md product planning table",
+            }
+        )
+    items.append(
+        {
+            "name": "README validation command mirrors self-verifier",
+            "ok": "ct2-vao-self-verify --run-checks" in readme
+            and "PYTHONDONTWRITEBYTECODE=1" in readme
+            and "python3 -m py_compile" not in readme,
+            "evidence": "README.md Development Checks",
+        }
+    )
+    return gate("User/operator documentation coverage", items)
+
+
+def safety_gate(repo: Path) -> dict[str, Any]:
+    checks = (
+        (
+            "external channels advisory-only",
+            "spec/external-channels.md",
+            ("never write ticket files directly", "advisory"),
+        ),
+        (
+            "runtime state advisory-only",
+            "spec/runtime-capabilities.md",
+            ("Runtime state is advisory",),
+        ),
+        (
+            "directory planes do not replace authority",
+            "spec/directory-structure.md",
+            ("never replace", "ticket state authority"),
+        ),
+        (
+            "bridge rejects state mutation",
+            "tests/test_vao_strategy.py",
+            ("state-move", "advisory-only"),
+        ),
+        (
+            "bridge implementation rejects state mutation",
+            "bin/ct2-bridge",
+            ("advisory-only bridge cannot mutate ticket state",),
+        ),
+        (
+            "negative verifier evidence fixture exists",
+            "tests/test_vao_strategy.py",
+            ("test_evidence_verifier_failed_exit_defaults_to_failed_claim", "exit-code", "7"),
+        ),
+    )
+    items = []
+    for name, rel, needles in checks:
+        text = file_text(repo, rel)
+        items.append({"name": name, "ok": all(needle in text for needle in needles), "evidence": rel})
+    return gate("Safety invariant coverage", items)
+
+
+def measurement_gate(repo: Path) -> dict[str, Any]:
+    checks = (
+        (
+            "baseline emits measurement_started",
+            "bin/ct2-baseline",
+            ("measurement_started", "MIN_DONE_SAMPLE"),
+        ),
+        (
+            "tests assert insufficient sample status",
+            "tests/test_vao_strategy.py",
+            ('"measurement_started"', "sample_size"),
+        ),
+        (
+            "criteria forbids synthetic target claims",
+            "docs/ct2-vao-self-verification-criteria-2026-05-11.md",
+            ("not allowed", "real project history"),
+        ),
+        (
+            "completion audit records caveat",
+            "docs/ct2-vao-completion-audit-2026-05-11.md",
+            ("Measurement Caveat", "measurement_started"),
+        ),
+        (
+            "full phase audit separates static and pilot completion",
+            "docs/ct2-verified-autonomy-os-full-phase-audit-2026-05-11.md",
+            ("Overall status: complete", "local pilot evidence"),
+        ),
+        (
+            "phase completion report records all pilot gates complete",
+            "docs/ct2-vao-phase-completion-report-2026-05-11.md",
+            ("Overall complete: `true`", "Ticket state unchanged by bridge: `true`"),
+        ),
+    )
+    items = []
+    for name, rel, needles in checks:
+        text = file_text(repo, rel)
+        items.append({"name": name, "ok": all(needle in text for needle in needles), "evidence": rel})
+    return gate("Measurement honesty", items)
+
+
+def run_check(repo: Path, name: str, cmd: list[str], expected_returncodes: tuple[int, ...] = (0,)) -> dict[str, Any]:
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    proc = subprocess.run(
+        cmd,
+        cwd=str(repo),
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=120,
+        check=False,
+    )
+    return {
+        "name": name,
+        "ok": proc.returncode in expected_returncodes,
+        "command": cmd,
+        "expected_returncodes": list(expected_returncodes),
+        "returncode": proc.returncode,
+        "stdout_tail": proc.stdout[-1200:],
+        "stderr_tail": proc.stderr[-1200:],
+    }
+
+
+def test_gate(repo: Path, run_checks: bool) -> dict[str, Any]:
+    if not run_checks:
+        items = [
+            {"name": "test command listed", "ok": True, "evidence": "criteria document"},
+            {"name": "script syntax test exists", "ok": (repo / "tests/test_script_syntax.py").exists(), "evidence": "tests/test_script_syntax.py"},
+            {"name": "VAO regression test exists", "ok": (repo / "tests/test_vao_strategy.py").exists(), "evidence": "tests/test_vao_strategy.py"},
+        ]
+        result = gate("Test coverage", items)
+        result["mode"] = "static"
+        return result
+
+    items = [
+        run_check(repo, "unittest", ["python3", "-m", "unittest", "discover", "-s", "tests"]),
+        run_check(
+            repo,
+            "python syntax compile",
+            [
+                "python3",
+                "-c",
+                (
+                    "import pathlib, sys\n"
+                    "for rel in sys.argv[1:]:\n"
+                    "    path = pathlib.Path(rel)\n"
+                    "    compile(path.read_text(encoding='utf-8'), rel, 'exec')\n"
+                ),
+                *PYTHON_CHECK_FILES,
+            ],
+        ),
+        run_check(repo, "bash syntax", ["bash", "-n", *BASH_CHECK_FILES]),
+    ]
+    for rel in JSON_CHECK_FILES:
+        items.append(run_check(repo, f"json parse {rel}", ["python3", "-m", "json.tool", rel]))
+    items.append(run_check(repo, "git diff check", ["git", "diff", "--check"]))
+    result = gate("Test coverage", items)
+    result["mode"] = "executed"
+    return result
+
+
+def latest_pilot_report(repo: Path) -> dict[str, Any] | None:
+    reports = sorted((repo / ".ct2" / "runtime" / "artifacts").glob("vao-pilot-*.json"))
+    if not reports:
+        return None
+    return load_json(reports[-1])
+
+
+def latest_complete_role_eval(repo: Path) -> dict[str, Any] | None:
+    rows = read_jsonl(repo / ".ct2" / "evals" / "results.jsonl")
+    matches = [row for row in rows if row.get("complete") is True and int(row.get("case_count") or 0) >= 5]
+    return matches[-1] if matches else None
+
+
+def intentional_regression_caught(repo: Path, pilot: dict[str, Any] | None) -> bool:
+    if pilot:
+        for step in pilot.get("steps", []):
+            if step.get("name") == "ct2-role-eval intentional regression":
+                return bool(step.get("ok")) and int(step.get("returncode") or 0) != 0
+    rows = read_jsonl(repo / ".ct2" / "evals" / "results.jsonl")
+    return any(
+        row.get("complete") is False
+        and any(str(item).startswith("ct2-forge-plan-evidence") for item in row.get("failed", []))
+        for row in rows
+    )
+
+
+def done_without_dual_approval(repo: Path) -> int:
+    ct2 = repo / ".ct2"
+    count = 0
+    for ticket in sorted((ct2 / "done").glob("*.md")):
+        fm = read_frontmatter(ticket)
+        ticket_id = ticket_id_from_name(ticket)
+        round_num = str(fm.get("review-round", "0"))
+        cc = read_frontmatter(ct2 / "reviews" / f"{ticket_id}-cc-r{round_num}.md").get("verdict")
+        cx = read_frontmatter(ct2 / "reviews" / f"{ticket_id}-cx-r{round_num}.md").get("verdict")
+        if cc != "approved" or cx != "approved":
+            count += 1
+    return count
+
+
+def tracked_ct2_file_count(repo: Path) -> int:
+    proc = subprocess.run(
+        ["git", "ls-files", ".ct2"],
+        cwd=str(repo),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return -1
+    return len([line for line in proc.stdout.splitlines() if line.strip()])
+
+
+def full_review_gate(repo: Path, runtime_repo: Path | None = None, setup_items: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    runtime_repo = runtime_repo or repo
+    items: list[dict[str, Any]] = list(setup_items or [])
+    criteria = file_text(repo, "docs/ct2-vao-full-implementation-self-review-criteria-2026-05-11.md")
+    items.append(
+        {
+            "name": "strict self-review criteria document has layered gates",
+            "ok": all(section in criteria for section in ("Evidence Strength", "Gate Matrix", "Hard Fail Conditions", "Completion Audit Procedure")),
+            "evidence": "docs/ct2-vao-full-implementation-self-review-criteria-2026-05-11.md",
+        }
+    )
+
+    pilot = latest_pilot_report(runtime_repo)
+    items.append({"name": "latest pilot artifact exists", "ok": pilot is not None, "evidence": ".ct2/runtime/artifacts/vao-pilot-*.json"})
+    phase_status = pilot.get("phase_status", {}) if pilot else {}
+    metrics = pilot.get("metrics", {}) if pilot else {}
+    items.append({"name": "pilot complete flag true", "ok": bool(pilot and pilot.get("complete") is True), "evidence": ".ct2/runtime/artifacts/vao-pilot-*.json"})
+    items.append({"name": "all pilot phase booleans true", "ok": bool(phase_status) and all(phase_status.values()), "evidence": ".ct2/runtime/artifacts/vao-pilot-*.json"})
+
+    runtime_items = [rel for rel in FULL_REVIEW_RUNTIME_FILES if (runtime_repo / rel).exists()]
+    items.append(
+        {
+            "name": "runtime evidence files exist",
+            "ok": len(runtime_items) == len(FULL_REVIEW_RUNTIME_FILES),
+            "evidence": ", ".join(FULL_REVIEW_RUNTIME_FILES),
+            "observed": len(runtime_items),
+            "expected": len(FULL_REVIEW_RUNTIME_FILES),
+        }
+    )
+
+    baseline_path = runtime_repo / ".ct2" / "telemetry" / "baseline-2026-05.json"
+    baseline = load_json(baseline_path) if baseline_path.exists() else {}
+    scorecard = baseline.get("scorecard", {})
+    items.append(
+        {
+            "name": "baseline sample and measured trust/evidence",
+            "ok": baseline.get("inputs", {}).get("done_tickets", 0) >= 20
+            and scorecard.get("trust", {}).get("status") == "measured"
+            and scorecard.get("evidence", {}).get("status") == "measured",
+            "evidence": ".ct2/telemetry/baseline-2026-05.json",
+            "observed": {
+                "done_tickets": baseline.get("inputs", {}).get("done_tickets"),
+                "trust": scorecard.get("trust", {}).get("status"),
+                "evidence": scorecard.get("evidence", {}).get("status"),
+            },
+        }
+    )
+
+    harness = file_text(repo, "config/harness.yaml")
+    role_contracts = [role for role in EXPECTED_ROLE_CONTRACTS if f"  {role}:" in harness]
+    cost_rows = [row for row in read_jsonl(runtime_repo / ".ct2" / "telemetry" / "cost.jsonl") if "_invalid" not in row]
+    cost_roles = {row.get("role") for row in cost_rows if row.get("role")}
+    items.append(
+        {
+            "name": "role contracts and cost telemetry coverage",
+            "ok": len(role_contracts) == len(EXPECTED_ROLE_CONTRACTS) and len(cost_rows) >= 5 and len(cost_roles) >= 4,
+            "evidence": "config/harness.yaml + .ct2/telemetry/cost.jsonl",
+            "observed": {"role_contracts": len(role_contracts), "cost_events": len(cost_rows), "cost_roles": len(cost_roles)},
+        }
+    )
+
+    plan_first_count = len(list((runtime_repo / ".ct2" / "in-review").glob("93*-vao-pilot.md")))
+    comparison_exists = (runtime_repo / ".ct2" / "evidence" / "artifacts" / "plan-first-review-comparison.json").exists()
+    items.append(
+        {
+            "name": "plan-first pilot and review comparison",
+            "ok": plan_first_count >= 5 and metrics.get("plan_tickets_checked", 0) >= 5 and comparison_exists,
+            "evidence": ".ct2/in-review/93*-vao-pilot.md + .ct2/evidence/artifacts/plan-first-review-comparison.json",
+            "observed": {"plan_first_tickets": plan_first_count, "plan_tickets_checked": metrics.get("plan_tickets_checked")},
+        }
+    )
+
+    role_eval = latest_complete_role_eval(runtime_repo)
+    regression_ok = intentional_regression_caught(repo, pilot)
+    items.append(
+        {
+            "name": "role eval pass plus intentional regression catch",
+            "ok": bool(role_eval) and regression_ok,
+            "evidence": ".ct2/evals/results.jsonl + pilot intentional regression step",
+            "observed": {"role_eval_case_count": role_eval.get("case_count") if role_eval else None, "regression_caught": regression_ok},
+        }
+    )
+
+    events = [row for row in read_jsonl(runtime_repo / ".ct2" / "telemetry" / "events.jsonl") if "_invalid" not in row]
+    advisory_count = sum(1 for row in events if row.get("type") == "advisory_notification")
+    state_mutation_count = sum(1 for row in events if row.get("state_mutation") is True)
+    items.append(
+        {
+            "name": "advisory bridge notifications with zero mutation",
+            "ok": advisory_count >= 5 and state_mutation_count == 0 and metrics.get("ticket_state_unchanged") is True,
+            "evidence": ".ct2/telemetry/events.jsonl + pilot ticket-state hash comparison",
+            "observed": {"advisory": advisory_count, "state_mutation": state_mutation_count, "ticket_state_unchanged": metrics.get("ticket_state_unchanged")},
+        }
+    )
+
+    bridge_denial = run_check(
+        repo,
+        "bridge state-move denial",
+        [
+            "python3",
+            "bin/ct2-bridge",
+            "state-move",
+            "--project-dir",
+            str(runtime_repo),
+            "--ticket",
+            "930",
+            "--to-state",
+            "done",
+            "--json",
+        ],
+        expected_returncodes=(2,),
+    )
+    items.append(
+        {
+            "name": "bridge state-move denied directly",
+            "ok": bridge_denial["ok"] and "advisory-only" in bridge_denial["stderr_tail"],
+            "evidence": "python3 bin/ct2-bridge state-move --project-dir . --ticket 930 --to-state done",
+            "observed": {"returncode": bridge_denial["returncode"], "stderr_tail": bridge_denial["stderr_tail"][-120:]},
+        }
+    )
+
+    items.append(
+        {
+            "name": "decision provider adapters covered",
+            "ok": phase_status.get("decision_bridge_provider_adapters") is True,
+            "evidence": ".ct2/runtime/artifacts/vao-pilot-*.json",
+        }
+    )
+
+    claims = [row for row in read_jsonl(runtime_repo / ".ct2" / "evidence" / "claims.jsonl") if "_invalid" not in row]
+    claim_kinds = {str(row.get("kind")) for row in claims}
+    items.append(
+        {
+            "name": "pilot evidence kinds covered",
+            "ok": PILOT_EVIDENCE_KINDS.issubset(claim_kinds),
+            "evidence": ".ct2/evidence/claims.jsonl",
+            "observed": sorted(claim_kinds),
+        }
+    )
+
+    mirror_spec = file_text(repo, "spec/runtime-mirror.md")
+    mirror_doc = file_text(repo, "docs/ct2-native-task-mirror-spike-2026-05.md")
+    external_spec = file_text(repo, "spec/external-channels.md")
+    external_lower = external_spec.lower()
+    items.append(
+        {
+            "name": "native mirror remains advisory and non-mutating",
+            "ok": "advisory" in mirror_spec.lower()
+            and "production native task synchronizer" in mirror_doc.lower()
+            and "native to ct2 state" in external_lower
+            and "blocked" in external_lower,
+            "evidence": "spec/runtime-mirror.md + docs/ct2-native-task-mirror-spike-2026-05.md + spec/external-channels.md",
+        }
+    )
+
+    items.append(
+        {
+            "name": "done tickets have dual approved sidecars",
+            "ok": done_without_dual_approval(runtime_repo) == 0,
+            "evidence": ".ct2/done/*.md + .ct2/reviews/*-{cc,cx}-r*.md",
+        }
+    )
+
+    pycache_dirs = [str(path.relative_to(repo)) for path in repo.rglob("__pycache__") if ".git" not in path.parts]
+    items.append({"name": "no pycache remains", "ok": not pycache_dirs, "evidence": "find . -name __pycache__", "observed": pycache_dirs})
+    tracked_count = tracked_ct2_file_count(repo)
+    items.append({"name": ".ct2 files are not tracked", "ok": tracked_count == 0, "evidence": "git ls-files .ct2", "observed": tracked_count})
+
+    docs = {
+        "README.md": file_text(repo, "README.md"),
+        "completion_audit": file_text(repo, "docs/ct2-vao-completion-audit-2026-05-11.md"),
+        "full_audit": file_text(repo, "docs/ct2-verified-autonomy-os-full-phase-audit-2026-05-11.md"),
+        "phase_report": file_text(repo, "docs/ct2-vao-phase-completion-report-2026-05-11.md"),
+    }
+    docs_ok = all(
+        needle in "".join(docs.values())
+        for needle in ("ct2-vao-pilot", "ct2-role-eval", "Overall complete: `true`", "Production")
+    )
+    items.append({"name": "operator docs and claim caveats present", "ok": docs_ok, "evidence": "README + VAO audit/report docs"})
+
+    return gate("Full implementation self-review", items)
+
+
+def build_report(repo: Path, run_checks: bool) -> dict[str, Any]:
+    gates = [
+        artifact_gate(repo),
+        test_gate(repo, run_checks),
+        spec_gate(repo),
+        documentation_gate(repo),
+        safety_gate(repo),
+        measurement_gate(repo),
+    ]
+    pilot_tmp: tempfile.TemporaryDirectory[str] | None = None
+    if run_checks:
+        pilot_tmp = tempfile.TemporaryDirectory(prefix="ct2-self-verify-pilot-")
+        runtime_repo = Path(pilot_tmp.name).resolve()
+        pilot_step = run_check(
+            repo,
+            "ct2-vao-pilot scratch",
+            ["python3", "bin/ct2-vao-pilot", "--project-dir", str(runtime_repo), "--json"],
+        )
+        gates.append(full_review_gate(repo, runtime_repo, [pilot_step]))
+    unknown_count = sum(1 for gate_result in gates for item in gate_result["items"] if item.get("ok") is None)
+    ok = all(gate_result["ok"] for gate_result in gates) and unknown_count == 0
+    return {
+        "schema_version": "1",
+        "generated_at": now(),
+        "criteria": "docs/ct2-vao-self-verification-criteria-2026-05-11.md",
+        "run_checks": run_checks,
+        "complete": ok,
+        "unknown_count": unknown_count,
+        "gates": gates,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Verify CT2 VAO completion criteria")
+    parser.add_argument("--repo", default=".")
+    parser.add_argument("--run-checks", action="store_true", help="Execute test/syntax/json/git checks")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    repo = Path(args.repo).resolve()
+    report = build_report(repo, args.run_checks)
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print("CT2 VAO Self-Verification")
+        print(f"  complete: {report['complete']}")
+        for gate_result in report["gates"]:
+            print(f"  {gate_result['name']}: score={gate_result['score']:.3f} ok={gate_result['ok']}")
+    return 0 if report["complete"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

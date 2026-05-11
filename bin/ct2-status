@@ -10,8 +10,19 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 
-# ── Resolve project dir ───────────────────────────────────────────────────────
-project_dir = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
+# ── Resolve flags / project dir ──────────────────────────────────────────────
+doctor_mode = False
+positionals = []
+for arg in sys.argv[1:]:
+    if arg == "--doctor":
+        doctor_mode = True
+    elif arg in ("-h", "--help"):
+        print("Usage: ct2-status [--doctor] [project-dir]")
+        sys.exit(0)
+    else:
+        positionals.append(arg)
+
+project_dir = Path(positionals[0]).resolve() if positionals else Path.cwd()
 ct2_dir = project_dir / ".ct2"
 
 if not ct2_dir.is_dir():
@@ -233,6 +244,48 @@ def codex_summary():
             if len(degradations) > 3:
                 print(f"    - ... {len(degradations) - 3} more")
 
+def scorecard_summary():
+    baseline_path = ct2_dir / "telemetry" / "baseline-2026-05.json"
+    if not baseline_path.exists():
+        return
+    baseline = load_json(baseline_path)
+    scorecard = baseline.get("scorecard") or {}
+    print("SCORECARD")
+    labels = (
+        ("Trust", "trust", "observed_ratio"),
+        ("Evidence", "evidence", "observed_ratio"),
+        ("Autonomy", "autonomy", "review_latency_p95_seconds"),
+        ("Cost/Latency", "cost_latency", "cost_usd_total"),
+    )
+    for label, key, metric in labels:
+        section = scorecard.get(key) if isinstance(scorecard.get(key), dict) else {}
+        status = section.get("status", "unknown")
+        value = section.get(metric)
+        sample = section.get("sample_size", section.get("cost_sample_size", "-"))
+        print(f"  {label:<12} status={status} sample={sample} {metric}={value}")
+
+def runtime_doctor_summary():
+    cap_path = ct2_dir / "runtime" / "capabilities.json"
+    if not cap_path.exists():
+        if doctor_mode:
+            print("DOCTOR")
+            print("  capabilities: missing (run ct2-runtime-doctor)")
+        return
+    cap = load_json(cap_path)
+    runtimes = cap.get("runtimes") if isinstance(cap.get("runtimes"), dict) else {}
+
+    def state(name: str) -> str:
+        runtime = runtimes.get(name) if isinstance(runtimes.get(name), dict) else {}
+        return "available" if runtime.get("available") else "missing"
+
+    print("DOCTOR")
+    print(f"  capabilities: codex={state('codex')} claude={state('claude')}")
+    degradations = cap.get("degradations") if isinstance(cap.get("degradations"), list) else []
+    if degradations:
+        print(f"  degradations: {len(degradations)}")
+        for item in degradations[:3]:
+            print(f"    - {item}")
+
 # ── Output ────────────────────────────────────────────────────────────────────
 print(f"CT2 Status: {project_dir}")
 print(SEP)
@@ -255,3 +308,9 @@ inbox_summary()
 print(SEP)
 codex_summary()
 print(SEP)
+scorecard_summary()
+if (ct2_dir / "telemetry" / "baseline-2026-05.json").exists():
+    print(SEP)
+if doctor_mode or (ct2_dir / "runtime" / "capabilities.json").exists():
+    runtime_doctor_summary()
+    print(SEP)

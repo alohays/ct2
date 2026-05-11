@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""Probe local runtime capabilities and degraded paths for CT2."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+from _ct2_vao import atomic_write_json, atomic_write_text, ensure_ct2, now
+
+
+MIN_CODEX = (0, 130, 0)
+MIN_CLAUDE = (2, 1, 138)
+
+
+def run(cmd: list[str], cwd: Path, timeout: int = 10) -> dict[str, object]:
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
+        )
+        return {
+            "ok": proc.returncode == 0,
+            "returncode": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+        }
+    except Exception as exc:
+        return {"ok": False, "returncode": None, "stdout": "", "stderr": str(exc)}
+
+
+def which(cmd: str) -> str | None:
+    if "/" in cmd:
+        return cmd if Path(cmd).exists() and os.access(cmd, os.X_OK) else None
+    return shutil.which(cmd)
+
+
+def parse_version(text: str) -> tuple[int, int, int] | None:
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", text)
+    if not match:
+        return None
+    return tuple(int(part) for part in match.groups())
+
+
+def version_ok(found: tuple[int, int, int] | None, minimum: tuple[int, int, int]) -> bool:
+    return found is not None and found >= minimum
+
+
+def probe_runtime(project_dir: Path, name: str, env_key: str, default_cmd: str, minimum: tuple[int, int, int]) -> dict:
+    cmd = os.environ.get(env_key, default_cmd)
+    path = which(cmd)
+    result = {
+        "cmd": cmd,
+        "path": path,
+        "available": bool(path),
+        "version": None,
+        "version_ok": False,
+        "features": {},
+    }
+    if not path:
+        return result
+    version = run([cmd, "--version"], project_dir)
+    if version["ok"]:
+        text = str(version["stdout"]).strip()
+        result["version"] = text
+        result["version_ok"] = version_ok(parse_version(text), minimum)
+    if name == "codex":
+        features = run([cmd, "features", "list"], project_dir)
+        if features["ok"]:
+            parsed = {}
+            for line in str(features["stdout"]).splitlines():
+                parts = line.split()
+                if len(parts) >= 3 and parts[-1] in {"true", "false"}:
+                    parsed[parts[0]] = {"stage": " ".join(parts[1:-1]), "enabled": parts[-1] == "true"}
+            result["features"] = parsed
+    return result
+
+
+def local_tools() -> dict:
+    return {
+        "python": {"available": True, "version": sys.version.split()[0]},
+        "git": {"available": shutil.which("git") is not None, "path": shutil.which("git")},
+        "tmux": {"available": shutil.which("tmux") is not None, "path": shutil.which("tmux")},
+    }
+
+
+def degradation_lines(report: dict) -> list[str]:
+    lines = []
+    codex = report["runtimes"]["codex"]
+    claude = report["runtimes"]["claude"]
+    if not codex["available"]:
+        lines.append("Codex CLI unavailable; Codex roles and lens-cx TUI are degraded.")
+    elif not codex["version_ok"]:
+        lines.append(f"Codex version below {report['minimum_versions']['codex']}; use advisory-only fallbacks.")
+    if not claude["available"]:
+        lines.append("Claude Code CLI unavailable; Claude helm/forge/lens-cc roles are degraded.")
+    elif not claude["version_ok"]:
+        lines.append(f"Claude Code version below {report['minimum_versions']['claude']}; hook support may be degraded.")
+    if not report["local"]["git"]["available"]:
+        lines.append("git unavailable; branch-per-ticket workflow is degraded.")
+    if not report["local"]["tmux"]["available"]:
+        lines.append("tmux unavailable; visible lens-cx scheduler is degraded.")
+    if not lines:
+        lines.append("No degraded runtime capabilities detected.")
+    return lines
+
+
+def codex_flags_markdown(report: dict) -> str:
+    checked_at = report["checked_at"]
+    codex = report["runtimes"]["codex"]
+    features = codex.get("features") if isinstance(codex.get("features"), dict) else {}
+    lines = ["# CT2 Codex Flags Actual", "", f"Checked: {checked_at}", ""]
+    if not features:
+        lines.append("No Codex feature flags were observable from the local runtime.")
+    else:
+        lines.extend(["| Feature | Stage | Enabled |", "|---|---|---|"])
+        for key in sorted(features):
+            item = features[key]
+            lines.append(f"| `{key}` | {item.get('stage', '')} | {item.get('enabled')} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Probe CT2 runtime capabilities")
+    parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    checked_at = now()
+    report = {
+        "schema_version": "1",
+        "checked_at": checked_at,
+        "project_dir": str(project_dir),
+        "minimum_versions": {
+            "codex": ".".join(str(part) for part in MIN_CODEX),
+            "claude": ".".join(str(part) for part in MIN_CLAUDE),
+        },
+        "authority": {
+            "ticket_state": ".ct2/ state directories",
+            "runtime_state": "advisory only",
+            "state_mutation": "CT2 scripts with atomic mv",
+        },
+        "runtimes": {
+            "codex": probe_runtime(project_dir, "codex", "CT2_CODEX_CMD", "codex", MIN_CODEX),
+            "claude": probe_runtime(project_dir, "claude", "CT2_CLAUDE_CMD", "claude", MIN_CLAUDE),
+        },
+        "local": local_tools(),
+    }
+    report["degradations"] = degradation_lines(report)
+
+    atomic_write_json(ct2_dir, ct2_dir / "runtime" / "capabilities.json", report, "runtime-doctor-")
+    md = ["# CT2 Runtime Degradations", "", f"Checked: {checked_at}", ""]
+    md.extend(f"- {line}" for line in report["degradations"])
+    md.append("")
+    atomic_write_text(ct2_dir, ct2_dir / "runtime" / "degradations.md", "\n".join(md), "runtime-degradations-")
+    atomic_write_text(
+        ct2_dir,
+        ct2_dir / "runtime" / "codex-flags-actual.md",
+        codex_flags_markdown(report),
+        "runtime-codex-flags-",
+    )
+
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print("CT2 Runtime Doctor")
+        print(f"  Codex:  {'available' if report['runtimes']['codex']['available'] else 'missing'} {report['runtimes']['codex'].get('version') or ''}")
+        print(f"  Claude: {'available' if report['runtimes']['claude']['available'] else 'missing'} {report['runtimes']['claude'].get('version') or ''}")
+        print(f"  Wrote:  {ct2_dir / 'runtime' / 'capabilities.json'}")
+        if report["degradations"]:
+            print("  Degradations:")
+            for item in report["degradations"]:
+                print(f"    - {item}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

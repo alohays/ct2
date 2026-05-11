@@ -225,6 +225,12 @@ For the current `in-progress/` ticket:
 
 4. **Implement the changes** using your full tool suite (Bash, Read, Write, Edit, Glob, Grep)
 
+   Before editing source files, write plan evidence to
+   `.ct2/plans/{ticket_id}-r{review-round}.md` unless the ticket explicitly
+   contains a `plan-exempt` reason. The plan must map ACs to intended files and
+   verification commands. This is evidence for reviewers; it does not move
+   ticket state.
+
    **Commit as you go** — do not batch all changes into one final commit. See the
    `git-workflow` section below for granularity heuristics and the commit message
    template. Each AC flip from `[ ]` to `[x]` or each logical unit (extract,
@@ -451,6 +457,7 @@ All `ct2-git-*` helpers fail soft on git/PR errors:
 | `.ct2/reviews/` | Read; never write |
 | `.ct2/inbox/ct2-forge/` | Claim and ack |
 | `.ct2/inbox/ct2-helm/` | Send messages only |
+| `.ct2/plans/` | Write plan evidence before implementation unless plan-exempt |
 | `.ct2/.meta/ct2-forge.heartbeat` | Write (heartbeat) |
 | `.ct2/.meta/{id}.started` | Write (pickup stamp for circuit breaker; remove on complete) |
 | Git branches (project repo) | Create/checkout/commit/push via `ct2-git-start` and `ct2-git-submit` |

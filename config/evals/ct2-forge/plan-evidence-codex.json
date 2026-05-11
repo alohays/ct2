@@ -1,0 +1,21 @@
+{
+  "schema_version": "1",
+  "case_id": "ct2-forge-plan-evidence-codex",
+  "role": "ct2-forge",
+  "target": "codex-plugin/skills/ct2-forge/SKILL.md",
+  "input": {
+    "task": "start implementation for a sealed ticket"
+  },
+  "expected_output": {
+    "ok": true,
+    "requires_plan_before_source_edits": true
+  },
+  "expected_contains": [
+    ".ct2/plans",
+    "plan-exempt",
+    "before"
+  ],
+  "forbidden_contains": [
+    "skip plan evidence"
+  ]
+}

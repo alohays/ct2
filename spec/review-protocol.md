@@ -204,7 +204,9 @@ ct2_ack_message() {
 
 1. **Acceptance Criteria satisfaction** — mandatory; any unchecked AC = rejection
 2. **Constraint violations** — any constraint violated = automatic rejection
-3. **Code quality** — readability, maintainability, naming
-4. **Test coverage** — sufficient coverage for the change; tests are correct and meaningful
-5. **Security** — OWASP Top 10; secrets not hardcoded; input validated at boundaries
-6. **Scope creep** — implementation does not exceed ticket scope; over-engineering flagged
+3. **Plan evidence** — missing required plan evidence is **BLOCKING** unless
+   the ticket has an explicit, valid `plan-exempt` reason
+4. **Code quality** — readability, maintainability, naming
+5. **Test coverage** — sufficient coverage for the change; tests are correct and meaningful
+6. **Security** — OWASP Top 10; secrets not hardcoded; input validated at boundaries
+7. **Scope creep** — implementation does not exceed ticket scope; over-engineering flagged

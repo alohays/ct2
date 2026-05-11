@@ -39,7 +39,15 @@ Apply the following criteria in order. Any BLOCKING issue → `verdict: rejected
 - Every Constraint in the ticket must be respected
 - Any violation → **BLOCKING**
 
-### 3. Code Correctness
+### 3. Plan Evidence
+- Tickets in `in-review/` and `done/` must have plan evidence for the current review round under `.ct2/plans/{ticket-id}-r{round}.md` or `.json`
+- A ticket may omit plan evidence only when it contains an explicit, valid `plan-exempt` reason
+
+**BLOCKING boundary**:
+- Missing required plan evidence
+- `plan-exempt` stated without a concrete reason that explains why plan-first review does not apply
+
+### 4. Code Correctness
 - Logic is correct and handles edge cases
 - No off-by-one errors, null dereferences, or resource leaks
 - Error handling is appropriate
@@ -56,7 +64,7 @@ Apply the following criteria in order. Any BLOCKING issue → `verdict: rejected
 - Edge case not handled but is unlikely in stated use context
 - Resource cleanup uses `finally` instead of context manager (functional but non-idiomatic)
 
-### 4. Test Quality
+### 5. Test Quality
 - Tests are present, correct, and meaningful
 - Tests cover the failure paths, not just the happy path
 
@@ -71,7 +79,7 @@ Apply the following criteria in order. Any BLOCKING issue → `verdict: rejected
 - Test setup is verbose and could be simplified with fixtures
 - Missing property-based or fuzz testing for parsing/serialization logic
 
-### 5. Security
+### 6. Security
 - No hardcoded secrets
 - No obvious injection vulnerabilities
 - Input is validated at system boundaries
@@ -87,7 +95,7 @@ Apply the following criteria in order. Any BLOCKING issue → `verdict: rejected
 - Logging that includes potentially sensitive data but not credentials
 - Using older but not deprecated cryptographic defaults
 
-### 6. Scope Creep
+### 7. Scope Creep
 
 Simplicity test: "Is this more complex than what the ticket actually requires?" Apply this lens to all items below.
 

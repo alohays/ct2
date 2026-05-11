@@ -22,6 +22,49 @@ lens_cx:
                                   # Codex is unrelated to Anthropic cache; this value is chosen
                                   # purely for reaction latency vs fs-scan cost.
 
+# ── Verified Autonomy OS scorecard ───────────────────────────────────────────
+scorecard:
+  trust_ratio_min: 0.92
+  evidence_coverage_min: 0.90
+  lens_latency_p95_sec: 90
+  min_done_sample: 20
+  min_blocked_sample: 5
+
+# ── Static role contracts ────────────────────────────────────────────────────
+# Advisory defaults consumed by ct2-role-run/status/evals. Runtime-specific
+# drivers may degrade, but the degradation must be visible in telemetry/status.
+role_contracts:
+  ct2-helm:
+    model: default
+    reasoning_effort: medium
+    max_latency_sec: 300
+    budget_usd: null
+    personality: planner
+  ct2-forge:
+    model: default
+    reasoning_effort: high
+    max_latency_sec: 7200
+    budget_usd: null
+    personality: implementer
+  ct2-lens-cc:
+    model: default
+    reasoning_effort: high
+    max_latency_sec: 90
+    budget_usd: null
+    personality: independent-reviewer
+  ct2-lens-cx:
+    model: default
+    reasoning_effort: high
+    max_latency_sec: 90
+    budget_usd: null
+    personality: independent-reviewer
+  ct2-helm-auto-cx:
+    model: default
+    reasoning_effort: medium
+    max_latency_sec: 900
+    budget_usd: null
+    personality: autonomous-planner
+
 # ── Git workflow ──────────────────────────────────────────────────────────────
 # Flat keys (not nested) so existing regex-based YAML readers work unchanged.
 # See spec/git-workflow.md for the full contract.

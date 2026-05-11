@@ -270,6 +270,11 @@ class CodexSupportTest(unittest.TestCase):
         inbox_messages = list((ct2 / "inbox" / "ct2-helm").glob("*.md"))
         self.assertEqual(1, len(inbox_messages))
         self.assertIn("Which scope", inbox_messages[0].read_text(encoding="utf-8"))
+        pending_decisions = list((ct2 / "decisions" / "pending").glob("*.json"))
+        self.assertEqual(1, len(pending_decisions))
+        decision = json.loads(pending_decisions[0].read_text(encoding="utf-8"))
+        self.assertEqual("codex", decision["provider"])
+        self.assertEqual("requestUserInput", decision["kind"])
 
         answered = app_driver["response_for_server_request"](
             ct2,

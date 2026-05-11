@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""Create stable CT2 evidence records."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from _ct2_vao import append_jsonl, atomic_write_json, ensure_ct2, new_id, now, relative_to_project
+
+
+def parse_bool(value: str) -> bool:
+    normalized = value.lower()
+    if normalized in {"1", "true", "yes", "ok", "pass"}:
+        return True
+    if normalized in {"0", "false", "no", "fail"}:
+        return False
+    raise argparse.ArgumentTypeError("--ok must be true or false")
+
+
+def write_claim(
+    project_dir: Path,
+    ct2_dir: Path,
+    evidence_id: str,
+    ticket: str,
+    kind: str,
+    verifier: str,
+    ok: bool,
+    artifact_path: Path,
+    summary: str,
+) -> dict:
+    claim = {
+        "id": evidence_id,
+        "timestamp": now(),
+        "ticket": ticket,
+        "kind": kind,
+        "verifier": verifier,
+        "ok": ok,
+        "path": relative_to_project(project_dir, artifact_path),
+        "summary": summary,
+    }
+    append_jsonl(ct2_dir, ct2_dir / "evidence" / "claims.jsonl", claim)
+    return claim
+
+
+def cmd_command(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    evidence_id = new_id("cmd")
+    ok = int(args.exit_code) == 0
+    artifact = {
+        "id": evidence_id,
+        "schema_version": "1",
+        "timestamp": now(),
+        "ticket": args.ticket,
+        "kind": "command",
+        "command": args.command,
+        "exit_code": int(args.exit_code),
+        "summary": args.summary,
+        "ok": ok,
+    }
+    artifact_path = ct2_dir / "evidence" / "commands" / f"{evidence_id}.json"
+    atomic_write_json(ct2_dir, artifact_path, artifact, "evidence-command-")
+    claim = write_claim(project_dir, ct2_dir, evidence_id, args.ticket, "command", args.verifier, ok, artifact_path, args.summary)
+    if args.json:
+        print(json.dumps(claim, indent=2, sort_keys=True))
+    else:
+        print(f"ct2-evidence: recorded {evidence_id} -> {claim['path']}")
+    return 0 if ok else 1
+
+
+def record_structured(args: argparse.Namespace, kind: str, prefix: str, subdir: str, extra: dict) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    evidence_id = new_id(prefix)
+    ok = bool(args.ok)
+    artifact = {
+        "id": evidence_id,
+        "schema_version": "1",
+        "timestamp": now(),
+        "ticket": args.ticket,
+        "kind": kind,
+        "summary": args.summary,
+        "ok": ok,
+        **extra,
+    }
+    artifact_path = ct2_dir / "evidence" / subdir / f"{evidence_id}.json"
+    atomic_write_json(ct2_dir, artifact_path, artifact, f"evidence-{prefix}-")
+    claim = write_claim(
+        project_dir,
+        ct2_dir,
+        evidence_id,
+        args.ticket,
+        kind,
+        args.verifier,
+        ok,
+        artifact_path,
+        args.summary,
+    )
+    if args.json:
+        print(json.dumps(claim, indent=2, sort_keys=True))
+    else:
+        print(f"ct2-evidence: recorded {evidence_id} -> {claim['path']}")
+    return 0 if ok else 1
+
+
+def cmd_artifact(args: argparse.Namespace) -> int:
+    return record_structured(
+        args,
+        "artifact",
+        "art",
+        "artifacts",
+        {"source_path": args.path, "artifact_type": args.artifact_type},
+    )
+
+
+def cmd_screenshot(args: argparse.Namespace) -> int:
+    return record_structured(
+        args,
+        "screenshot",
+        "shot",
+        "screenshots",
+        {"source_path": args.path},
+    )
+
+
+def cmd_verifier(args: argparse.Namespace) -> int:
+    inferred_ok = int(args.exit_code) == 0
+    if args.ok is None:
+        args.ok = inferred_ok
+    elif bool(args.ok) != inferred_ok and not args.allow_ok_override:
+        print(
+            "ct2-evidence: verifier --ok conflicts with --exit-code; pass --allow-ok-override to force it",
+            file=sys.stderr,
+        )
+        return 2
+    return record_structured(
+        args,
+        "verifier",
+        "verify",
+        "verifiers",
+        {"name": args.name, "exit_code": args.exit_code, "details": args.details},
+    )
+
+
+def cmd_hook_event(args: argparse.Namespace) -> int:
+    return record_structured(
+        args,
+        "hook-event",
+        "hook",
+        "hooks",
+        {"hook": args.hook, "event": args.event},
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Record CT2 evidence")
+    sub = parser.add_subparsers(dest="command_name", required=True)
+
+    command = sub.add_parser("command")
+    command.add_argument("--project-dir", default=".")
+    command.add_argument("--ticket", required=True)
+    command.add_argument("--command", required=True)
+    command.add_argument("--exit-code", required=True, type=int)
+    command.add_argument("--summary", required=True)
+    command.add_argument("--verifier", default="command")
+    command.add_argument("--json", action="store_true")
+    command.set_defaults(func=cmd_command)
+
+    artifact = sub.add_parser("artifact")
+    artifact.add_argument("--project-dir", default=".")
+    artifact.add_argument("--ticket", required=True)
+    artifact.add_argument("--path", required=True)
+    artifact.add_argument("--artifact-type", default="file")
+    artifact.add_argument("--summary", required=True)
+    artifact.add_argument("--verifier", default="artifact")
+    artifact.add_argument("--ok", type=parse_bool, default=True)
+    artifact.add_argument("--json", action="store_true")
+    artifact.set_defaults(func=cmd_artifact)
+
+    screenshot = sub.add_parser("screenshot")
+    screenshot.add_argument("--project-dir", default=".")
+    screenshot.add_argument("--ticket", required=True)
+    screenshot.add_argument("--path", required=True)
+    screenshot.add_argument("--summary", required=True)
+    screenshot.add_argument("--verifier", default="screenshot")
+    screenshot.add_argument("--ok", type=parse_bool, default=True)
+    screenshot.add_argument("--json", action="store_true")
+    screenshot.set_defaults(func=cmd_screenshot)
+
+    verifier = sub.add_parser("verifier")
+    verifier.add_argument("--project-dir", default=".")
+    verifier.add_argument("--ticket", required=True)
+    verifier.add_argument("--name", required=True)
+    verifier.add_argument("--exit-code", type=int, required=True)
+    verifier.add_argument("--details", default="")
+    verifier.add_argument("--summary", required=True)
+    verifier.add_argument("--verifier", default="verifier")
+    verifier.add_argument("--ok", type=parse_bool, default=None)
+    verifier.add_argument("--allow-ok-override", action="store_true")
+    verifier.add_argument("--json", action="store_true")
+    verifier.set_defaults(func=cmd_verifier)
+
+    hook_event = sub.add_parser("hook-event")
+    hook_event.add_argument("--project-dir", default=".")
+    hook_event.add_argument("--ticket", required=True)
+    hook_event.add_argument("--hook", required=True)
+    hook_event.add_argument("--event", required=True)
+    hook_event.add_argument("--summary", required=True)
+    hook_event.add_argument("--verifier", default="hook")
+    hook_event.add_argument("--ok", type=parse_bool, default=True)
+    hook_event.add_argument("--json", action="store_true")
+    hook_event.set_defaults(func=cmd_hook_event)
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

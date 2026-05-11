@@ -42,7 +42,19 @@ def ensure_ct2(project_dir: Path) -> Path:
     if not ct2_dir.is_dir():
         print(f"ct2-codex-app-driver: .ct2/ not found in {project_dir}", file=sys.stderr)
         raise SystemExit(1)
-    for rel in ("codex/threads", "codex/goals", "codex/scopes", "codex/ledgers", "logs", ".tmp", ".meta"):
+    for rel in (
+        "codex/threads",
+        "codex/goals",
+        "codex/scopes",
+        "codex/ledgers",
+        "decisions/pending",
+        "decisions/answered",
+        "decisions/expired",
+        "decisions/audit",
+        "logs",
+        ".tmp",
+        ".meta",
+    ):
         (ct2_dir / rel).mkdir(parents=True, exist_ok=True)
     return ct2_dir
 
@@ -106,6 +118,43 @@ timestamp: {utc_now()}
 """
         )
     os.replace(tmp.name, inbox_dir / f"{msgid}.md")
+
+
+def write_decision_record(ct2_dir: Path, role: str, questions: list[dict[str, Any]]) -> str:
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    decision_id = f"decision-{ts}-{os.getpid()}-{next(tempfile._get_candidate_names())[:8]}"
+    normalized_questions = []
+    for idx, question in enumerate(questions):
+        options = []
+        for option in question.get("options") or []:
+            if isinstance(option, dict):
+                options.append(str(option.get("label") or option.get("value") or option.get("id") or option))
+            else:
+                options.append(str(option))
+        normalized_questions.append(
+            {
+                "id": str(question.get("id") or f"choice_{idx + 1}"),
+                "question": question.get("question"),
+                "options": options,
+                "secret": bool(question.get("secret")),
+            }
+        )
+    primary = normalized_questions[0] if normalized_questions else {"question": None, "options": []}
+    record = {
+        "id": decision_id,
+        "schema_version": "1",
+        "status": "pending",
+        "provider": "codex",
+        "role": role,
+        "ticket": "codex-app-server",
+        "kind": "requestUserInput",
+        "question": primary.get("question"),
+        "options": primary.get("options") or [],
+        "created_at": utc_now(),
+        "questions": normalized_questions,
+    }
+    atomic_write_json(ct2_dir, ct2_dir / "decisions" / "pending" / f"{decision_id}.json", record)
+    return decision_id
 
 
 def append_ledger_event(ct2_dir: Path, role: str, event: dict[str, Any]) -> None:
@@ -204,13 +253,18 @@ def response_for_server_request(
                 }
             )
         if missing:
+            decision_id = write_decision_record(
+                ct2_dir,
+                role,
+                [q for q in ledger_questions if not q["answered"]],
+            )
             write_inbox_message(
                 ct2_dir,
                 ROLE_INBOX_FALLBACK[role],
                 role,
                 "blocked",
                 "Codex app-server request-input requires a human answer",
-                "\n".join(missing),
+                f"decision: {decision_id}\n" + "\n".join(missing),
             )
         append_ledger_event(
             ct2_dir,
@@ -218,7 +272,7 @@ def response_for_server_request(
             {
                 "type": "request_user_input",
                 "questions": ledger_questions,
-                "fallback": "inbox" if missing else "answered",
+                "fallback": "decision+inbox" if missing else "answered",
             },
         )
         if missing:

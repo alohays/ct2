@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""Compute the local CT2 balanced scorecard baseline."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import statistics
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from _ct2_vao import (
+    STATE_DIRS,
+    atomic_write_json,
+    ensure_ct2,
+    read_frontmatter,
+    read_jsonl,
+    ticket_id_from_name,
+    now,
+)
+
+
+MIN_DONE_SAMPLE = 20
+MIN_BLOCKED_SAMPLE = 5
+
+
+def parse_time(value: Any) -> datetime | None:
+    if not value or value == "null":
+        return None
+    try:
+        text = str(value).replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    except ValueError:
+        return None
+
+
+def seconds_between(start: Any, end: Any) -> float | None:
+    a = parse_time(start)
+    b = parse_time(end)
+    if not a or not b:
+        return None
+    return max(0.0, (b - a).total_seconds())
+
+
+def percentile(values: list[float], pct: float) -> float | None:
+    if not values:
+        return None
+    values = sorted(values)
+    if len(values) == 1:
+        return values[0]
+    idx = (len(values) - 1) * pct
+    low = int(idx)
+    high = min(low + 1, len(values) - 1)
+    frac = idx - low
+    return values[low] * (1 - frac) + values[high] * frac
+
+
+def status_for(sample_size: int, minimum: int) -> str:
+    return "measured" if sample_size >= minimum else "measurement_started"
+
+
+def load_tickets(ct2_dir: Path) -> list[dict[str, Any]]:
+    tickets = []
+    for state in STATE_DIRS:
+        for path in sorted((ct2_dir / state).glob("*.md")):
+            fm = read_frontmatter(path)
+            tickets.append({"id": ticket_id_from_name(path), "state": state, "path": path, "frontmatter": fm})
+    return tickets
+
+
+def sidecar_verdict(ct2_dir: Path, ticket_id: str, suffix: str, round_num: str) -> str | None:
+    path = ct2_dir / "reviews" / f"{ticket_id}-{suffix}-r{round_num}.md"
+    if not path.exists():
+        return None
+    return str(read_frontmatter(path).get("verdict", "pending"))
+
+
+def sidecar_timestamp(ct2_dir: Path, ticket_id: str, suffix: str, round_num: str) -> str | None:
+    path = ct2_dir / "reviews" / f"{ticket_id}-{suffix}-r{round_num}.md"
+    if not path.exists():
+        return None
+    value = read_frontmatter(path).get("timestamp")
+    return str(value) if value else None
+
+
+def evidence_ticket_set(ct2_dir: Path) -> set[str]:
+    claims = read_jsonl(ct2_dir / "evidence" / "claims.jsonl")
+    return {
+        str(row.get("ticket"))
+        for row in claims
+        if row.get("ok") is not False and row.get("ticket") and row.get("kind") == "verifier"
+    }
+
+
+def build_scorecard(ct2_dir: Path) -> dict[str, Any]:
+    generated_at = now()
+    tickets = load_tickets(ct2_dir)
+    done = [ticket for ticket in tickets if ticket["state"] == "done"]
+    done_count = len(done)
+    reviewed_done = []
+    approved_first_pass = 0
+    evidence_tickets = evidence_ticket_set(ct2_dir)
+    covered_done = 0
+    ticket_latencies = []
+    review_latencies = []
+
+    for ticket in done:
+        fm = ticket["frontmatter"]
+        tid = ticket["id"]
+        round_num = str(fm.get("review-round", "0"))
+        cc = sidecar_verdict(ct2_dir, tid, "cc", round_num)
+        cx = sidecar_verdict(ct2_dir, tid, "cx", round_num)
+        if cc == "approved" and cx == "approved":
+            reviewed_done.append(ticket)
+        if round_num == "0" and cc == "approved" and cx == "approved":
+            approved_first_pass += 1
+        if tid in evidence_tickets and cc and cx:
+            covered_done += 1
+        latency = seconds_between(fm.get("sealed"), fm.get("updated"))
+        if latency is not None:
+            ticket_latencies.append(latency)
+        cc_ts = sidecar_timestamp(ct2_dir, tid, "cc", round_num)
+        cx_ts = sidecar_timestamp(ct2_dir, tid, "cx", round_num)
+        review_latency = seconds_between(fm.get("updated"), max([ts for ts in (cc_ts, cx_ts) if ts], default=None))
+        if review_latency is not None:
+            review_latencies.append(review_latency)
+
+    cost_rows = [row for row in read_jsonl(ct2_dir / "telemetry" / "cost.jsonl") if "_invalid" not in row]
+    durations = [float(row.get("duration_ms", 0)) for row in cost_rows if isinstance(row.get("duration_ms", 0), (int, float))]
+    cost_total = round(sum(float(row.get("usd", 0) or 0) for row in cost_rows), 6)
+    blocked_events = [
+        row
+        for row in read_jsonl(ct2_dir / "telemetry" / "events.jsonl")
+        if row.get("type") in {"blocked", "unblocked", "advisory_notification"}
+    ]
+
+    trust_ratio = len(reviewed_done) / done_count if done_count else None
+    first_pass = approved_first_pass / done_count if done_count else None
+    evidence_ratio = covered_done / done_count if done_count else None
+
+    scorecard = {
+        "trust": {
+            "status": status_for(done_count, MIN_DONE_SAMPLE),
+            "sample_size": done_count,
+            "target": 0.92,
+            "observed_ratio": trust_ratio,
+            "first_pass_approval": first_pass,
+        },
+        "evidence": {
+            "status": status_for(done_count, MIN_DONE_SAMPLE),
+            "sample_size": done_count,
+            "target": 0.90,
+            "observed_ratio": evidence_ratio,
+            "covered_done_tickets": covered_done,
+            "uncited_verifier_count": max(0, done_count - covered_done),
+        },
+        "autonomy": {
+            "status": status_for(len(review_latencies), MIN_DONE_SAMPLE),
+            "review_latency_p95_seconds": percentile(review_latencies, 0.95),
+            "blocked_event_sample_size": len(blocked_events),
+            "blocked_latency_status": status_for(len(blocked_events), MIN_BLOCKED_SAMPLE),
+        },
+        "cost_latency": {
+            "status": "measurement_started" if cost_rows else "not_started",
+            "cost_sample_size": len(cost_rows),
+            "cost_usd_total": cost_total,
+            "duration_p50_ms": statistics.median(durations) if durations else None,
+            "ticket_latency_p50_seconds": statistics.median(ticket_latencies) if ticket_latencies else None,
+        },
+    }
+    return {
+        "schema_version": "1",
+        "generated_at": generated_at,
+        "sample_minimums": {"done_tickets": MIN_DONE_SAMPLE, "blocked_events": MIN_BLOCKED_SAMPLE},
+        "scorecard": scorecard,
+        "inputs": {
+            "tickets_seen": len(tickets),
+            "done_tickets": done_count,
+            "cost_events": len(cost_rows),
+        },
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Compute CT2 balanced scorecard baseline")
+    parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    report = build_scorecard(ct2_dir)
+    atomic_write_json(ct2_dir, ct2_dir / "telemetry" / "baseline-2026-05.json", report, "baseline-")
+
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print("CT2 Balanced Scorecard Baseline")
+        for label, section in report["scorecard"].items():
+            print(f"  {label}: {section.get('status')} sample={section.get('sample_size', section.get('cost_sample_size', '-'))}")
+        print(f"  Wrote: {ct2_dir / 'telemetry' / 'baseline-2026-05.json'}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
