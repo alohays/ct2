@@ -199,7 +199,7 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-init [dir]` | Initialize `.ct2/` in a project directory (prompts for git strategy on first run) |
 | `ct2-seal <ticket>` | Validate and move a draft ticket to backlog |
 | `ct2-revise <ticket>` | Archive past sidecars and return an escalated/rejected ticket to `draft/` |
-| `ct2-status [dir]` | Display Kanban board, agent heartbeats, and inbox |
+| `ct2-status [dir]` | Display Kanban board, agent heartbeats, inbox, and watcher runtime state |
 | `ct2-codex-doctor [dir]` | Preflight installed Codex capabilities and write `.ct2/codex/preflight.json` |
 | `ct2-runtime-doctor [dir]` | Probe Codex/Claude/local runtime capabilities and write `.ct2/runtime/capabilities.json` |
 | `ct2-baseline [dir]` | Compute the Trust/Evidence/Autonomy/Cost balanced scorecard baseline |
@@ -209,6 +209,7 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-decision ...` | Create, format, and answer provider-neutral decision bridge records |
 | `ct2-policy-compile [dir]` | Emit provider hook declarations and shell validator metadata |
 | `ct2-bridge notify ...` | Send notify-only external advisory messages into CT2 inboxes |
+| `ct2-watchers run-once [dir]` | Scan notify-only watcher definitions and send deduped advisory messages |
 | `ct2-plan-audit [dir]` | Verify tickets in active/review/done states have plan evidence or plan-exempt reason |
 | `ct2-role-eval [dir]` | Run fixed role-definition eval cases and record role regression results |
 | `ct2-vao-pilot [--report-file <path>]` | Run the local VAO phase-completion pilot and preserve runtime evidence |
@@ -231,7 +232,7 @@ contract without requiring a live Codex app-server:
 PYTHONDONTWRITEBYTECODE=1 python3 bin/ct2-vao-self-verify --run-checks --json --repo .
 python3 -m unittest discover -s tests
 python3 -m unittest discover -s tests -p 'test_script_syntax.py'
-PYTHONDONTWRITEBYTECODE=1 python3 -c "import pathlib, sys; [compile(pathlib.Path(p).read_text(encoding='utf-8'), p, 'exec') for p in sys.argv[1:]]" bin/ct2-codex-goal bin/ct2-codex-doctor bin/ct2-codex-app-driver bin/_ct2_validate_review_sidecar.py bin/ct2-status bin/ct2-runtime-doctor bin/ct2-baseline bin/ct2-role-run bin/ct2-cost bin/ct2-evidence bin/ct2-decision bin/ct2-policy-compile bin/ct2-bridge bin/ct2-plan-audit bin/ct2-role-eval bin/ct2-vao-pilot bin/ct2-vao-self-verify bin/_ct2_vao.py
+PYTHONDONTWRITEBYTECODE=1 python3 -c "import pathlib, sys; [compile(pathlib.Path(p).read_text(encoding='utf-8'), p, 'exec') for p in sys.argv[1:]]" bin/ct2-codex-goal bin/ct2-codex-doctor bin/ct2-codex-app-driver bin/_ct2_validate_review_sidecar.py bin/ct2-status bin/ct2-runtime-doctor bin/ct2-baseline bin/ct2-role-run bin/ct2-cost bin/ct2-evidence bin/ct2-decision bin/ct2-policy-compile bin/ct2-bridge bin/ct2-watchers bin/ct2-plan-audit bin/ct2-role-eval bin/ct2-vao-pilot bin/ct2-vao-self-verify bin/_ct2_vao.py
 bash -n install.sh bin/ct2-init bin/ct2-lens-cx-daemon bin/ct2-lens-cx-tui bin/ct2-revise bin/ct2-seal
 python3 -m json.tool codex-plugin/.codex-plugin/plugin.json >/dev/null
 python3 -m json.tool .agents/plugins/marketplace.json >/dev/null

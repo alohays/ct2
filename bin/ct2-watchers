@@ -1,0 +1,281 @@
+#!/usr/bin/env python3
+"""Run notify-only CT2 watcher definitions once."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+import re
+import sys
+import tempfile
+import uuid
+from pathlib import Path
+from typing import Any
+
+from _ct2_vao import append_jsonl, atomic_write_json, compact_now, ensure_ct2, new_id, now
+
+
+ALLOWED_TO = {"ct2-helm", "ct2-forge", "ct2-lens-cc", "ct2-lens-cx", "ct2-helm-auto-cx"}
+NOTIFY_ONLY_ACTIONS = {"notify"}
+SAFE_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def canonical_json(data: Any) -> str:
+    return json.dumps(data, sort_keys=True, separators=(",", ":"))
+
+
+def fingerprint(data: dict[str, Any]) -> str:
+    return hashlib.sha256(canonical_json(data).encode("utf-8")).hexdigest()
+
+
+def inbox_message_id() -> str:
+    return f"msg-{compact_now()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+
+
+def atomic_write_text_no_clobber(ct2_dir: Path, dest: Path, text: str, prefix: str) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp_dir = ct2_dir / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=prefix, dir=str(tmp_dir))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.link(tmp_name, dest)
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+
+
+def read_json(path: Path) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return None, f"cannot read watcher: {exc}"
+    except json.JSONDecodeError as exc:
+        return None, f"invalid json: {exc}"
+    if not isinstance(data, dict):
+        return None, "watcher root must be a JSON object"
+    return data, None
+
+
+def watcher_id(path: Path, record: dict[str, Any]) -> tuple[str, list[str]]:
+    errors: list[str] = []
+    raw = record.get("id") or path.stem
+    if not isinstance(raw, str) or not raw.strip():
+        return path.stem, ["id must be a non-empty string"]
+    value = raw.strip()
+    if not SAFE_ID.match(value):
+        errors.append("id must contain only letters, digits, dot, underscore, or dash")
+        value = path.stem
+    if not SAFE_ID.match(value):
+        errors.append("watcher filename stem is not a safe runtime id")
+        value = "invalid"
+    return value, errors
+
+
+def normalize_actions(value: Any) -> tuple[set[str], list[str]]:
+    if value is None:
+        return set(NOTIFY_ONLY_ACTIONS), []
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        return set(), ["allowed_actions must be a list of strings"]
+    return set(value), []
+
+
+def validate(path: Path, record: dict[str, Any]) -> tuple[str, list[str]]:
+    wid, errors = watcher_id(path, record)
+    mode = record.get("mode")
+    if mode != "notify-only":
+        errors.append("mode must be notify-only")
+
+    to_role = record.get("to")
+    if to_role not in ALLOWED_TO:
+        errors.append("to must be a supported CT2 role")
+
+    source = record.get("source")
+    if not isinstance(source, str) or not source.strip():
+        errors.append("source must be a non-empty string")
+
+    actions, action_errors = normalize_actions(record.get("allowed_actions"))
+    errors.extend(action_errors)
+    if action_errors or actions != NOTIFY_ONLY_ACTIONS:
+        errors.append("allowed_actions must be notify-only")
+
+    forbidden = record.get("forbidden_actions")
+    if forbidden is not None and (not isinstance(forbidden, list) or not all(isinstance(item, str) for item in forbidden)):
+        errors.append("forbidden_actions must be a list of strings")
+
+    return wid, errors
+
+
+def write_inbox(ct2_dir: Path, watcher: str, record: dict[str, Any]) -> Path:
+    msg_id = inbox_message_id()
+    to_role = str(record["to"])
+    source = str(record["source"])
+    ticket = str(record.get("ticket") or "-")
+    subject = str(record.get("subject") or f"Watcher {watcher} notification")
+    body = str(record.get("body") or f"Watcher {watcher} received notify-only input from {source}.")
+    dest = ct2_dir / "inbox" / to_role / f"{msg_id}.md"
+    text = f"""---
+id: {msg_id}
+from: watcher:{source}
+to: {to_role}
+type: info
+ticket: {ticket}
+timestamp: {now()}
+---
+
+## Subject
+{subject}
+
+## Body
+{body}
+"""
+    atomic_write_text_no_clobber(ct2_dir, dest, text, "watcher-inbox-")
+    return dest
+
+
+def rel_ct2_path(ct2_dir: Path, path: Path) -> str:
+    return f".ct2/{path.relative_to(ct2_dir)}"
+
+
+def process_watcher(ct2_dir: Path, path: Path) -> dict[str, Any]:
+    record, load_error = read_json(path)
+    if record is None:
+        return {
+            "watcher": path.stem,
+            "path": rel_ct2_path(ct2_dir, path),
+            "status": "invalid",
+            "errors": [load_error or "invalid watcher"],
+        }
+
+    wid, errors = validate(path, record)
+    result: dict[str, Any] = {
+        "watcher": wid,
+        "path": rel_ct2_path(ct2_dir, path),
+        "status": "pending",
+        "errors": errors,
+    }
+    if errors:
+        result["status"] = "invalid"
+        return result
+
+    state_dir = ct2_dir / "runtime" / "watchers"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    state_path = state_dir / f"{wid}.json"
+    lock_path = state_dir / f"{wid}.lock"
+    with lock_path.open("a+", encoding="utf-8") as lock_fh:
+        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        try:
+            return process_valid_watcher(ct2_dir, state_path, wid, record, result)
+        finally:
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+
+
+def process_valid_watcher(
+    ct2_dir: Path, state_path: Path, wid: str, record: dict[str, Any], result: dict[str, Any]
+) -> dict[str, Any]:
+    current_fp = fingerprint(record)
+    previous = read_json(state_path)[0] if state_path.exists() else None
+    if previous and previous.get("fingerprint") == current_fp and previous.get("status") == "sent":
+        result.update(
+            {
+                "status": "duplicate",
+                "fingerprint": current_fp,
+                "state_path": rel_ct2_path(ct2_dir, state_path),
+                "message_path": previous.get("message_path"),
+            }
+        )
+        return result
+
+    msg_path = write_inbox(ct2_dir, wid, record)
+    event = {
+        "id": new_id("event"),
+        "timestamp": now(),
+        "type": "advisory_notification",
+        "source": record["source"],
+        "watcher": wid,
+        "to": record["to"],
+        "ticket": record.get("ticket"),
+        "subject": record.get("subject") or f"Watcher {wid} notification",
+        "message_path": rel_ct2_path(ct2_dir, msg_path),
+        "state_mutation": False,
+    }
+    append_jsonl(ct2_dir, ct2_dir / "telemetry" / "events.jsonl", event)
+    state = {
+        "schema_version": "1",
+        "watcher": wid,
+        "fingerprint": current_fp,
+        "status": "sent",
+        "last_sent_at": event["timestamp"],
+        "message_path": event["message_path"],
+        "event_id": event["id"],
+    }
+    atomic_write_json(ct2_dir, state_path, state, "watcher-state-")
+    result.update(
+        {
+            "status": "sent",
+            "fingerprint": current_fp,
+            "state_path": rel_ct2_path(ct2_dir, state_path),
+            "message_path": event["message_path"],
+            "event_id": event["id"],
+        }
+    )
+    return result
+
+
+def build_report(project_dir: Path) -> dict[str, Any]:
+    ct2_dir = ensure_ct2(project_dir)
+    paths = sorted((ct2_dir / "watchers").glob("*.json"))
+    results = [process_watcher(ct2_dir, path) for path in paths]
+    invalid = sum(1 for item in results if item["status"] == "invalid")
+    sent = sum(1 for item in results if item["status"] == "sent")
+    duplicates = sum(1 for item in results if item["status"] == "duplicate")
+    return {
+        "schema_version": "1",
+        "ran_at": now(),
+        "complete": invalid == 0,
+        "watchers_checked": len(paths),
+        "notifications_sent": sent,
+        "duplicates_skipped": duplicates,
+        "invalid_watchers": invalid,
+        "results": results,
+    }
+
+
+def cmd_run_once(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    report = build_report(project_dir)
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print("CT2 Watchers")
+        print(f"  complete: {report['complete']}")
+        print(f"  watchers_checked: {report['watchers_checked']}")
+        print(f"  notifications_sent: {report['notifications_sent']}")
+        print(f"  duplicates_skipped: {report['duplicates_skipped']}")
+        print(f"  invalid_watchers: {report['invalid_watchers']}")
+    return 0 if report["complete"] else 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run CT2 notify-only watcher definitions")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    run_once = sub.add_parser("run-once", help="scan .ct2/watchers/*.json and send new advisory notifications")
+    run_once.add_argument("project_dir", nargs="?", default=".")
+    run_once.add_argument("--json", action="store_true")
+    run_once.set_defaults(func=cmd_run_once)
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
