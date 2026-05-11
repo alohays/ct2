@@ -17,7 +17,7 @@ implementation looks plausible.
 | Gate | Metric | Pass threshold | Measurement |
 |---|---:|---:|---|
 | Artifact coverage | Required strategy artifacts present / required artifacts | 100% | `docs/ct2-vao-completion-audit-2026-05-11.md` checklist plus file existence |
-| Test coverage | Required regression/syntax checks passing | 100% pass | `python3 -m unittest discover -s tests`, `py_compile`, `bash -n`, JSON parse, `git diff --check` |
+| Test coverage | Required regression/syntax checks passing | 100% pass | `python3 -m unittest discover -s tests`, inline `compile()` with `PYTHONDONTWRITEBYTECODE=1`, `bash -n`, JSON parse, `git diff --check` |
 | Spec coverage | New behavior with matching spec or existing spec update | 100% | `spec/runtime-capabilities.md`, `balanced-scorecard.md`, `role-contracts.md`, `plan-evidence.md`, `role-evals.md`, `decision-bridge.md`, `evidence-graph.md`, `external-channels.md`, `runtime-mirror.md`, `directory-structure.md` |
 | User/operator documentation coverage | New user-facing commands documented in README | 100% | Command list in `README.md` contains every new `ct2-*` command |
 | Safety invariant coverage | Advisory/evidence planes cannot replace ticket state authority | 100% | Specs, tests, and bridge negative case |

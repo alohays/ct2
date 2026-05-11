@@ -931,6 +931,17 @@ esac
         self.assertEqual(missing.returncode, 1)
         self.assertFalse(json.loads(missing.stdout)["complete"])
 
+    def test_review_protocol_and_lens_roles_make_missing_plan_evidence_blocking(self):
+        review_protocol = (REPO_ROOT / "spec" / "review-protocol.md").read_text(encoding="utf-8").lower()
+        self.assertIn("plan evidence", review_protocol)
+        self.assertIn("blocking", review_protocol)
+        self.assertIn("plan-exempt", review_protocol)
+        for rel in ("config/ct2-lens-cc-role.md", "config/ct2-lens-cx-role.md"):
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8").lower()
+            self.assertIn("plan evidence", text, rel)
+            self.assertIn("blocking", text, rel)
+            self.assertIn("plan-exempt", text, rel)
+
     def test_vao_pilot_generates_full_phase_evidence_report(self):
         project = self.make_project()
         report_path = project / "pilot.md"
@@ -956,6 +967,25 @@ esac
         self.assertEqual(5, report["metrics"]["advisory_notifications"])
         self.assertTrue(report["metrics"]["ticket_state_unchanged"])
         self.assertTrue(report_path.is_file())
+
+    def test_vao_pilot_defaults_to_isolated_scratch_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp)
+            pilot = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-vao-pilot", "--json"], cwd=cwd)
+            self.assertEqual(pilot.returncode, 0, pilot.stderr)
+            report = json.loads(pilot.stdout)
+            self.assertTrue(report["complete"])
+            self.assertNotEqual(str(cwd.resolve()), report["project_dir"])
+            self.assertFalse((cwd / ".ct2" / "done" / "900-vao-pilot.md").exists())
+
+    def test_vao_pilot_refuses_existing_project_collisions_without_opt_in(self):
+        project = self.make_project()
+        collision = project / ".ct2" / "done" / "900-vao-pilot.md"
+        collision.write_text("real ticket\n", encoding="utf-8")
+        pilot = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-vao-pilot", "--project-dir", project, "--json"])
+        self.assertEqual(pilot.returncode, 2)
+        self.assertIn("refusing", pilot.stderr.lower())
+        self.assertEqual("real ticket\n", collision.read_text(encoding="utf-8"))
 
     def test_self_verification_criteria_include_documentation_metrics(self):
         path = REPO_ROOT / "docs" / "ct2-vao-self-verification-criteria-2026-05-11.md"
@@ -1019,6 +1049,12 @@ esac
         self.assertIn("Hard Fail Conditions", strict_criteria)
         self.assertIn("A | Executed command output", strict_criteria)
 
+    def test_readme_validation_delegates_to_self_verifier_without_pycache_drift(self):
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("ct2-vao-self-verify --run-checks", readme)
+        self.assertIn("PYTHONDONTWRITEBYTECODE=1", readme)
+        self.assertNotIn("python3 -m py_compile", readme)
+
     def test_vao_self_verify_reports_all_static_gates_complete(self):
         verify = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-vao-self-verify", "--json", "--repo", REPO_ROOT])
         self.assertEqual(verify.returncode, 0, verify.stderr)
@@ -1036,6 +1072,20 @@ esac
             },
             {gate["name"] for gate in report["gates"]},
         )
+        documentation_items = {
+            item["name"]
+            for gate in report["gates"]
+            if gate["name"] == "User/operator documentation coverage"
+            for item in gate["items"]
+        }
+        self.assertIn("README validation command mirrors self-verifier", documentation_items)
+        safety_items = {
+            item["name"]
+            for gate in report["gates"]
+            if gate["name"] == "Safety invariant coverage"
+            for item in gate["items"]
+        }
+        self.assertIn("negative verifier evidence fixture exists", safety_items)
         for gate in report["gates"]:
             self.assertEqual(1.0, gate["score"], gate["name"])
 

@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -124,7 +125,7 @@ FULL_REVIEW_RUNTIME_FILES = (
     ".ct2/evidence/artifacts/plan-first-review-comparison.json",
 )
 
-PILOT_EVIDENCE_KINDS = {"artifact", "hook_event", "screenshot", "verifier"}
+PILOT_EVIDENCE_KINDS = {"artifact", "hook-event", "screenshot", "verifier"}
 EXPECTED_ROLE_CONTRACTS = ("ct2-helm", "ct2-forge", "ct2-lens-cc", "ct2-lens-cx", "ct2-helm-auto-cx")
 
 
@@ -192,6 +193,15 @@ def documentation_gate(repo: Path) -> dict[str, Any]:
                 "evidence": "README.md product planning table",
             }
         )
+    items.append(
+        {
+            "name": "README validation command mirrors self-verifier",
+            "ok": "ct2-vao-self-verify --run-checks" in readme
+            and "PYTHONDONTWRITEBYTECODE=1" in readme
+            and "python3 -m py_compile" not in readme,
+            "evidence": "README.md Development Checks",
+        }
+    )
     return gate("User/operator documentation coverage", items)
 
 
@@ -221,6 +231,11 @@ def safety_gate(repo: Path) -> dict[str, Any]:
             "bridge implementation rejects state mutation",
             "bin/ct2-bridge",
             ("advisory-only bridge cannot mutate ticket state",),
+        ),
+        (
+            "negative verifier evidence fixture exists",
+            "tests/test_vao_strategy.py",
+            ("test_evidence_verifier_failed_exit_defaults_to_failed_claim", "exit-code", "7"),
         ),
     )
     items = []
@@ -386,8 +401,9 @@ def tracked_ct2_file_count(repo: Path) -> int:
     return len([line for line in proc.stdout.splitlines() if line.strip()])
 
 
-def full_review_gate(repo: Path) -> dict[str, Any]:
-    items: list[dict[str, Any]] = []
+def full_review_gate(repo: Path, runtime_repo: Path | None = None, setup_items: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    runtime_repo = runtime_repo or repo
+    items: list[dict[str, Any]] = list(setup_items or [])
     criteria = file_text(repo, "docs/ct2-vao-full-implementation-self-review-criteria-2026-05-11.md")
     items.append(
         {
@@ -397,14 +413,14 @@ def full_review_gate(repo: Path) -> dict[str, Any]:
         }
     )
 
-    pilot = latest_pilot_report(repo)
+    pilot = latest_pilot_report(runtime_repo)
     items.append({"name": "latest pilot artifact exists", "ok": pilot is not None, "evidence": ".ct2/runtime/artifacts/vao-pilot-*.json"})
     phase_status = pilot.get("phase_status", {}) if pilot else {}
     metrics = pilot.get("metrics", {}) if pilot else {}
     items.append({"name": "pilot complete flag true", "ok": bool(pilot and pilot.get("complete") is True), "evidence": ".ct2/runtime/artifacts/vao-pilot-*.json"})
     items.append({"name": "all pilot phase booleans true", "ok": bool(phase_status) and all(phase_status.values()), "evidence": ".ct2/runtime/artifacts/vao-pilot-*.json"})
 
-    runtime_items = [rel for rel in FULL_REVIEW_RUNTIME_FILES if (repo / rel).exists()]
+    runtime_items = [rel for rel in FULL_REVIEW_RUNTIME_FILES if (runtime_repo / rel).exists()]
     items.append(
         {
             "name": "runtime evidence files exist",
@@ -415,7 +431,7 @@ def full_review_gate(repo: Path) -> dict[str, Any]:
         }
     )
 
-    baseline_path = repo / ".ct2" / "telemetry" / "baseline-2026-05.json"
+    baseline_path = runtime_repo / ".ct2" / "telemetry" / "baseline-2026-05.json"
     baseline = load_json(baseline_path) if baseline_path.exists() else {}
     scorecard = baseline.get("scorecard", {})
     items.append(
@@ -435,7 +451,7 @@ def full_review_gate(repo: Path) -> dict[str, Any]:
 
     harness = file_text(repo, "config/harness.yaml")
     role_contracts = [role for role in EXPECTED_ROLE_CONTRACTS if f"  {role}:" in harness]
-    cost_rows = [row for row in read_jsonl(repo / ".ct2" / "telemetry" / "cost.jsonl") if "_invalid" not in row]
+    cost_rows = [row for row in read_jsonl(runtime_repo / ".ct2" / "telemetry" / "cost.jsonl") if "_invalid" not in row]
     cost_roles = {row.get("role") for row in cost_rows if row.get("role")}
     items.append(
         {
@@ -446,8 +462,8 @@ def full_review_gate(repo: Path) -> dict[str, Any]:
         }
     )
 
-    plan_first_count = len(list((repo / ".ct2" / "in-review").glob("93*-vao-pilot.md")))
-    comparison_exists = (repo / ".ct2" / "evidence" / "artifacts" / "plan-first-review-comparison.json").exists()
+    plan_first_count = len(list((runtime_repo / ".ct2" / "in-review").glob("93*-vao-pilot.md")))
+    comparison_exists = (runtime_repo / ".ct2" / "evidence" / "artifacts" / "plan-first-review-comparison.json").exists()
     items.append(
         {
             "name": "plan-first pilot and review comparison",
@@ -457,7 +473,7 @@ def full_review_gate(repo: Path) -> dict[str, Any]:
         }
     )
 
-    role_eval = latest_complete_role_eval(repo)
+    role_eval = latest_complete_role_eval(runtime_repo)
     regression_ok = intentional_regression_caught(repo, pilot)
     items.append(
         {
@@ -468,7 +484,7 @@ def full_review_gate(repo: Path) -> dict[str, Any]:
         }
     )
 
-    events = [row for row in read_jsonl(repo / ".ct2" / "telemetry" / "events.jsonl") if "_invalid" not in row]
+    events = [row for row in read_jsonl(runtime_repo / ".ct2" / "telemetry" / "events.jsonl") if "_invalid" not in row]
     advisory_count = sum(1 for row in events if row.get("type") == "advisory_notification")
     state_mutation_count = sum(1 for row in events if row.get("state_mutation") is True)
     items.append(
@@ -483,7 +499,18 @@ def full_review_gate(repo: Path) -> dict[str, Any]:
     bridge_denial = run_check(
         repo,
         "bridge state-move denial",
-        ["python3", "bin/ct2-bridge", "state-move", "--project-dir", ".", "--ticket", "930", "--to-state", "done", "--json"],
+        [
+            "python3",
+            "bin/ct2-bridge",
+            "state-move",
+            "--project-dir",
+            str(runtime_repo),
+            "--ticket",
+            "930",
+            "--to-state",
+            "done",
+            "--json",
+        ],
         expected_returncodes=(2,),
     )
     items.append(
@@ -503,7 +530,7 @@ def full_review_gate(repo: Path) -> dict[str, Any]:
         }
     )
 
-    claims = [row for row in read_jsonl(repo / ".ct2" / "evidence" / "claims.jsonl") if "_invalid" not in row]
+    claims = [row for row in read_jsonl(runtime_repo / ".ct2" / "evidence" / "claims.jsonl") if "_invalid" not in row]
     claim_kinds = {str(row.get("kind")) for row in claims}
     items.append(
         {
@@ -532,7 +559,7 @@ def full_review_gate(repo: Path) -> dict[str, Any]:
     items.append(
         {
             "name": "done tickets have dual approved sidecars",
-            "ok": done_without_dual_approval(repo) == 0,
+            "ok": done_without_dual_approval(runtime_repo) == 0,
             "evidence": ".ct2/done/*.md + .ct2/reviews/*-{cc,cx}-r*.md",
         }
     )
@@ -566,8 +593,16 @@ def build_report(repo: Path, run_checks: bool) -> dict[str, Any]:
         safety_gate(repo),
         measurement_gate(repo),
     ]
+    pilot_tmp: tempfile.TemporaryDirectory[str] | None = None
     if run_checks:
-        gates.append(full_review_gate(repo))
+        pilot_tmp = tempfile.TemporaryDirectory(prefix="ct2-self-verify-pilot-")
+        runtime_repo = Path(pilot_tmp.name).resolve()
+        pilot_step = run_check(
+            repo,
+            "ct2-vao-pilot scratch",
+            ["python3", "bin/ct2-vao-pilot", "--project-dir", str(runtime_repo), "--json"],
+        )
+        gates.append(full_review_gate(repo, runtime_repo, [pilot_step]))
     unknown_count = sum(1 for gate_result in gates for item in gate_result["items"] if item.get("ok") is None)
     ok = all(gate_result["ok"] for gate_result in gates) and unknown_count == 0
     return {

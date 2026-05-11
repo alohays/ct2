@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,48 @@ from _ct2_vao import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+DONE_PILOT_IDS = tuple(str(raw_id) for raw_id in range(900, 920))
+PLAN_PILOT_IDS = tuple(str(raw_id) for raw_id in range(930, 935))
+
+
+def pilot_generated_paths(ct2_dir: Path) -> list[Path]:
+    paths: list[Path] = []
+    for ticket_id in DONE_PILOT_IDS:
+        paths.extend(
+            [
+                ct2_dir / "done" / f"{ticket_id}-vao-pilot.md",
+                ct2_dir / "plans" / f"{ticket_id}-r0.md",
+                ct2_dir / "reviews" / f"{ticket_id}-cc-r0.md",
+                ct2_dir / "reviews" / f"{ticket_id}-cx-r0.md",
+                ct2_dir / "evidence" / "artifacts" / f"pilot-{ticket_id}.json",
+                ct2_dir / "evidence" / "verifiers" / f"pilot-verify-{ticket_id}.json",
+            ]
+        )
+    for ticket_id in PLAN_PILOT_IDS:
+        paths.extend(
+            [
+                ct2_dir / "in-review" / f"{ticket_id}-vao-pilot.md",
+                ct2_dir / "plans" / f"{ticket_id}-r0.md",
+                ct2_dir / "reviews" / f"{ticket_id}-cc-r0.md",
+                ct2_dir / "reviews" / f"{ticket_id}-cx-r0.md",
+            ]
+        )
+    return paths
+
+
+def existing_ticket_count(ct2_dir: Path) -> int:
+    return sum(1 for state in STATE_DIRS for _path in (ct2_dir / state).glob("*.md"))
+
+
+def guard_existing_project(ct2_dir: Path, allow_existing_project: bool) -> None:
+    collisions = [path for path in pilot_generated_paths(ct2_dir) if path.exists()]
+    if allow_existing_project:
+        if collisions:
+            raise SystemExit(f"ct2-vao-pilot: refusing to overwrite generated pilot paths: {collisions[0]}")
+        return
+    if existing_ticket_count(ct2_dir) or collisions:
+        detail = f"; first collision: {collisions[0]}" if collisions else ""
+        raise SystemExit(f"ct2-vao-pilot: refusing to seed an existing .ct2 project without --allow-existing-project{detail}")
 
 
 def run_step(
@@ -140,8 +183,7 @@ def write_pilot_ticket(ct2_dir: Path, state: str, ticket_id: str, title: str) ->
 
 
 def seed_done_tickets(project_dir: Path, ct2_dir: Path) -> None:
-    for raw_id in range(900, 920):
-        ticket_id = str(raw_id)
+    for ticket_id in DONE_PILOT_IDS:
         write_pilot_ticket(ct2_dir, "done", ticket_id, f"VAO baseline pilot {ticket_id}")
         evidence_id = f"pilot-{ticket_id}"
         artifact_path = ct2_dir / "evidence" / "artifacts" / f"{evidence_id}.json"
@@ -172,12 +214,42 @@ def seed_done_tickets(project_dir: Path, ct2_dir: Path) -> None:
                 "summary": "Pilot done-ticket evidence artifact",
             },
         )
+        verifier_id = f"pilot-verify-{ticket_id}"
+        verifier_path = ct2_dir / "evidence" / "verifiers" / f"{verifier_id}.json"
+        atomic_write_json(
+            ct2_dir,
+            verifier_path,
+            {
+                "id": verifier_id,
+                "schema_version": "1",
+                "ticket": ticket_id,
+                "kind": "verifier",
+                "name": "ct2-vao-pilot",
+                "exit_code": 0,
+                "summary": "Pilot done-ticket verifier evidence",
+                "ok": True,
+            },
+            "pilot-verifier-",
+        )
+        append_jsonl(
+            ct2_dir,
+            ct2_dir / "evidence" / "claims.jsonl",
+            {
+                "id": verifier_id,
+                "timestamp": now(),
+                "ticket": ticket_id,
+                "kind": "verifier",
+                "verifier": "ct2-vao-pilot",
+                "ok": True,
+                "path": str(verifier_path.relative_to(project_dir)),
+                "summary": "Pilot done-ticket verifier evidence",
+            },
+        )
 
 
 def seed_plan_first_tickets(ct2_dir: Path) -> list[str]:
     ticket_ids = []
-    for raw_id in range(930, 935):
-        ticket_id = str(raw_id)
+    for ticket_id in PLAN_PILOT_IDS:
         write_pilot_ticket(ct2_dir, "in-review", ticket_id, f"VAO plan-first pilot {ticket_id}")
         ticket_ids.append(ticket_id)
     comparison = {
@@ -264,15 +336,29 @@ def write_markdown_report(ct2_dir: Path, report: dict[str, Any], report_file: Pa
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run a local VAO phase-completion pilot")
-    parser.add_argument("--project-dir", default=".")
+    parser.add_argument("--project-dir")
+    parser.add_argument("--allow-existing-project", action="store_true")
     parser.add_argument("--report-file")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
-    project_dir = Path(args.project_dir).resolve()
+    if args.project_dir:
+        project_dir = Path(args.project_dir).resolve()
+        existing_ct2 = (project_dir / ".ct2").exists()
+    else:
+        project_dir = Path(tempfile.mkdtemp(prefix="ct2-vao-pilot-")).resolve()
+        existing_ct2 = False
     init_cmd = ["bash", REPO_ROOT / "bin" / "ct2-init", "--repair", project_dir]
     steps = [run_step(project_dir if project_dir.exists() else REPO_ROOT, "ct2-init --repair", init_cmd)]
     ct2_dir = ensure_ct2(project_dir)
+    if existing_ct2:
+        try:
+            guard_existing_project(ct2_dir, args.allow_existing_project)
+        except SystemExit as exc:
+            if args.json:
+                print(json.dumps({"complete": False, "error": str(exc)}, indent=2, sort_keys=True))
+            print(str(exc), file=sys.stderr)
+            return 2
 
     seed_done_tickets(project_dir, ct2_dir)
     plan_first_ticket_ids = seed_plan_first_tickets(ct2_dir)
@@ -521,7 +607,7 @@ def main() -> int:
         "week6_scorecard_report": baseline["scorecard"]["trust"]["status"] == "measured",
         "decision_bridge_provider_adapters": any(step["name"] == "ct2-decision format claude" and step["ok"] for step in steps)
         and any(step["name"] == "ct2-decision format codex" and step["ok"] for step in steps),
-        "evidence_graph_extended_kinds": {"artifact", "screenshot", "verifier", "hook_event"}.issubset(evidence_kinds),
+        "evidence_graph_extended_kinds": {"artifact", "screenshot", "verifier", "hook-event"}.issubset(evidence_kinds),
     }
 
     report = {

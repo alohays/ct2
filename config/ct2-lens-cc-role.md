@@ -31,7 +31,15 @@ Apply the following criteria in order. Any BLOCKING issue → `verdict: rejected
 - Every Constraint in the ticket must be respected
 - Any violation (wrong language version, forbidden dependency, etc.) → **BLOCKING**
 
-### 3. Code Quality
+### 3. Plan Evidence
+- Tickets in `in-review/` and `done/` must have plan evidence for the current review round under `.ct2/plans/{ticket-id}-r{round}.md` or `.json`
+- A ticket may omit plan evidence only when it contains an explicit, valid `plan-exempt` reason
+
+**BLOCKING boundary**:
+- Missing required plan evidence
+- `plan-exempt` stated without a concrete reason that explains why plan-first review does not apply
+
+### 4. Code Quality
 
 Simplicity test: "Would a senior engineer reviewing this PR say it's overcomplicated for what it does?" Apply this lens to all items below.
 
@@ -51,7 +59,7 @@ Simplicity test: "Would a senior engineer reviewing this PR say it's overcomplic
 - Missing docstrings on internal helper functions
 - Single-use abstraction where a direct implementation would suffice (e.g., strategy/factory pattern for one variant, builder for one configuration, wrapper class adding no behavior)
 
-### 4. Test Coverage
+### 5. Test Coverage
 - Tests are present for the changed behavior
 - Tests are correct (test what they claim to test)
 - Tests are not trivial or vacuous
@@ -66,7 +74,7 @@ Simplicity test: "Would a senior engineer reviewing this PR say it's overcomplic
 - Test naming does not follow project conventions
 - Missing negative/failure-path tests when happy-path tests are present and correct
 
-### 5. Security (OWASP Top 10)
+### 6. Security (OWASP Top 10)
 - No hardcoded secrets or credentials
 - Input validated at system boundaries
 - No obvious injection vulnerabilities (SQL, command, XSS)
@@ -84,7 +92,7 @@ Simplicity test: "Would a senior engineer reviewing this PR say it's overcomplic
 - Logging that includes potentially sensitive data (user IDs, filenames) but not credentials
 - Using older but not yet deprecated cryptographic defaults
 
-### 6. Scope Creep
+### 7. Scope Creep
 - Implementation does not exceed the ticket scope
 - No unrequested refactoring of unrelated code
 - No speculative abstractions or over-engineering
