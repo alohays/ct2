@@ -91,6 +91,7 @@ PYTHON_CHECK_FILES = (
     "bin/ct2-policy-compile",
     "bin/ct2-bridge",
     "bin/ct2-plan-audit",
+    "bin/ct2-ticket-audit",
     "bin/ct2-role-eval",
     "bin/ct2-vao-pilot",
     "bin/ct2-vao-self-verify",
