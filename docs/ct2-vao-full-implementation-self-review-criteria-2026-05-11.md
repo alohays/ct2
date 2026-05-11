@@ -239,7 +239,7 @@ Pass threshold: `provider_adapter_coverage == 1.0`.
 Metric:
 
 ```text
-evidence_kind_coverage = observed_evidence_kinds / {"command","artifact","screenshot","verifier","hook_event"}
+evidence_kind_coverage = observed_evidence_kinds / {"command","artifact","screenshot","verifier","hook-event"}
 ```
 
 Pass threshold: all five kinds are supported by tests; local pilot must include

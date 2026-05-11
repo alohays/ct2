@@ -8,6 +8,7 @@ import os
 import re
 import tempfile
 import uuid
+import fcntl
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -75,12 +76,22 @@ def atomic_write_json(ct2_dir: Path, dest: Path, data: dict[str, Any], prefix: s
 
 
 def append_jsonl(ct2_dir: Path, dest: Path, row: dict[str, Any]) -> None:
-    existing = ""
-    if dest.exists():
-        existing = dest.read_text(encoding="utf-8")
-        if existing and not existing.endswith("\n"):
-            existing += "\n"
-    atomic_write_text(ct2_dir, dest, existing + json.dumps(row, sort_keys=True) + "\n", "ct2-jsonl-")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(row, sort_keys=True) + "\n"
+    with dest.open("a+", encoding="utf-8") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            if size:
+                fh.seek(size - 1)
+                if fh.read(1) != "\n":
+                    fh.write("\n")
+            fh.write(line)
+            fh.flush()
+            os.fsync(fh.fileno())
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:

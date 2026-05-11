@@ -1,9 +1,13 @@
 import json
 import os
+import argparse
+import importlib.util
+import importlib.machinery
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -30,6 +34,21 @@ def write_jsonl(path, rows):
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
         encoding="utf-8",
     )
+
+
+def load_script_module(name, relpath):
+    path = REPO_ROOT / relpath
+    loader = importlib.machinery.SourceFileLoader(name, str(path))
+    spec = importlib.util.spec_from_loader(name, loader)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    old_path = list(sys.path)
+    sys.path.insert(0, str(REPO_ROOT / "bin"))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path[:] = old_path
+    return module
 
 
 def write_ticket(path, ticket_id="001", status="done", review_round=0):
@@ -215,10 +234,10 @@ esac
                 {
                     "id": "ev-001",
                     "ticket": "001",
-                    "kind": "command",
+                    "kind": "artifact",
                     "verifier": "unit",
                     "ok": True,
-                    "path": ".ct2/evidence/commands/ev-001.json",
+                    "path": ".ct2/evidence/artifacts/ev-001.json",
                 }
             ],
         )
@@ -232,8 +251,36 @@ esac
         report = json.loads(baseline.stdout)
         self.assertEqual("measurement_started", report["scorecard"]["trust"]["status"])
         self.assertEqual(1, report["scorecard"]["trust"]["sample_size"])
-        self.assertEqual(1.0, report["scorecard"]["evidence"]["observed_ratio"])
+        self.assertEqual(0.0, report["scorecard"]["evidence"]["observed_ratio"])
+        self.assertEqual(1, report["scorecard"]["evidence"]["uncited_verifier_count"])
         self.assertEqual(0.25, report["scorecard"]["cost_latency"]["cost_usd_total"])
+
+        write_jsonl(
+            ct2 / "evidence" / "claims.jsonl",
+            [
+                {
+                    "id": "ev-001",
+                    "ticket": "001",
+                    "kind": "artifact",
+                    "verifier": "unit",
+                    "ok": True,
+                    "path": ".ct2/evidence/artifacts/ev-001.json",
+                },
+                {
+                    "id": "verify-001",
+                    "ticket": "001",
+                    "kind": "verifier",
+                    "verifier": "unit",
+                    "ok": True,
+                    "path": ".ct2/evidence/verifiers/verify-001.json",
+                },
+            ],
+        )
+        baseline = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-baseline", "--json", project])
+        self.assertEqual(baseline.returncode, 0, baseline.stderr)
+        report = json.loads(baseline.stdout)
+        self.assertEqual(1.0, report["scorecard"]["evidence"]["observed_ratio"])
+        self.assertEqual(0, report["scorecard"]["evidence"]["uncited_verifier_count"])
 
         persisted = json.loads((ct2 / "telemetry" / "baseline-2026-05.json").read_text(encoding="utf-8"))
         self.assertEqual(report["generated_at"], persisted["generated_at"])
@@ -401,10 +448,71 @@ esac
             json.loads(line)
             for line in (ct2 / "evidence" / "claims.jsonl").read_text(encoding="utf-8").splitlines()
         ]
-        self.assertEqual({"artifact", "screenshot", "verifier", "hook_event"}, {claim["kind"] for claim in claims})
+        self.assertEqual({"artifact", "screenshot", "verifier", "hook-event"}, {claim["kind"] for claim in claims})
         self.assertTrue((ct2 / "evidence" / "screenshots").is_dir())
         self.assertTrue((ct2 / "evidence" / "verifiers").is_dir())
         self.assertTrue((ct2 / "evidence" / "hooks").is_dir())
+
+    def test_evidence_verifier_failed_exit_defaults_to_failed_claim(self):
+        project = self.make_project()
+        result = run_cmd(
+            [
+                PYTHON,
+                REPO_ROOT / "bin" / "ct2-evidence",
+                "verifier",
+                "--project-dir",
+                project,
+                "--ticket",
+                "001",
+                "--name",
+                "unit",
+                "--exit-code",
+                "7",
+                "--summary",
+                "verifier failed",
+                "--json",
+            ]
+        )
+        self.assertEqual(result.returncode, 1)
+        claim = json.loads(result.stdout)
+        self.assertFalse(claim["ok"])
+        persisted = json.loads((project / ".ct2" / "evidence" / "claims.jsonl").read_text(encoding="utf-8"))
+        self.assertFalse(persisted["ok"])
+
+    def test_append_jsonl_is_not_read_modify_replace(self):
+        module = load_script_module("ct2_vao_helpers", "bin/_ct2_vao.py")
+        import inspect
+
+        source = inspect.getsource(module.append_jsonl)
+        self.assertNotIn("read_text", source)
+        self.assertNotIn("atomic_write_text", source)
+
+    def test_append_jsonl_preserves_parallel_writer_rows(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        dest = ct2 / "telemetry" / "events.jsonl"
+        script = (
+            "import pathlib, sys\n"
+            f"sys.path.insert(0, {str(REPO_ROOT / 'bin')!r})\n"
+            "from _ct2_vao import append_jsonl\n"
+            "ct2 = pathlib.Path(sys.argv[1])\n"
+            "dest = pathlib.Path(sys.argv[2])\n"
+            "append_jsonl(ct2, dest, {'idx': int(sys.argv[3])})\n"
+        )
+        procs = [
+            subprocess.Popen(
+                [PYTHON, "-c", script, str(ct2), str(dest), str(idx)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            for idx in range(30)
+        ]
+        for proc in procs:
+            stdout, stderr = proc.communicate(timeout=30)
+            self.assertEqual(proc.returncode, 0, stderr or stdout)
+        rows = [json.loads(line) for line in dest.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(set(range(30)), {row["idx"] for row in rows})
 
     def test_decision_bridge_uses_pending_answered_atomic_dirs(self):
         project = self.make_project()

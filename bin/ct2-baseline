@@ -89,7 +89,11 @@ def sidecar_timestamp(ct2_dir: Path, ticket_id: str, suffix: str, round_num: str
 
 def evidence_ticket_set(ct2_dir: Path) -> set[str]:
     claims = read_jsonl(ct2_dir / "evidence" / "claims.jsonl")
-    return {str(row.get("ticket")) for row in claims if row.get("ok") is not False and row.get("ticket")}
+    return {
+        str(row.get("ticket"))
+        for row in claims
+        if row.get("ok") is not False and row.get("ticket") and row.get("kind") == "verifier"
+    }
 
 
 def build_scorecard(ct2_dir: Path) -> dict[str, Any]:

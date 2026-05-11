@@ -29,7 +29,7 @@ Overall complete: `true`
 - Role eval cases: `5`
 - Advisory notifications: `10`
 - Ticket state unchanged by bridge: `true`
-- Evidence kinds: `artifact, hook_event, screenshot, verifier`
+- Evidence kinds: `artifact, hook-event, screenshot, verifier`
 
 ## Command Results
 

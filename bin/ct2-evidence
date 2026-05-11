@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from _ct2_vao import append_jsonl, atomic_write_json, ensure_ct2, new_id, now, relative_to_project
@@ -126,6 +127,15 @@ def cmd_screenshot(args: argparse.Namespace) -> int:
 
 
 def cmd_verifier(args: argparse.Namespace) -> int:
+    inferred_ok = int(args.exit_code) == 0
+    if args.ok is None:
+        args.ok = inferred_ok
+    elif bool(args.ok) != inferred_ok and not args.allow_ok_override:
+        print(
+            "ct2-evidence: verifier --ok conflicts with --exit-code; pass --allow-ok-override to force it",
+            file=sys.stderr,
+        )
+        return 2
     return record_structured(
         args,
         "verifier",
@@ -138,7 +148,7 @@ def cmd_verifier(args: argparse.Namespace) -> int:
 def cmd_hook_event(args: argparse.Namespace) -> int:
     return record_structured(
         args,
-        "hook_event",
+        "hook-event",
         "hook",
         "hooks",
         {"hook": args.hook, "event": args.event},
@@ -188,7 +198,8 @@ def main() -> int:
     verifier.add_argument("--details", default="")
     verifier.add_argument("--summary", required=True)
     verifier.add_argument("--verifier", default="verifier")
-    verifier.add_argument("--ok", type=parse_bool, default=True)
+    verifier.add_argument("--ok", type=parse_bool, default=None)
+    verifier.add_argument("--allow-ok-override", action="store_true")
     verifier.add_argument("--json", action="store_true")
     verifier.set_defaults(func=cmd_verifier)
 

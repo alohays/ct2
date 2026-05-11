@@ -106,7 +106,9 @@ This directory is excluded from git via `.git/info/exclude` (never via `.gitigno
 - At most one ticket exists in `in-progress/` at any time.
 - `reviews/` sidecar files are **immutable** after creation. Re-reviews produce new files under incremented round numbers.
 - State transitions are performed with `mv` (atomic on same-filesystem paths).
-- `.tmp/` is used exclusively as a staging area for atomic inbox message writes.
+- `.tmp/` is the staging area for CT2 atomic file writes, including inbox
+  messages, decision records, evidence artifacts, telemetry snapshots, and other
+  advisory/evidentiary outputs that use tmpfile-then-rename.
 - `runtime/`, `evidence/`, `telemetry/`, `decisions/`, `plans/`, `watchers/`,
   and `evals/` are advisory or evidentiary planes. They never replace the
   Kanban directory as the ticket state authority.
