@@ -1089,6 +1089,27 @@ esac
         for gate in report["gates"]:
             self.assertEqual(1.0, gate["score"], gate["name"])
 
+    def test_vao_self_verify_discovers_every_shebang_script(self):
+        verifier = load_script_module("ct2_vao_self_verify_test", "bin/ct2-vao-self-verify")
+
+        expected_python = []
+        expected_bash_paths = [REPO_ROOT / "install.sh"]
+        for path in sorted((REPO_ROOT / "bin").iterdir()):
+            if not path.is_file():
+                continue
+            first_line = path.read_text(encoding="utf-8", errors="ignore").splitlines()[:1]
+            if first_line and "python" in first_line[0]:
+                expected_python.append(str(path.relative_to(REPO_ROOT)))
+            if path.suffix == ".sh" or (first_line and "bash" in first_line[0]):
+                expected_bash_paths.append(path)
+
+        for path in sorted((REPO_ROOT / "claude-plugin" / "hooks").glob("*.sh")):
+            expected_bash_paths.append(path)
+
+        expected_bash = [str(path.relative_to(REPO_ROOT)) for path in sorted(expected_bash_paths)]
+        self.assertEqual(expected_bash, verifier.bash_check_files(REPO_ROOT))
+        self.assertEqual(expected_python, verifier.python_check_files(REPO_ROOT))
+
 
 if __name__ == "__main__":
     unittest.main()

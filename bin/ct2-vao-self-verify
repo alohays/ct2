@@ -76,38 +76,6 @@ ARTIFACT_FILES = (
     "codex-plugin/skills/ct2-forge/SKILL.md",
 )
 
-PYTHON_CHECK_FILES = (
-    "bin/ct2-codex-goal",
-    "bin/ct2-codex-doctor",
-    "bin/ct2-codex-app-driver",
-    "bin/_ct2_validate_review_sidecar.py",
-    "bin/ct2-status",
-    "bin/ct2-runtime-doctor",
-    "bin/ct2-baseline",
-    "bin/ct2-role-run",
-    "bin/ct2-cost",
-    "bin/ct2-evidence",
-    "bin/ct2-decision",
-    "bin/ct2-policy-compile",
-    "bin/ct2-bridge",
-    "bin/ct2-plan-audit",
-    "bin/ct2-role-eval",
-    "bin/ct2-vao-pilot",
-    "bin/ct2-vao-self-verify",
-    "bin/_ct2_vao.py",
-)
-
-BASH_CHECK_FILES = (
-    "install.sh",
-    "bin/ct2-init",
-    "bin/ct2-lens-cx-daemon",
-    "bin/ct2-lens-cx-tui",
-    "bin/ct2-revise",
-    "bin/ct2-seal",
-    "claude-plugin/hooks/enforce-write-access.sh",
-    "claude-plugin/hooks/enforce-review-independence.sh",
-)
-
 JSON_CHECK_FILES = (
     "codex-plugin/.codex-plugin/plugin.json",
     ".agents/plugins/marketplace.json",
@@ -135,6 +103,37 @@ def file_text(repo: Path, rel: str) -> str:
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def rel(path: Path, repo: Path) -> str:
+    return path.relative_to(repo).as_posix()
+
+
+def first_line(path: Path) -> str:
+    return "\n".join(path.read_text(encoding="utf-8", errors="ignore").splitlines()[:1])
+
+
+def python_check_files(repo: Path) -> list[str]:
+    files = []
+    for path in sorted((repo / "bin").iterdir()):
+        if path.is_file() and "python" in first_line(path):
+            files.append(rel(path, repo))
+    return files
+
+
+def bash_check_files(repo: Path) -> list[str]:
+    candidates = [repo / "install.sh"]
+    candidates.extend((repo / "bin").iterdir())
+    candidates.extend((repo / "claude-plugin" / "hooks").glob("*.sh"))
+
+    files = []
+    for path in sorted(candidates):
+        if not path.is_file():
+            continue
+        line = first_line(path)
+        if path.suffix == ".sh" or "bash" in line:
+            files.append(rel(path, repo))
+    return files
 
 
 def score(items: list[dict[str, Any]]) -> float:
@@ -334,10 +333,10 @@ def test_gate(repo: Path, run_checks: bool) -> dict[str, Any]:
                     "    path = pathlib.Path(rel)\n"
                     "    compile(path.read_text(encoding='utf-8'), rel, 'exec')\n"
                 ),
-                *PYTHON_CHECK_FILES,
+                *python_check_files(repo),
             ],
         ),
-        run_check(repo, "bash syntax", ["bash", "-n", *BASH_CHECK_FILES]),
+        run_check(repo, "bash syntax", ["bash", "-n", *bash_check_files(repo)]),
     ]
     for rel in JSON_CHECK_FILES:
         items.append(run_check(repo, f"json parse {rel}", ["python3", "-m", "json.tool", rel]))

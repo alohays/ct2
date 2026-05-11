@@ -231,12 +231,14 @@ contract without requiring a live Codex app-server:
 PYTHONDONTWRITEBYTECODE=1 python3 bin/ct2-vao-self-verify --run-checks --json --repo .
 python3 -m unittest discover -s tests
 python3 -m unittest discover -s tests -p 'test_script_syntax.py'
-PYTHONDONTWRITEBYTECODE=1 python3 -c "import pathlib, sys; [compile(pathlib.Path(p).read_text(encoding='utf-8'), p, 'exec') for p in sys.argv[1:]]" bin/ct2-codex-goal bin/ct2-codex-doctor bin/ct2-codex-app-driver bin/_ct2_validate_review_sidecar.py bin/ct2-status bin/ct2-runtime-doctor bin/ct2-baseline bin/ct2-role-run bin/ct2-cost bin/ct2-evidence bin/ct2-decision bin/ct2-policy-compile bin/ct2-bridge bin/ct2-plan-audit bin/ct2-role-eval bin/ct2-vao-pilot bin/ct2-vao-self-verify bin/_ct2_vao.py
-bash -n install.sh bin/ct2-init bin/ct2-lens-cx-daemon bin/ct2-lens-cx-tui bin/ct2-revise bin/ct2-seal
 python3 -m json.tool codex-plugin/.codex-plugin/plugin.json >/dev/null
 python3 -m json.tool .agents/plugins/marketplace.json >/dev/null
 git diff --check
 ```
+
+The self-verifier and `test_script_syntax.py` discover Python and Bash
+shebang scripts dynamically, so new helpers are automatically covered without
+updating a copied command list.
 
 The unittest suite covers Codex goal scope/audit behavior, request-input
 fallbacks, fake-Codex preflight parsing, sidecar validation, `ct2-status`
