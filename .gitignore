@@ -6,9 +6,6 @@ __pycache__/
 *.pyc
 *.pyo
 
-# CT2 runtime (per-project state)
-.ct2/
-
 # Claude Code: ignore local/ephemeral state, keep any future shared .claude/ config committable
 .claude/settings.local.json
 .claude/*.lock
