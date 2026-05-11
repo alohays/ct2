@@ -201,6 +201,18 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-revise <ticket>` | Archive past sidecars and return an escalated/rejected ticket to `draft/` |
 | `ct2-status [dir]` | Display Kanban board, agent heartbeats, and inbox |
 | `ct2-codex-doctor [dir]` | Preflight installed Codex capabilities and write `.ct2/codex/preflight.json` |
+| `ct2-runtime-doctor [dir]` | Probe Codex/Claude/local runtime capabilities and write `.ct2/runtime/capabilities.json` |
+| `ct2-baseline [dir]` | Compute the Trust/Evidence/Autonomy/Cost balanced scorecard baseline |
+| `ct2-role-run --role <role> -- <cmd>` | Run a role command and append cost/latency telemetry |
+| `ct2-cost [dir]` | Summarize `.ct2/telemetry/cost.jsonl` |
+| `ct2-evidence ...` | Record stable command, artifact, screenshot, verifier, and hook-event evidence claims |
+| `ct2-decision ...` | Create, format, and answer provider-neutral decision bridge records |
+| `ct2-policy-compile [dir]` | Emit provider hook declarations and shell validator metadata |
+| `ct2-bridge notify ...` | Send notify-only external advisory messages into CT2 inboxes |
+| `ct2-plan-audit [dir]` | Verify tickets in active/review/done states have plan evidence or plan-exempt reason |
+| `ct2-role-eval [dir]` | Run fixed role-definition eval cases and record role regression results |
+| `ct2-vao-pilot [--report-file <path>]` | Run the local VAO phase-completion pilot and preserve runtime evidence |
+| `ct2-vao-self-verify [--run-checks]` | Measure VAO completion gates from the self-verification criteria |
 | `ct2-codex-goal ...` | Create, inspect, pause, resume, and clear CT2-local Codex goal metadata |
 | `ct2-codex-app-driver ...` | Drive Codex app-server thread, goal, turn, request-input, approvals, logs, and metadata |
 | `ct2-lens-cx-tui <dir>` | Start the visible Codex TUI reviewer loop |
@@ -217,8 +229,9 @@ contract without requiring a live Codex app-server:
 
 ```bash
 python3 -m unittest discover -s tests
-python3 -m py_compile bin/ct2-codex-goal bin/ct2-codex-doctor bin/ct2-codex-app-driver bin/_ct2_validate_review_sidecar.py bin/ct2-status
-bash -n install.sh bin/ct2-init bin/ct2-lens-cx-daemon bin/ct2-lens-cx-tui bin/ct2-status bin/ct2-revise bin/ct2-seal
+python3 -m unittest discover -s tests -p 'test_script_syntax.py'
+python3 -m py_compile bin/ct2-codex-goal bin/ct2-codex-doctor bin/ct2-codex-app-driver bin/_ct2_validate_review_sidecar.py bin/ct2-status bin/ct2-runtime-doctor bin/ct2-baseline bin/ct2-role-run bin/ct2-cost bin/ct2-evidence bin/ct2-decision bin/ct2-policy-compile bin/ct2-bridge bin/ct2-plan-audit bin/ct2-vao-self-verify
+bash -n install.sh bin/ct2-init bin/ct2-lens-cx-daemon bin/ct2-lens-cx-tui bin/ct2-revise bin/ct2-seal
 python3 -m json.tool codex-plugin/.codex-plugin/plugin.json >/dev/null
 python3 -m json.tool .agents/plugins/marketplace.json >/dev/null
 git diff --check
@@ -267,6 +280,20 @@ Full protocol specifications are in [`spec/`](spec/):
 | [`spec/git-workflow.md`](spec/git-workflow.md) | Git branch, commit, PR, and merge lifecycle |
 | [`spec/codex-full-support-prd.md`](spec/codex-full-support-prd.md) | Product requirements for first-class Codex support |
 | [`spec/codex-runtime-contract.md`](spec/codex-runtime-contract.md) | Technical contract for Codex CLI, `/goal`, app-server, skills, MCP, and request-input integration |
+
+## Product Planning
+
+| Document | Description |
+|----------|-------------|
+| [`docs/ct2-verified-autonomy-os-strategy-2026-05.md`](docs/ct2-verified-autonomy-os-strategy-2026-05.md) | Canonical Verified Autonomy OS integrated plan |
+| [`docs/ct2-phase0-bet1-readiness-2026-05.md`](docs/ct2-phase0-bet1-readiness-2026-05.md) | Phase 0 readiness and Bet 1 go/no-go report |
+| [`docs/ct2-native-task-mirror-spike-2026-05.md`](docs/ct2-native-task-mirror-spike-2026-05.md) | Advisory-only native task mirror spike result |
+| [`docs/ct2-vao-completion-audit-2026-05-11.md`](docs/ct2-vao-completion-audit-2026-05-11.md) | Prompt-to-artifact completion audit for the VAO implementation |
+| [`docs/ct2-vao-self-verification-criteria-2026-05-11.md`](docs/ct2-vao-self-verification-criteria-2026-05-11.md) | Measurable checklist and metrics for judging VAO completion/documentation quality |
+| [`docs/ct2-vao-full-implementation-self-review-criteria-2026-05-11.md`](docs/ct2-vao-full-implementation-self-review-criteria-2026-05-11.md) | Strict multi-layer self-review checklist and measurable metrics for full VAO implementation claims |
+| [`docs/ct2-vao-self-verification-report-2026-05-11.md`](docs/ct2-vao-self-verification-report-2026-05-11.md) | Executed self-verification report with gate scores and caveats |
+| [`docs/ct2-verified-autonomy-os-full-phase-audit-2026-05-11.md`](docs/ct2-verified-autonomy-os-full-phase-audit-2026-05-11.md) | Full strategy phase audit confirming local phase-exit evidence and separating it from production claims |
+| [`docs/ct2-vao-phase-completion-report-2026-05-11.md`](docs/ct2-vao-phase-completion-report-2026-05-11.md) | Local pilot report showing every VAO phase gate completed with runtime evidence |
 
 ## Requirements
 
