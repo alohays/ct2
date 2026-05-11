@@ -348,4 +348,3 @@ Direct evidence inspected:
 Residual caveats:
 - production metric claims require production history
 ```
-

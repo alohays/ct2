@@ -285,6 +285,8 @@ Full protocol specifications are in [`spec/`](spec/):
 
 | Document | Description |
 |----------|-------------|
+| [`docs/agent-platform-feature-radar-2026-05.md`](docs/agent-platform-feature-radar-2026-05.md) | 2026-05 Codex CLI and Claude Code feature radar, release-note analysis, and CT2 product roadmap proposals |
+| [`docs/ct2-product-strategy-2026-05.md`](docs/ct2-product-strategy-2026-05.md) | Bet/risk strategy for CT2 product direction |
 | [`docs/ct2-verified-autonomy-os-strategy-2026-05.md`](docs/ct2-verified-autonomy-os-strategy-2026-05.md) | Canonical Verified Autonomy OS integrated plan |
 | [`docs/ct2-phase0-bet1-readiness-2026-05.md`](docs/ct2-phase0-bet1-readiness-2026-05.md) | Phase 0 readiness and Bet 1 go/no-go report |
 | [`docs/ct2-native-task-mirror-spike-2026-05.md`](docs/ct2-native-task-mirror-spike-2026-05.md) | Advisory-only native task mirror spike result |
