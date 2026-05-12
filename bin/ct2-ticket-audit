@@ -16,10 +16,91 @@ PLAN_STATES = {"in-progress", "in-review", "done"}
 AC_STATES = {"in-review", "done"}
 DONE_STATES = {"done"}
 EVIDENCE_KINDS = {"command", "artifact", "verifier", "hook-event"}
+NULLISH = {"", "null", "none"}
+REQUIRED_SIDECAR_SECTIONS = (
+    "## Summary",
+    "## Acceptance Criteria Check",
+    "## Issues Found",
+    "## Recommendation",
+)
+REQUIRED_BY_STATE = {
+    "draft": ("id", "title", "status", "priority", "created", "updated", "touched-files"),
+    "backlog": ("id", "title", "status", "priority", "created", "updated", "sealed", "touched-files"),
+    "in-progress": (
+        "id",
+        "title",
+        "status",
+        "priority",
+        "created",
+        "updated",
+        "sealed",
+        "branch",
+        "review-round",
+        "touched-files",
+    ),
+    "in-review": (
+        "id",
+        "title",
+        "status",
+        "priority",
+        "created",
+        "updated",
+        "sealed",
+        "branch",
+        "review-round",
+        "touched-files",
+    ),
+    "rejected": (
+        "id",
+        "title",
+        "status",
+        "priority",
+        "created",
+        "updated",
+        "sealed",
+        "branch",
+        "review-round",
+        "touched-files",
+        "verdict",
+    ),
+    "escalated": (
+        "id",
+        "title",
+        "status",
+        "priority",
+        "created",
+        "updated",
+        "sealed",
+        "branch",
+        "review-round",
+        "touched-files",
+        "verdict",
+    ),
+    "done": (
+        "id",
+        "title",
+        "status",
+        "priority",
+        "created",
+        "updated",
+        "sealed",
+        "branch",
+        "review-round",
+        "touched-files",
+        "verdict",
+    ),
+}
+
+
+def present(value: Any) -> bool:
+    if isinstance(value, list):
+        return bool(value) and all(str(item).strip() not in NULLISH for item in value)
+    return value is not None and str(value).strip().lower() not in NULLISH
 
 
 def has_plan_exempt(path: Path) -> bool:
-    return "plan-exempt" in path.read_text(encoding="utf-8", errors="ignore").lower()
+    reason = read_frontmatter(path).get("plan-exempt")
+    return present(reason)
 
 
 def plan_exists(ct2_dir: Path, ticket_id: str, round_num: str) -> bool:
@@ -40,32 +121,79 @@ def acceptance_criteria_checked(path: Path) -> bool:
     return bool(marks) and all(mark.lower() == "x" for mark in marks)
 
 
-def sidecar_verdict(path: Path) -> str | None:
+def sidecar_info(path: Path) -> dict[str, Any]:
     if not path.exists():
-        return None
-    value = read_frontmatter(path).get("verdict")
-    return str(value) if value is not None else None
+        return {"path": str(path), "ok": False, "reason": "missing"}
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    fm = read_frontmatter(path)
+    missing_sections = [section for section in REQUIRED_SIDECAR_SECTIONS if section not in text]
+    return {
+        "path": str(path),
+        "verdict": fm.get("verdict"),
+        "ticket": fm.get("ticket"),
+        "reviewer": fm.get("reviewer"),
+        "round": str(fm.get("round", "")),
+        "timestamp": fm.get("timestamp"),
+        "missing_sections": missing_sections,
+    }
 
 
-def approved_sidecars(ct2_dir: Path, ticket_id: str, round_num: str) -> tuple[bool, list[str]]:
+def sidecar_matches(info: dict[str, Any], expected_reviewer: str, ticket_aliases: set[str], round_num: str) -> bool:
+    return (
+        info.get("verdict") == "approved"
+        and str(info.get("ticket", "")) in ticket_aliases
+        and info.get("reviewer") == expected_reviewer
+        and str(info.get("round", "")) == round_num
+        and present(info.get("timestamp"))
+        and not info.get("missing_sections")
+    )
+
+
+def approved_sidecars(ct2_dir: Path, ticket_id: str, ticket_stem: str, ticket_name: str, round_num: str) -> tuple[bool, list[dict[str, Any]]]:
     cc = ct2_dir / "reviews" / f"{ticket_id}-cc-r{round_num}.md"
     cx = ct2_dir / "reviews" / f"{ticket_id}-cx-r{round_num}.md"
-    ok = sidecar_verdict(cc) == "approved" and sidecar_verdict(cx) == "approved"
-    return ok, [str(cc), str(cx)]
+    aliases = {ticket_id, ticket_stem, ticket_name}
+    cc_info = sidecar_info(cc)
+    cx_info = sidecar_info(cx)
+    ok = sidecar_matches(cc_info, "ct2-lens-cc", aliases, round_num) and sidecar_matches(
+        cx_info, "ct2-lens-cx", aliases, round_num
+    )
+    return ok, [cc_info, cx_info]
 
 
-def evidence_claim_exists(ct2_dir: Path, ticket_id: str) -> tuple[bool, list[str]]:
+def evidence_path_exists(project_dir: Path, path_value: Any) -> bool:
+    if not present(path_value):
+        return False
+    path = Path(str(path_value))
+    if not path.is_absolute():
+        path = project_dir / path
+    return path.exists()
+
+
+def claim_ticket_matches(row: dict[str, Any], aliases: set[str]) -> bool:
+    value = str(row.get("ticket", ""))
+    if value in aliases:
+        return True
+    match = re.match(r"^(\d+)", value)
+    return bool(match and match.group(1) in aliases)
+
+
+def evidence_claim_exists(ct2_dir: Path, ticket_id: str, ticket_stem: str, ticket_name: str) -> tuple[bool, list[dict[str, Any]]]:
+    project_dir = ct2_dir.parent
+    aliases = {ticket_id, ticket_stem, ticket_name}
     claim_ids = []
     for row in read_jsonl(ct2_dir / "evidence" / "claims.jsonl"):
         if row.get("_invalid") is not None:
             continue
-        if str(row.get("ticket")) != ticket_id:
+        if not claim_ticket_matches(row, aliases):
             continue
         if row.get("ok") is not True:
             continue
         if str(row.get("kind")) not in EVIDENCE_KINDS:
             continue
-        claim_ids.append(str(row.get("id") or row.get("path") or "claim"))
+        path_ok = evidence_path_exists(project_dir, row.get("path"))
+        claim_ids.append({"id": str(row.get("id") or row.get("path") or "claim"), "path": row.get("path"), "path_exists": path_ok})
+    claim_ids = [claim for claim in claim_ids if claim["path_exists"]]
     return bool(claim_ids), claim_ids
 
 
@@ -76,14 +204,14 @@ def check(name: str, ok: bool, evidence: Any) -> dict[str, Any]:
 def audit_ticket(ct2_dir: Path, state: str, path: Path) -> dict[str, Any]:
     fm = read_frontmatter(path)
     ticket_id = ticket_id_from_name(path)
+    ticket_stem = path.stem
     round_num = str(fm.get("review-round", "0"))
+    required = REQUIRED_BY_STATE.get(state, ())
+    missing = [field for field in required if not present(fm.get(field))]
     checks = [
         check("status_matches_directory", fm.get("status") == state, {"frontmatter": fm.get("status"), "directory": state}),
-        check(
-            "required_frontmatter",
-            bool(fm.get("title")) and bool(fm.get("priority")) and bool(fm.get("touched-files")),
-            ["title", "priority", "touched-files"],
-        ),
+        check("required_frontmatter", not missing, {"required": list(required), "missing": missing}),
+        check("id_matches_filename", str(fm.get("id", "")) == ticket_id, {"frontmatter": fm.get("id"), "filename": ticket_id}),
     ]
 
     plan_required = state in PLAN_STATES and not has_plan_exempt(path)
@@ -95,11 +223,12 @@ def audit_ticket(ct2_dir: Path, state: str, path: Path) -> dict[str, Any]:
     checks.append(check("acceptance_criteria_checked", ac_ok, "## Acceptance Criteria"))
 
     sidecars_required = state in DONE_STATES
-    sidecars_ok, sidecar_paths = approved_sidecars(ct2_dir, ticket_id, round_num)
+    sidecars_ok, sidecar_paths = approved_sidecars(ct2_dir, ticket_id, ticket_stem, path.name, round_num)
     checks.append(check("dual_approved_sidecars", (not sidecars_required) or sidecars_ok, sidecar_paths))
+    checks.append(check("verdict_approved", (state not in DONE_STATES) or fm.get("verdict") == "approved", {"observed": fm.get("verdict")}))
 
     evidence_required = state in DONE_STATES
-    evidence_ok, claims = evidence_claim_exists(ct2_dir, ticket_id)
+    evidence_ok, claims = evidence_claim_exists(ct2_dir, ticket_id, ticket_stem, path.name)
     checks.append(check("evidence_claim", (not evidence_required) or evidence_ok, claims))
 
     return {
@@ -150,11 +279,14 @@ def print_human(report: dict[str, Any]) -> None:
     for error in report["errors"]:
         print(f"  error: {error}")
     for ticket in report["tickets"]:
-        marker = "ok" if ticket["ok"] else "missing"
+        marker = "ok" if ticket["ok"] else "fail"
         print(f"  {marker}: {ticket['ticket']} state={ticket['state']} round={ticket['round']}")
         for item in ticket["checks"]:
-            item_marker = "ok" if item["ok"] else "missing"
-            print(f"    {item_marker}: {item['name']}")
+            item_marker = "ok" if item["ok"] else "fail"
+            line = f"    {item_marker}: {item['name']}"
+            if not item["ok"] and item.get("evidence"):
+                line += f" ({item['evidence']})"
+            print(line)
 
 
 def main() -> int:

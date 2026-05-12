@@ -11,11 +11,12 @@ from _ct2_vao import ensure_ct2, read_frontmatter, ticket_id_from_name, now
 
 
 PLAN_STATES = ("in-progress", "in-review", "done")
+NULLISH = {"", "null", "none"}
 
 
 def has_plan_exempt(path: Path) -> bool:
-    text = path.read_text(encoding="utf-8", errors="ignore").lower()
-    return "plan-exempt" in text
+    reason = read_frontmatter(path).get("plan-exempt")
+    return reason is not None and str(reason).strip().lower() not in NULLISH
 
 
 def plan_exists(ct2_dir: Path, ticket_id: str, round_num: str) -> bool:
