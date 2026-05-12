@@ -1054,6 +1054,8 @@ esac
         self.assertIn("ct2-vao-self-verify --run-checks", readme)
         self.assertIn("PYTHONDONTWRITEBYTECODE=1", readme)
         self.assertNotIn("python3 -m py_compile", readme)
+        self.assertNotIn("compile(pathlib.Path", readme)
+        self.assertNotIn("bash -n install.sh", readme)
 
     def test_vao_self_verify_reports_all_static_gates_complete(self):
         verify = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-vao-self-verify", "--json", "--repo", REPO_ROOT])

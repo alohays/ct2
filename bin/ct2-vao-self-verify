@@ -203,7 +203,9 @@ def documentation_gate(repo: Path) -> dict[str, Any]:
             "name": "README validation command mirrors self-verifier",
             "ok": "ct2-vao-self-verify --run-checks" in readme
             and "PYTHONDONTWRITEBYTECODE=1" in readme
-            and "python3 -m py_compile" not in readme,
+            and "python3 -m py_compile" not in readme
+            and "compile(pathlib.Path" not in readme
+            and "bash -n install.sh" not in readme,
             "evidence": "README.md Development Checks",
         }
     )

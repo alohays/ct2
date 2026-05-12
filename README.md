@@ -236,8 +236,8 @@ python3 -m json.tool .agents/plugins/marketplace.json >/dev/null
 git diff --check
 ```
 
-The self-verifier and `test_script_syntax.py` discover Python and Bash
-shebang scripts dynamically, so new helpers are automatically covered without
+The self-verifier and `test_script_syntax.py` discover Python helpers and Bash
+entrypoints dynamically, so new scripts are automatically covered without
 updating a copied command list.
 
 The unittest suite covers Codex goal scope/audit behavior, request-input
