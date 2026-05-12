@@ -25,6 +25,7 @@ jobs:
   unit-tests:
     name: unit tests / Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -47,11 +48,13 @@ jobs:
   repository-checks:
     name: repository validation
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -62,9 +65,30 @@ jobs:
         run: python3 bin/ct2-vao-self-verify --run-checks --json --repo .
 
       - name: Check whitespace errors
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git diff --check "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
-          else
-            git diff --check HEAD~1 HEAD
-          fi
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            pull_request)
+              # Validate the full PR diff against its base.
+              git diff --check "$PR_BASE_SHA" "$HEAD_SHA"
+              ;;
+            push)
+              # Validate every commit in the push, not just the tip.
+              # New-branch pushes report a zero SHA in github.event.before; fall
+              # back to the tip's parent for those.
+              if [[ -z "$PUSH_BEFORE_SHA" || "$PUSH_BEFORE_SHA" =~ ^0+$ ]]; then
+                git diff --check "${HEAD_SHA}^" "$HEAD_SHA"
+              else
+                git diff --check "$PUSH_BEFORE_SHA" "$HEAD_SHA"
+              fi
+              ;;
+            *)
+              # workflow_dispatch and other manual triggers: validate the tip
+              # commit only — there is no meaningful range from the event.
+              git diff --check "${HEAD_SHA}^" "$HEAD_SHA"
+              ;;
+          esac
