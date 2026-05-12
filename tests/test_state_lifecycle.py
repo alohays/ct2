@@ -1,3 +1,4 @@
+import hashlib
 import subprocess
 import tempfile
 import unittest
@@ -57,6 +58,12 @@ Regression fixture for state transitions.
 
 ## Acceptance Criteria
 - [ ] Draft moves to backlog.
+
+## Notes
+```text
+status: quoted-body-value
+updated: quoted-body-value
+```
 """,
         encoding="utf-8",
     )
@@ -70,13 +77,6 @@ class StateLifecycleTest(unittest.TestCase):
         init = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-init", project], cwd=REPO_ROOT)
         self.assertEqual(init.returncode, 0, init.stderr)
         return project
-
-    def test_ct2_seal_uses_mv_for_state_transition(self):
-        source = (REPO_ROOT / "bin" / "ct2-seal").read_text(encoding="utf-8")
-
-        self.assertNotIn('cp "$TICKET_PATH"', source)
-        self.assertNotIn('rm -f "$TICKET_PATH"', source)
-        self.assertIn('mv -n "$TICKET_PATH" "$DEST"', source)
 
     def test_ct2_seal_moves_valid_draft_to_backlog(self):
         project = self.make_project()
@@ -93,6 +93,10 @@ class StateLifecycleTest(unittest.TestCase):
         content = backlog.read_text(encoding="utf-8")
         self.assertIn("status: backlog", content)
         self.assertRegex(content, r"sealed: 20\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ")
+        self.assertRegex(content, r"updated: 20\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ")
+        self.assertNotIn("updated: 2026-05-12T00:00:00Z", content)
+        self.assertIn("status: quoted-body-value", content)
+        self.assertIn("updated: quoted-body-value", content)
         self.assertEqual([], list((ct2 / ".tmp").iterdir()))
 
     def test_ct2_seal_collision_leaves_draft_and_tmp_clean(self):
@@ -103,13 +107,36 @@ class StateLifecycleTest(unittest.TestCase):
         write_ticket(draft)
         write_ticket(backlog, status="backlog", sealed="2026-05-12T00:00:00Z")
         original_backlog = backlog.read_text(encoding="utf-8")
+        original_backlog_hash = hashlib.sha256(original_backlog.encode("utf-8")).hexdigest()
 
         seal = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-seal", "001"], cwd=project)
         self.assertNotEqual(seal.returncode, 0)
 
         self.assertTrue(draft.exists())
         self.assertEqual(original_backlog, backlog.read_text(encoding="utf-8"))
+        self.assertEqual(original_backlog_hash, hashlib.sha256(backlog.read_bytes()).hexdigest())
         self.assertEqual([], list((ct2 / ".tmp").iterdir()))
+
+    def test_ct2_seal_rejects_missing_required_fields_without_move(self):
+        cases = {
+            "title": lambda text: text.replace('title: "Seal smoke"\n', ""),
+            "priority": lambda text: text.replace("priority: medium\n", ""),
+            "touched-files": lambda text: text.replace("touched-files:\n  - README.md\n", ""),
+            "acceptance": lambda text: text.replace("## Acceptance Criteria", "## Done Criteria"),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(name=name):
+                project = self.make_project()
+                ct2 = project / ".ct2"
+                draft = ct2 / "draft" / "001-seal-smoke.md"
+                backlog = ct2 / "backlog" / "001-seal-smoke.md"
+                write_ticket(draft)
+                draft.write_text(mutate(draft.read_text(encoding="utf-8")), encoding="utf-8")
+
+                seal = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-seal", "001"], cwd=project)
+                self.assertNotEqual(seal.returncode, 0)
+                self.assertTrue(draft.exists())
+                self.assertFalse(backlog.exists())
 
 
 if __name__ == "__main__":
