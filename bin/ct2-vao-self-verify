@@ -109,19 +109,25 @@ def rel(path: Path, repo: Path) -> str:
     return path.relative_to(repo).as_posix()
 
 
-def first_line(path: Path) -> str:
-    return "\n".join(path.read_text(encoding="utf-8", errors="ignore").splitlines()[:1])
+def shebang_line(path: Path) -> str:
+    head = path.read_text(encoding="utf-8", errors="ignore")[:200]
+    if not head.startswith("#!"):
+        return ""
+    return head.split("\n", 1)[0]
 
 
 def python_check_files(repo: Path) -> list[str]:
     files = []
     for path in sorted((repo / "bin").iterdir()):
-        if path.is_file() and "python" in first_line(path):
+        if not path.is_file():
+            continue
+        if path.suffix == ".py" or "python" in shebang_line(path):
             files.append(rel(path, repo))
     return files
 
 
 def bash_check_files(repo: Path) -> list[str]:
+    # CT2's shell entrypoints live in install.sh, bin/, and Claude hooks.
     candidates = [repo / "install.sh"]
     candidates.extend((repo / "bin").iterdir())
     candidates.extend((repo / "claude-plugin" / "hooks").glob("*.sh"))
@@ -130,7 +136,7 @@ def bash_check_files(repo: Path) -> list[str]:
     for path in sorted(candidates):
         if not path.is_file():
             continue
-        line = first_line(path)
+        line = shebang_line(path)
         if path.suffix == ".sh" or "bash" in line:
             files.append(rel(path, repo))
     return files

@@ -1089,26 +1089,51 @@ esac
         for gate in report["gates"]:
             self.assertEqual(1.0, gate["score"], gate["name"])
 
-    def test_vao_self_verify_discovers_every_shebang_script(self):
+    def test_vao_self_verify_discovers_known_script_surfaces(self):
         verifier = load_script_module("ct2_vao_self_verify_test", "bin/ct2-vao-self-verify")
 
-        expected_python = []
-        expected_bash_paths = [REPO_ROOT / "install.sh"]
-        for path in sorted((REPO_ROOT / "bin").iterdir()):
-            if not path.is_file():
-                continue
-            first_line = path.read_text(encoding="utf-8", errors="ignore").splitlines()[:1]
-            if first_line and "python" in first_line[0]:
-                expected_python.append(str(path.relative_to(REPO_ROOT)))
-            if path.suffix == ".sh" or (first_line and "bash" in first_line[0]):
-                expected_bash_paths.append(path)
+        python_files = set(verifier.python_check_files(REPO_ROOT))
+        bash_files = set(verifier.bash_check_files(REPO_ROOT))
 
-        for path in sorted((REPO_ROOT / "claude-plugin" / "hooks").glob("*.sh")):
-            expected_bash_paths.append(path)
+        for relpath in (
+            "bin/ct2-vao-self-verify",
+            "bin/_ct2_vao.py",
+            "bin/_ct2_validate_review_sidecar.py",
+        ):
+            self.assertIn(relpath, python_files)
 
-        expected_bash = [str(path.relative_to(REPO_ROOT)) for path in sorted(expected_bash_paths)]
-        self.assertEqual(expected_bash, verifier.bash_check_files(REPO_ROOT))
-        self.assertEqual(expected_python, verifier.python_check_files(REPO_ROOT))
+        for relpath in (
+            "install.sh",
+            "bin/ct2-init",
+            "bin/ct2-seal",
+            "claude-plugin/hooks/enforce-write-access.sh",
+        ):
+            self.assertIn(relpath, bash_files)
+
+        self.assertNotIn("README.md", python_files)
+        self.assertNotIn("README.md", bash_files)
+
+    def test_vao_self_verify_discovery_uses_strict_shebangs_and_py_suffixes(self):
+        verifier = load_script_module("ct2_vao_self_verify_fixture", "bin/ct2-vao-self-verify")
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        project = Path(tmp.name)
+        (project / "bin").mkdir()
+        (project / "claude-plugin" / "hooks").mkdir(parents=True)
+
+        (project / "bin" / "helper.py").write_text("print('ok')\n", encoding="utf-8")
+        (project / "bin" / "cli").write_text("#!/usr/bin/env python3\nprint('ok')\n", encoding="utf-8")
+        (project / "bin" / "comment").write_text("# This script mentions python3\n", encoding="utf-8")
+        (project / "bin" / "leading-blank").write_text("\n#!/usr/bin/env python3\n", encoding="utf-8")
+        (project / "bin" / "shell").write_text("#!/usr/bin/env bash\nset -euo pipefail\n", encoding="utf-8")
+        (project / "install.sh").write_text("#!/usr/bin/env bash\nset -euo pipefail\n", encoding="utf-8")
+        (project / "claude-plugin" / "hooks" / "hook.sh").write_text("echo hook\n", encoding="utf-8")
+
+        self.assertEqual(["bin/cli", "bin/helper.py"], verifier.python_check_files(project))
+        self.assertEqual(
+            ["bin/shell", "claude-plugin/hooks/hook.sh", "install.sh"],
+            verifier.bash_check_files(project),
+        )
 
 
 if __name__ == "__main__":
