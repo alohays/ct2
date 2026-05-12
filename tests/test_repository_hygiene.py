@@ -39,6 +39,7 @@ class RepositoryHygieneTest(unittest.TestCase):
         init_git = run_cmd(["git", "init"], cwd=project)
         self.assertEqual(init_git.returncode, 0, init_git.stderr)
 
+        # Run from REPO_ROOT so ct2-init reads repository templates while initializing the scratch target.
         init_ct2 = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-init", project], cwd=REPO_ROOT)
         self.assertEqual(init_ct2.returncode, 0, init_ct2.stderr)
         repair_ct2 = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-init", "--repair", project], cwd=REPO_ROOT)
@@ -66,6 +67,7 @@ class RepositoryHygieneTest(unittest.TestCase):
         add_worktree = run_cmd(["git", "worktree", "add", "-b", "feat/test", worktree], cwd=project)
         self.assertEqual(add_worktree.returncode, 0, add_worktree.stderr)
 
+        # Run from REPO_ROOT so ct2-init reads repository templates while initializing the scratch target.
         init_ct2 = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-init", worktree], cwd=REPO_ROOT)
         self.assertEqual(init_ct2.returncode, 0, init_ct2.stderr)
 
@@ -82,6 +84,7 @@ class RepositoryHygieneTest(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         project = Path(tmp.name)
 
+        # Run from REPO_ROOT so ct2-init reads repository templates while initializing the scratch target.
         init_ct2 = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-init", project], cwd=REPO_ROOT)
         self.assertEqual(init_ct2.returncode, 0, init_ct2.stderr)
         self.assertIn("not a git repository", init_ct2.stderr)
