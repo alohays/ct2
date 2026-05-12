@@ -220,6 +220,24 @@ class TicketAuditTest(unittest.TestCase):
         checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
         self.assertFalse(checks["dual_approved_sidecars"])
 
+    def test_ticket_audit_rejects_rejected_sidecar_verdict(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "done" / "001-audit-ticket.md")
+        write_sidecar(ct2 / "reviews" / "001-cc-r0.md", reviewer="ct2-lens-cc", verdict="rejected")
+        write_sidecar(ct2 / "reviews" / "001-cx-r0.md", reviewer="ct2-lens-cx")
+        (ct2 / "plans" / "001-r0.md").write_text("# Plan\n", encoding="utf-8")
+        (ct2 / "evidence" / "verifiers" / "ev-001.json").write_text("{}", encoding="utf-8")
+        write_jsonl(
+            ct2 / "evidence" / "claims.jsonl",
+            [{"id": "ev-001", "ticket": "001", "kind": "verifier", "ok": True, "path": ".ct2/evidence/verifiers/ev-001.json"}],
+        )
+
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", project])
+        self.assertEqual(audit.returncode, 1)
+        checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
+        self.assertFalse(checks["dual_approved_sidecars"])
+
     def test_ticket_audit_rejects_stale_evidence_claim_path(self):
         project = self.make_project()
         ct2 = project / ".ct2"
