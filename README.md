@@ -2,7 +2,7 @@
 
 **Multi-session AI orchestration harness with dual-review workflow.**
 
-![CT2 four-panel comic: chaos becomes file-backed tickets, dual review, and evidence-backed done](docs/assets/ct2-four-panel-comic.png)
+![CT2 four-panel comic: chaos becomes file-backed tickets, dual review, and evidence-backed done](docs/assets/ct2-four-panel-comic.jpg)
 
 CT2 enables multiple AI agent sessions to divide responsibilities and perform long-running autonomous development on a shared codebase. Three role-based sessions — planner, engineer, and reviewer — communicate through a shared `.ct2/` directory, following a Kanban-style ticket state machine and a dual-approval review protocol.
 
