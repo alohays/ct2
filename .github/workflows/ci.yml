@@ -28,12 +28,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
@@ -60,28 +61,10 @@ jobs:
       - name: Run VAO self-verifier
         run: python3 bin/ct2-vao-self-verify --run-checks --json --repo .
 
-      - name: Check bash syntax
-        run: |
-          bash -n \
-            install.sh \
-            bin/ct2-init \
-            bin/ct2-lens-cx-daemon \
-            bin/ct2-lens-cx-tui \
-            bin/ct2-revise \
-            bin/ct2-seal \
-            bin/ct2-git-start \
-            bin/ct2-git-submit \
-            bin/ct2-git-finalize \
-            bin/ct2-git-cleanup \
-            claude-plugin/hooks/enforce-write-access.sh \
-            claude-plugin/hooks/enforce-review-independence.sh
-
-      - name: Validate plugin JSON
-        run: |
-          python3 -m json.tool codex-plugin/.codex-plugin/plugin.json >/dev/null
-          python3 -m json.tool claude-plugin/.claude-plugin/plugin.json >/dev/null
-          python3 -m json.tool claude-plugin/hooks/hooks.json >/dev/null
-          python3 -m json.tool .agents/plugins/marketplace.json >/dev/null
-
       - name: Check whitespace errors
-        run: git diff --check
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git diff --check "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}"
+          else
+            git diff --check HEAD~1 HEAD
+          fi

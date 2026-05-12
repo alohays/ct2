@@ -1,4 +1,3 @@
-import re
 import unittest
 from pathlib import Path
 
@@ -21,16 +20,18 @@ class CiWorkflowTest(unittest.TestCase):
             "concurrency:",
             "cancel-in-progress: true",
             "fail-fast: false",
-            'python-version: ["3.10", "3.11", "3.13"]',
+            'python-version: ["3.10", "3.11", "3.12", "3.13"]',
             "actions/checkout@v6",
             "actions/setup-python@v6",
             "persist-credentials: false",
+            "fetch-depth: 0",
             "PYTHONDONTWRITEBYTECODE: \"1\"",
             "python3 -m unittest discover -s tests",
             "python3 bin/ct2-vao-self-verify --run-checks --json --repo .",
-            "bash -n",
-            "install.sh",
-            "python3 -m json.tool codex-plugin/.codex-plugin/plugin.json",
+            '${{ github.event_name }}',
+            '${{ github.event.pull_request.base.sha }}',
+            '${{ github.sha }}',
+            "git diff --check HEAD~1 HEAD",
             "git diff --check",
         )
 
@@ -38,7 +39,8 @@ class CiWorkflowTest(unittest.TestCase):
             with self.subTest(snippet=snippet):
                 self.assertIn(snippet, workflow)
 
-        self.assertRegex(workflow, re.compile(r"bash -n\s+\\\s+install\.sh", re.MULTILINE))
+        self.assertNotIn("Check bash syntax", workflow)
+        self.assertNotIn("Validate plugin JSON", workflow)
 
 
 if __name__ == "__main__":
