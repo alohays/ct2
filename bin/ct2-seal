@@ -108,44 +108,54 @@ if [[ $VALIDATION -ne 0 ]]; then
   exit 1
 fi
 
-# ── Atomic seal: copy to tmp, mutate, then mv -n to backlog ──────────────────
+# ── Atomic seal: state transition uses draft → backlog mv ────────────────────
 SEALED_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 DEST="${CT2_DIR}/backlog/${TICKET_FILE}"
-TMP_COPY=$(mktemp "${CT2_DIR}/.tmp/seal-XXXXXX")
+TMP_UPDATED=$(mktemp "${CT2_DIR}/.tmp/seal-XXXXXX")
 
-# Copy original to tmp (draft file stays untouched until final mv)
-cp "$TICKET_PATH" "$TMP_COPY"
+cleanup_tmp() {
+  [[ -n "${TMP_UPDATED:-}" && -f "$TMP_UPDATED" ]] && rm -f "$TMP_UPDATED"
+}
+trap cleanup_tmp EXIT
 
-python3 - "$TMP_COPY" "$SEALED_TS" <<'PYEOF'
+# Stage the rewritten ticket in .tmp/, then atomically install it in backlog/
+# and remove the draft after the backlog file is confirmed present.
+python3 - "$TICKET_PATH" "$TMP_UPDATED" "$SEALED_TS" <<'PYEOF'
 import sys, re
 
-path = sys.argv[1]
-sealed_ts = sys.argv[2]
-content = open(path).read()
+source_path = sys.argv[1]
+dest_path = sys.argv[2]
+sealed_ts = sys.argv[3]
+content = open(source_path).read()
+match = re.match(r'^(---\n)(.*?)(\n---.*)$', content, re.DOTALL)
+if not match:
+    print("ct2-seal: error — no YAML frontmatter found", file=sys.stderr)
+    sys.exit(1)
+prefix, fm, rest = match.groups()
 
 # Update status field
-content = re.sub(r'^(status:\s*).*$', r'\g<1>backlog', content, flags=re.MULTILINE)
-# Update sealed field (any value → timestamp)
-content = re.sub(r'^(sealed:\s*).*$', rf'\g<1>{sealed_ts}', content, count=1, flags=re.MULTILINE)
+fm = re.sub(r'^(status:\s*).*$', r'\g<1>backlog', fm, count=1, flags=re.MULTILINE)
+# Update sealed field (any value -> timestamp)
+fm = re.sub(r'^(sealed:\s*).*$', rf'\g<1>{sealed_ts}', fm, count=1, flags=re.MULTILINE)
 # Update updated field
 updated_ts = sealed_ts
-content = re.sub(r'^(updated:\s*).*$', rf'\g<1>{updated_ts}', content, flags=re.MULTILINE)
+fm = re.sub(r'^(updated:\s*).*$', rf'\g<1>{updated_ts}', fm, count=1, flags=re.MULTILINE)
 
-open(path, 'w').write(content)
+open(dest_path, 'w').write(prefix + fm + rest)
 PYEOF
 
-# Atomic no-clobber move to backlog — verify source gone to confirm success (macOS
-# mv -n returns 0 even when the move is suppressed, so exit-code alone is unreliable).
-mv -n "$TMP_COPY" "$DEST" 2>/dev/null
-if [[ -f "$TMP_COPY" ]]; then
-  rm -f "$TMP_COPY"
+# Atomic no-clobber install to backlog — verify tmp gone to confirm success
+# because macOS mv -n returns 0 even when the move is suppressed.
+mv -n "$TMP_UPDATED" "$DEST" 2>/dev/null
+if [[ -f "$TMP_UPDATED" ]]; then
   echo "ct2-seal: error — ${TICKET_FILE} already exists in backlog/. It was already sealed." >&2
   echo "  Run 'ct2-status' to check its current state." >&2
   exit 1
 fi
 
-# Remove original draft only after backlog copy is confirmed
+TMP_UPDATED=""
 rm -f "$TICKET_PATH"
+trap - EXIT
 
 echo "✓ ${TICKET_FILE} sealed and moved to backlog/"
 echo "  Run 'ct2-status' to verify, or start ct2-forge to begin processing."
