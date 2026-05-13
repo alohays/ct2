@@ -212,6 +212,7 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-policy-compile [dir]` | Emit provider hook declarations and shell validator metadata |
 | `ct2-bridge notify ...` | Send notify-only external advisory messages into CT2 inboxes |
 | `ct2-plan-audit [dir]` | Verify tickets in active/review/done states have plan evidence or plan-exempt reason |
+| `ct2-ticket-audit [dir]` | Audit per-ticket state, plan, review sidecar, and evidence readiness |
 | `ct2-role-eval [dir]` | Run fixed role-definition eval cases and record role regression results |
 | `ct2-vao-pilot [--report-file <path>]` | Run the local VAO phase-completion pilot and preserve runtime evidence |
 | `ct2-vao-self-verify [--run-checks]` | Measure VAO completion gates from the self-verification criteria |

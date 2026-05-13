@@ -1,0 +1,310 @@
+#!/usr/bin/env python3
+"""Audit CT2 tickets for state, review, plan, and evidence readiness."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+from _ct2_vao import STATE_DIRS, ensure_ct2, now, read_frontmatter, read_jsonl, ticket_id_from_name
+
+
+PLAN_STATES = {"in-progress", "in-review", "done"}
+AC_STATES = {"in-review", "done"}
+DONE_STATES = {"done"}
+EVIDENCE_KINDS = {"command", "artifact", "verifier", "hook-event"}
+NULLISH = {"", "null", "none"}
+REQUIRED_SIDECAR_SECTIONS = (
+    "## Summary",
+    "## Acceptance Criteria Check",
+    "## Issues Found",
+    "## Recommendation",
+)
+REQUIRED_BY_STATE = {
+    "draft": ("id", "title", "status", "priority", "created", "updated", "touched-files"),
+    "backlog": ("id", "title", "status", "priority", "created", "updated", "sealed", "touched-files"),
+    "in-progress": (
+        "id",
+        "title",
+        "status",
+        "priority",
+        "created",
+        "updated",
+        "sealed",
+        "branch",
+        "review-round",
+        "touched-files",
+    ),
+    "in-review": (
+        "id",
+        "title",
+        "status",
+        "priority",
+        "created",
+        "updated",
+        "sealed",
+        "branch",
+        "review-round",
+        "touched-files",
+    ),
+    "rejected": (
+        "id",
+        "title",
+        "status",
+        "priority",
+        "created",
+        "updated",
+        "sealed",
+        "branch",
+        "review-round",
+        "touched-files",
+        "verdict",
+    ),
+    "escalated": (
+        "id",
+        "title",
+        "status",
+        "priority",
+        "created",
+        "updated",
+        "sealed",
+        "branch",
+        "review-round",
+        "touched-files",
+        "verdict",
+    ),
+    "done": (
+        "id",
+        "title",
+        "status",
+        "priority",
+        "created",
+        "updated",
+        "sealed",
+        "branch",
+        "review-round",
+        "touched-files",
+        "verdict",
+    ),
+}
+
+
+def present(value: Any) -> bool:
+    if isinstance(value, list):
+        return bool(value) and all(str(item).strip() not in NULLISH for item in value)
+    return value is not None and str(value).strip().lower() not in NULLISH
+
+
+def has_plan_exempt(path: Path) -> bool:
+    reason = read_frontmatter(path).get("plan-exempt")
+    return present(reason)
+
+
+def plan_exists(ct2_dir: Path, ticket_id: str, round_num: str) -> bool:
+    return any((ct2_dir / "plans" / f"{ticket_id}-r{round_num}.{suffix}").exists() for suffix in ("md", "json"))
+
+
+def acceptance_section(path: Path) -> str:
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    if "## Acceptance Criteria" not in text:
+        return ""
+    section = text.split("## Acceptance Criteria", 1)[1]
+    return re.split(r"\n##\s+", section, maxsplit=1)[0]
+
+
+def acceptance_criteria_checked(path: Path) -> bool:
+    section = acceptance_section(path)
+    marks = re.findall(r"^-\s+\[([ xX])\]", section, flags=re.MULTILINE)
+    return bool(marks) and all(mark.lower() == "x" for mark in marks)
+
+
+def sidecar_info(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"path": str(path), "ok": False, "reason": "missing"}
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    fm = read_frontmatter(path)
+    missing_sections = [section for section in REQUIRED_SIDECAR_SECTIONS if section not in text]
+    return {
+        "path": str(path),
+        "verdict": fm.get("verdict"),
+        "ticket": fm.get("ticket"),
+        "reviewer": fm.get("reviewer"),
+        "round": str(fm.get("round", "")),
+        "timestamp": fm.get("timestamp"),
+        "missing_sections": missing_sections,
+    }
+
+
+def sidecar_matches(info: dict[str, Any], expected_reviewer: str, ticket_aliases: set[str], round_num: str) -> bool:
+    return (
+        info.get("verdict") == "approved"
+        and str(info.get("ticket", "")) in ticket_aliases
+        and info.get("reviewer") == expected_reviewer
+        and str(info.get("round", "")) == round_num
+        and present(info.get("timestamp"))
+        and not info.get("missing_sections")
+    )
+
+
+def approved_sidecars(ct2_dir: Path, ticket_id: str, ticket_stem: str, ticket_name: str, round_num: str) -> tuple[bool, list[dict[str, Any]]]:
+    cc = ct2_dir / "reviews" / f"{ticket_id}-cc-r{round_num}.md"
+    cx = ct2_dir / "reviews" / f"{ticket_id}-cx-r{round_num}.md"
+    aliases = {ticket_id, ticket_stem, ticket_name}
+    cc_info = sidecar_info(cc)
+    cx_info = sidecar_info(cx)
+    ok = sidecar_matches(cc_info, "ct2-lens-cc", aliases, round_num) and sidecar_matches(
+        cx_info, "ct2-lens-cx", aliases, round_num
+    )
+    return ok, [cc_info, cx_info]
+
+
+def evidence_path_exists(project_dir: Path, path_value: Any) -> bool:
+    if not present(path_value):
+        return False
+    path = Path(str(path_value))
+    if not path.is_absolute():
+        path = project_dir / path
+    return path.exists()
+
+
+def claim_ticket_matches(row: dict[str, Any], aliases: set[str]) -> bool:
+    value = str(row.get("ticket", ""))
+    if value in aliases:
+        return True
+    match = re.match(r"^(\d+)", value)
+    return bool(match and match.group(1) in aliases)
+
+
+def evidence_claim_exists(ct2_dir: Path, ticket_id: str, ticket_stem: str, ticket_name: str) -> tuple[bool, list[dict[str, Any]]]:
+    project_dir = ct2_dir.parent
+    aliases = {ticket_id, ticket_stem, ticket_name}
+    claim_ids = []
+    for row in read_jsonl(ct2_dir / "evidence" / "claims.jsonl"):
+        if row.get("_invalid") is not None:
+            continue
+        if not claim_ticket_matches(row, aliases):
+            continue
+        if row.get("ok") is not True:
+            continue
+        if str(row.get("kind")) not in EVIDENCE_KINDS:
+            continue
+        path_ok = evidence_path_exists(project_dir, row.get("path"))
+        claim_ids.append({"id": str(row.get("id") or row.get("path") or "claim"), "path": row.get("path"), "path_exists": path_ok})
+    claim_ids = [claim for claim in claim_ids if claim["path_exists"]]
+    return bool(claim_ids), claim_ids
+
+
+def check(name: str, ok: bool, evidence: Any) -> dict[str, Any]:
+    return {"name": name, "ok": ok, "evidence": evidence}
+
+
+def audit_ticket(ct2_dir: Path, state: str, path: Path) -> dict[str, Any]:
+    fm = read_frontmatter(path)
+    ticket_id = ticket_id_from_name(path)
+    ticket_stem = path.stem
+    round_num = str(fm.get("review-round", "0"))
+    required = REQUIRED_BY_STATE.get(state, ())
+    missing = [field for field in required if not present(fm.get(field))]
+    checks = [
+        check("status_matches_directory", fm.get("status") == state, {"frontmatter": fm.get("status"), "directory": state}),
+        check("required_frontmatter", not missing, {"required": list(required), "missing": missing}),
+        check("id_matches_filename", str(fm.get("id", "")) == ticket_id, {"frontmatter": fm.get("id"), "filename": ticket_id}),
+    ]
+
+    plan_required = state in PLAN_STATES and not has_plan_exempt(path)
+    plan_ok = not plan_required or plan_exists(ct2_dir, ticket_id, round_num)
+    checks.append(check("plan_evidence", plan_ok, f".ct2/plans/{ticket_id}-r{round_num}.md|json"))
+
+    ac_required = state in AC_STATES
+    ac_ok = not ac_required or acceptance_criteria_checked(path)
+    checks.append(check("acceptance_criteria_checked", ac_ok, "## Acceptance Criteria"))
+
+    sidecars_required = state in DONE_STATES
+    sidecars_ok, sidecar_paths = approved_sidecars(ct2_dir, ticket_id, ticket_stem, path.name, round_num)
+    checks.append(check("dual_approved_sidecars", (not sidecars_required) or sidecars_ok, sidecar_paths))
+    checks.append(check("verdict_approved", (state not in DONE_STATES) or fm.get("verdict") == "approved", {"observed": fm.get("verdict")}))
+
+    evidence_required = state in DONE_STATES
+    evidence_ok, claims = evidence_claim_exists(ct2_dir, ticket_id, ticket_stem, path.name)
+    checks.append(check("evidence_claim", (not evidence_required) or evidence_ok, claims))
+
+    return {
+        "ticket": path.name,
+        "ticket_id": ticket_id,
+        "state": state,
+        "round": round_num,
+        "checks": checks,
+        "ok": all(item["ok"] for item in checks),
+    }
+
+
+def ticket_matches(path: Path, query: str) -> bool:
+    query = query[:-3] if query.endswith(".md") else query
+    ticket_id = ticket_id_from_name(path)
+    return query in {path.name, path.stem, ticket_id} or path.name.startswith(f"{query}-")
+
+
+def iter_ticket_paths(ct2_dir: Path, ticket: str | None = None) -> list[tuple[str, Path]]:
+    paths = []
+    for state in STATE_DIRS:
+        for path in sorted((ct2_dir / state).glob("*.md")):
+            if ticket is None or ticket_matches(path, ticket):
+                paths.append((state, path))
+    return paths
+
+
+def audit(ct2_dir: Path, ticket: str | None = None) -> dict[str, Any]:
+    tickets = [audit_ticket(ct2_dir, state, path) for state, path in iter_ticket_paths(ct2_dir, ticket)]
+    errors = []
+    if ticket is not None and not tickets:
+        errors.append(f"ticket not found: {ticket}")
+    complete = not errors and all(item["ok"] for item in tickets)
+    return {
+        "schema_version": "1",
+        "audited_at": now(),
+        "complete": complete,
+        "tickets_checked": len(tickets),
+        "errors": errors,
+        "tickets": tickets,
+    }
+
+
+def print_human(report: dict[str, Any]) -> None:
+    print("CT2 Ticket Audit")
+    print(f"  tickets_checked: {report['tickets_checked']}")
+    print(f"  complete: {report['complete']}")
+    for error in report["errors"]:
+        print(f"  error: {error}")
+    for ticket in report["tickets"]:
+        marker = "ok" if ticket["ok"] else "fail"
+        print(f"  {marker}: {ticket['ticket']} state={ticket['state']} round={ticket['round']}")
+        for item in ticket["checks"]:
+            item_marker = "ok" if item["ok"] else "fail"
+            line = f"    {item_marker}: {item['name']}"
+            if not item["ok"] and item.get("evidence"):
+                line += f" ({item['evidence']})"
+            print(line)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Audit CT2 ticket readiness and completion evidence")
+    parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument("--ticket", help="Ticket id, stem, or filename to audit")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    report = audit(ct2_dir, args.ticket)
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print_human(report)
+    return 0 if report["complete"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

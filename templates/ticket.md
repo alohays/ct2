@@ -9,6 +9,7 @@ sealed: null
 branch: feat/000-
 pr: null
 review-round: 0
+plan-exempt: null          # Optional reason; required only when no plan evidence is expected
 estimated-scope: small      # small | medium | large
 touched-files:
   - 
