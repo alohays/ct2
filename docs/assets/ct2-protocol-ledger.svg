@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="720" viewBox="0 0 1400 720" role="img" aria-labelledby="title desc">
+  <title id="title">CT2 protocol ledger</title>
+  <desc id="desc">A restrained technical diagram showing CT2 as a file-first protocol ledger between agent runtimes, one-shot CT2 tools, MCP tools, and immutable filesystem state.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.4" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#223136"/>
+    </marker>
+    <marker id="mutedArrow" viewBox="0 0 10 10" refX="8.4" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#78888b"/>
+    </marker>
+    <style>
+      .bg { fill: #f7f8f5; }
+      .panel { fill: #ffffff; stroke: #cfd8d6; stroke-width: 2; }
+      .ledger { fill: #f3faf8; stroke: #223136; stroke-width: 2.6; }
+      .runtime { fill: #f8f6ef; stroke: #9e8f68; stroke-width: 2; }
+      .mcp { fill: #f4f7fb; stroke: #8ba0b7; stroke-width: 2; }
+      .terminal { fill: #202b30; stroke: #202b30; stroke-width: 2; }
+      .ok { fill: #eaf6ef; stroke: #2e6c52; stroke-width: 2; }
+      .warn { fill: #fff5df; stroke: #8a6a26; stroke-width: 2; }
+      .deny { fill: #fff0ea; stroke: #8a4f40; stroke-width: 2; }
+      .title { font-family: Helvetica, Arial, sans-serif; font-size: 38px; font-weight: 700; fill: #223136; letter-spacing: 0; }
+      .subtitle { font-family: Helvetica, Arial, sans-serif; font-size: 17px; font-weight: 500; fill: #58686c; letter-spacing: 0; }
+      .section { font-family: Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 700; fill: #6c7b7e; letter-spacing: 0; text-transform: uppercase; }
+      .label { font-family: Helvetica, Arial, sans-serif; font-size: 18px; font-weight: 700; fill: #223136; letter-spacing: 0; }
+      .small { font-family: Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 500; fill: #58686c; letter-spacing: 0; }
+      .mono { font-family: Menlo, Consolas, monospace; font-size: 17px; font-weight: 700; fill: #223136; letter-spacing: 0; }
+      .monoSmall { font-family: Menlo, Consolas, monospace; font-size: 13px; font-weight: 600; fill: #58686c; letter-spacing: 0; }
+      .terminalText { font-family: Menlo, Consolas, monospace; font-size: 14px; font-weight: 600; fill: #e8f0ec; letter-spacing: 0; }
+      .line { fill: none; stroke: #223136; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .mutedLine { fill: none; stroke: #78888b; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#mutedArrow); }
+      .dash { fill: none; stroke: #78888b; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 7 8; marker-end: url(#mutedArrow); }
+      .rule { stroke: #dce4e1; stroke-width: 2; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1400" height="720"/>
+  <text x="72" y="72" class="title">CT2 is the ledger, not the runner</text>
+  <text x="72" y="104" class="subtitle">Agent runtimes own continuation. CT2 owns the project-local protocol state they must leave behind.</text>
+  <line x1="72" y1="134" x2="1328" y2="134" class="rule"/>
+
+  <text x="82" y="178" class="section">agent runtimes</text>
+  <g transform="translate(72 200)">
+    <rect class="runtime" x="0" y="0" width="170" height="66" rx="8"/>
+    <text x="28" y="30" class="label">Claude Code</text>
+    <text x="28" y="50" class="small">/goal, hooks</text>
+  </g>
+  <g transform="translate(268 200)">
+    <rect class="runtime" x="0" y="0" width="170" height="66" rx="8"/>
+    <text x="32" y="30" class="label">Codex CLI</text>
+    <text x="32" y="50" class="small">goals, plugins</text>
+  </g>
+  <g transform="translate(464 200)">
+    <rect class="runtime" x="0" y="0" width="170" height="66" rx="8"/>
+    <text x="31" y="30" class="label">OpenCode</text>
+    <text x="31" y="50" class="small">client/server</text>
+  </g>
+  <g transform="translate(660 200)">
+    <rect class="runtime" x="0" y="0" width="170" height="66" rx="8"/>
+    <text x="47" y="30" class="label">Cursor</text>
+    <text x="33" y="50" class="small">background agents</text>
+  </g>
+
+  <path class="mutedLine" d="M157 266 V318"/>
+  <path class="mutedLine" d="M353 266 V318"/>
+  <path class="mutedLine" d="M549 266 V318"/>
+  <path class="mutedLine" d="M745 266 V318"/>
+
+  <g transform="translate(72 332)">
+    <rect class="ledger" x="0" y="0" width="840" height="250" rx="10"/>
+    <text x="28" y="42" class="mono">.ct2/</text>
+    <text x="112" y="42" class="small">single source of truth on disk</text>
+    <line x1="28" y1="66" x2="812" y2="66" class="rule"/>
+    <text x="36" y="104" class="monoSmall">draft/        authored ticket</text>
+    <text x="36" y="134" class="monoSmall">backlog/      sealed queue</text>
+    <text x="36" y="164" class="monoSmall">in-progress/  forge-owned patch work</text>
+    <text x="36" y="194" class="monoSmall">in-review/    independent sidecars pending</text>
+    <text x="36" y="224" class="monoSmall">reviews/      immutable {id}-{cc|cx}-r{n}.md</text>
+    <text x="444" y="104" class="monoSmall">done/         only after both approve</text>
+    <text x="444" y="134" class="monoSmall">rejected/     any reviewer rejects</text>
+    <text x="444" y="164" class="monoSmall">escalated/    max rounds or human block</text>
+    <text x="444" y="194" class="monoSmall">inbox/        async role messages</text>
+    <text x="444" y="224" class="monoSmall">.tmp/         tmpfile then atomic mv</text>
+  </g>
+
+  <g transform="translate(970 188)">
+    <text x="0" y="-10" class="section">one-shot CT2 tools</text>
+    <rect class="terminal" x="0" y="0" width="330" height="164" rx="10"/>
+    <text x="24" y="38" class="terminalText">$ ct2-seal 003</text>
+    <text x="24" y="70" class="terminalText">$ ct2-reconcile 003 1</text>
+    <text x="24" y="102" class="terminalText">$ ct2-revise 003</text>
+    <text x="24" y="134" class="terminalText">$ ct2-status</text>
+  </g>
+  <path class="line" d="M970 270 H924"/>
+
+  <g transform="translate(970 390)">
+    <text x="0" y="-10" class="section">protocol invariants</text>
+    <rect class="ok" x="0" y="0" width="330" height="48" rx="8"/>
+    <text x="22" y="30" class="monoSmall">state transition = mv</text>
+    <rect class="ok" x="0" y="60" width="330" height="48" rx="8"/>
+    <text x="22" y="90" class="monoSmall">reviewers write separate sidecars</text>
+    <rect class="warn" x="0" y="120" width="330" height="48" rx="8"/>
+    <text x="22" y="150" class="monoSmall">reconciler alone reads both verdicts</text>
+    <rect class="deny" x="0" y="180" width="330" height="48" rx="8"/>
+    <text x="22" y="210" class="monoSmall">no daemon, no DB, no SaaS authority</text>
+  </g>
+
+  <g transform="translate(72 624)">
+    <rect class="mcp" x="0" y="0" width="386" height="54" rx="8"/>
+    <text x="22" y="33" class="monoSmall">MCP: tools and context, not ticket authority</text>
+  </g>
+  <g transform="translate(494 624)">
+    <rect class="panel" x="0" y="0" width="386" height="54" rx="8"/>
+    <text x="22" y="33" class="monoSmall">Adapters: role prompt + invocation snippet</text>
+  </g>
+  <g transform="translate(914 624)">
+    <rect class="panel" x="0" y="0" width="386" height="54" rx="8"/>
+    <text x="22" y="33" class="monoSmall">Conformance: same fixture, many agents</text>
+  </g>
+  <path class="dash" d="M265 624 V596"/>
+  <path class="dash" d="M686 624 V596"/>
+  <path class="dash" d="M1106 624 V596"/>
+</svg>
