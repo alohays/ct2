@@ -1,7 +1,7 @@
 {
   "name": "ct2",
   "version": "0.1.0",
-  "description": "CT2: Context Control Protocol — Multi-session AI orchestration harness",
+  "description": "CT2: Protocol for multi-agent code operations with dual independent review",
   "skills": [
     "ct2-helm",
     "ct2-forge",

@@ -1,14 +1,19 @@
-# CT2: Context Control Protocol
+# CT2: Protocol for Multi-Agent Code Operations
 
-**Multi-session AI orchestration harness with dual-review workflow.**
+**Protocol for multi-agent code operations with dual-review workflow.**
 
 ![CT2 four-panel comic: chaos becomes file-backed tickets, dual review, and evidence-backed done](docs/assets/ct2-four-panel-comic.jpg)
 
-CT2 enables multiple AI agent sessions to divide responsibilities and perform long-running autonomous development on a shared codebase. Three role-based sessions — planner, engineer, and reviewer — communicate through a shared `.ct2/` directory, following a Kanban-style ticket state machine and a dual-approval review protocol.
+CT2 gives multiple AI agent sessions a shared project-local ledger. Planner,
+engineer, and reviewer roles communicate through `.ct2/`, follow a Kanban-style
+ticket state machine, and use dual independent review before a ticket reaches
+`done/`.
 
 ![CT2 filesystem switchyard](docs/assets/ct2-hero-switchyard-labeled.png)
 
-While the user is away, engineer and reviewer sessions autonomously process tickets. The user can plan new work or inspect results at any time through a planner session.
+Agent runtimes own continuation through their native goal, background, or task
+features. CT2 supplies the protocol files, one-shot tools, and adapter prompts
+those runtimes follow.
 
 ## Architecture
 
@@ -61,13 +66,14 @@ claude
 claude
 /ct2:lens-cc
 
-# Session 4: Codex reviewer (visible TUI)
+# Session 4: Codex reviewer (adapter dispatcher)
 cd /path/to/your/project
-ct2-lens-cx-tui
+ct2-lens-cx
 ```
 
-See [Running the Codex TUI reviewer](#running-the-codex-tui-reviewer) below
-for attach/detach, tuning, and known Codex quirks.
+The lens dispatchers read `adapters/{agent}/{role}.md` and invoke the selected
+runtime. Use `ct2-lens-cx --dry-run` or `ct2-lens-cc --dry-run` to inspect the
+chosen adapter command without starting an agent.
 
 For Codex-first operation, run the preflight after initialization:
 
@@ -76,7 +82,7 @@ ct2-codex-doctor
 ```
 
 It verifies the installed Codex CLI, `/goal` feature flag, app-server schema,
-request-input support, MCP list, skill installation, and TUI fallback
+request-input support, MCP list, skill installation, and adapter fallback
 requirements. Use `ct2-codex-doctor --enable-request-input` when you want CT2
 to enable Codex's `default_mode_request_user_input` feature through the Codex
 feature command surface.
@@ -89,63 +95,22 @@ feature command surface.
 4. **Review** — `ct2-lens-cc` and `ct2-lens-cx` review independently
 5. **Reconcile** — when both approve, the ticket moves to `done/`
 
-### Running the Codex TUI reviewer
+### Running Adapter Reviewers
 
-`ct2-lens-cx-tui` is the primary lens-cx path. It launches a tmux session
-with two panes:
-
-- **Main pane** — interactive Codex TUI where reviews happen live
-- **Bottom pane (10 rows)** — scheduler log with tick timing, heartbeat
-  probes, and context resets
-
-The scheduler reads `lens_cx.poll_interval_sec` from
-`.ct2/config/harness.yaml` (default 180s) and injects a `ct2:lens-cx` review
-tick into the Codex pane every interval, so you can watch each scan and
-review iteration happen in real time.
-
-**Operational basics**
-
-From a plain terminal, `ct2-lens-cx-tui` attaches to the CT2 tmux session. If
-you run it from inside an existing tmux client, it switches that client to the
-CT2 session instead of nesting tmux. Use `--no-attach` to start or reuse the
-session without attaching or switching.
+`ct2-lens-cx` and `ct2-lens-cc` are thin dispatchers. They select an adapter,
+load its objective, and hand continuation to the agent runtime. CT2 does not
+run a polling daemon.
 
 ```bash
-# Detach (leave the session running in the background)
-Ctrl-B d
-
-# Re-attach — the same command re-attaches an existing session
-ct2-lens-cx-tui /path/to/your/project
-
-# Stop cleanly (session name prints on startup; or use tmux ls)
-tmux kill-session -t ct2-lens-cx-<slug>-<hash>
+ct2-lens-cx --dry-run
+ct2-lens-cx --agent codex
+ct2-lens-cc --agent claude
+ct2-reconcile --discover
 ```
 
-**Tunable environment variables**
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `CT2_LENS_CX_TUI_INTERVAL` | harness / `180` | Tick interval in seconds |
-| `CT2_LENS_CX_TUI_INITIAL_DELAY` | `8` | Wait before first tick (lets Codex TUI finish starting) |
-| `CT2_LENS_CX_TUI_MAX_TICKS` | `500` | Driver exits after N ticks to bound Codex context growth (`0` disables) |
-| `CT2_LENS_CX_TUI_CLEAR_EVERY` | `50` | Inject `/clear` every Nth tick to recycle context (`0` disables) |
-| `CT2_CODEX_CMD` | `codex` | Codex CLI executable |
-| `CT2_CODEX_ARGS` | `--sandbox workspace-write` | Codex startup flags |
-
-**Codex 0.128.0 notes**
-
-- `/ct2:lens-cx` is not a native Codex slash command. The driver pastes
-  `$ct2:lens-cx` as a skill mention plus inline fallback instructions, so
-  the reviewer works whether or not skill dispatch fires.
-- Codex 0.128.0 includes persisted `/goal` workflows and app-server
-  `thread/goal/*` schemas. CT2 stores local scope, thread, and ledger metadata
-  under `.ct2/codex/`; CT2 ticket state remains authoritative.
-- The TUI defaults to `workspace-write`; the reviewer role forbids source-file
-  edits at the text-policy level because lens-cx needs to write `.ct2/`
-  sidecars and heartbeat files.
-- `ct2-lens-cx-daemon` remains available for unattended operation (launchd
-  or `nohup`) and invokes `codex exec --sandbox read-only` non-interactively
-  with post-run sidecar validation.
+Each reviewer writes only its own sidecar. After a sidecar is written, the
+reviewer calls `ct2-reconcile {id} {round}`; discovery mode finishes any
+ticket-round where both sidecars exist but an agent forgot the explicit call.
 
 **Verify Codex skill installation**
 
@@ -201,7 +166,7 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-init [dir]` | Initialize `.ct2/` in a project directory (prompts for git strategy on first run) |
 | `ct2-seal <ticket>` | Validate and move a draft ticket to backlog |
 | `ct2-revise <ticket>` | Archive past sidecars and return an escalated/rejected ticket to `draft/` |
-| `ct2-status [dir]` | Display Kanban board, agent heartbeats, and inbox |
+| `ct2-status [dir]` | Display Kanban board, filesystem workflow summary, and inbox |
 | `ct2-codex-doctor [dir]` | Preflight installed Codex capabilities and write `.ct2/codex/preflight.json` |
 | `ct2-runtime-doctor [dir]` | Probe Codex/Claude/local runtime capabilities and write `.ct2/runtime/capabilities.json` |
 | `ct2-baseline [dir]` | Compute the Trust/Evidence/Autonomy/Cost balanced scorecard baseline |
@@ -218,8 +183,10 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-vao-self-verify [--run-checks]` | Measure VAO completion gates from the self-verification criteria |
 | `ct2-codex-goal ...` | Create, inspect, pause, resume, and clear CT2-local Codex goal metadata |
 | `ct2-codex-app-driver ...` | Drive Codex app-server thread, goal, turn, request-input, approvals, logs, and metadata |
-| `ct2-lens-cx-tui <dir>` | Start the visible Codex TUI reviewer loop |
-| `ct2-lens-cx-daemon <dir>` | Start the legacy headless Codex reviewer polling daemon |
+| `ct2-reconcile <ticket-id> <round>` | Reconcile independent review sidecars into terminal review state |
+| `ct2-reconcile --discover [dir]` | Discover complete sidecar pairs and reconcile them |
+| `ct2-lens-cc [dir]` | Dispatch lens-cc through an agent adapter |
+| `ct2-lens-cx [dir]` | Dispatch lens-cx through an agent adapter |
 | `ct2-git-start <ticket>` | Internal. Create/checkout the ticket's branch (called by forge on pickup) |
 | `ct2-git-submit <ticket>` | Internal. Push the branch and open/update the PR (called by forge at in-review) |
 | `ct2-git-finalize <verdict> <ticket>` | Internal. Merge/comment on PR per reconciler verdict |
@@ -256,7 +223,7 @@ Codex metadata output, and plugin/skill contract shape.
 | `/ct2:lens-cc` | Reviewer | ON | Idempotent review scan and verdict writing |
 | `$ct2:helm` | Codex planner | OFF | Codex-native ticket authoring and clarification |
 | `$ct2:forge` | Codex engineer | ON | Codex-native ticket implementation and goal-scope draining |
-| `ct2:lens-cx` / `$ct2:lens-cx` | Codex reviewer | ON | Codex TUI review scan and verdict writing |
+| `ct2:lens-cx` / `$ct2:lens-cx` | Codex reviewer | ON | Codex adapter review scan and verdict writing |
 | `$ct2:helm-auto-cx` | Codex planner | ON | Goal-driven autonomous repository-improvement ticket planning |
 | `/ct2:status` / `$ct2:status` | Monitor | — | One-shot state query |
 
@@ -280,9 +247,14 @@ Full protocol specifications are in [`spec/`](spec/):
 | Document | Description |
 |----------|-------------|
 | [`spec/directory-structure.md`](spec/directory-structure.md) | `.ct2/` layout |
+| [`spec/PROTOCOL.md`](spec/PROTOCOL.md) | Top-level CT2 protocol anchor |
 | [`spec/ticket-format.md`](spec/ticket-format.md) | Ticket YAML frontmatter and body format |
 | [`spec/state-machine.md`](spec/state-machine.md) | Kanban state transition rules |
 | [`spec/review-protocol.md`](spec/review-protocol.md) | Dual-approval, inbox, and reconciler protocol |
+| [`spec/sidecar-format.md`](spec/sidecar-format.md) | Review sidecar contract |
+| [`spec/reconciler.md`](spec/reconciler.md) | `ct2-reconcile` contract |
+| [`spec/adapter-format.md`](spec/adapter-format.md) | Agent adapter markdown contract |
+| [`spec/conformance.md`](spec/conformance.md) | Conformance rules and verification expectations |
 | [`spec/git-workflow.md`](spec/git-workflow.md) | Git branch, commit, PR, and merge lifecycle |
 | [`spec/codex-full-support-prd.md`](spec/codex-full-support-prd.md) | Product requirements for first-class Codex support |
 | [`spec/codex-runtime-contract.md`](spec/codex-runtime-contract.md) | Technical contract for Codex CLI, `/goal`, app-server, skills, MCP, and request-input integration |
@@ -308,9 +280,8 @@ Full protocol specifications are in [`spec/`](spec/):
 - macOS (primary target) or Linux
 - Python 3.9+
 - Git 2.5+
-- tmux (for the visible Codex reviewer loop)
 - [Claude Code](https://claude.ai/claude-code) (for helm, forge, lens-cc roles)
-- [Codex CLI](https://github.com/openai/codex) 0.128.0+ (for Codex role skills, `/goal`, app-server preflight, and lens-cx)
+- [Codex CLI](https://github.com/openai/codex) 0.130.0+ (for Codex role skills, goal/app-server preflight, and lens-cx)
 
 ## License
 
