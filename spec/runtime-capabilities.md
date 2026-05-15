@@ -7,7 +7,7 @@ version: "0.1.0"
 # CT2 Runtime Capabilities
 
 The Capability Registry records local runtime facts without granting runtimes
-authority over CT2 state. Codex, Claude Code, tmux, git, MCP servers, app-server
+authority over CT2 state. Codex, Claude Code, git, MCP servers, app-server
 schema, and feature flags are device-driver inputs behind the `.ct2/` protocol
 kernel.
 

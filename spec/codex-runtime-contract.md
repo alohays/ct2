@@ -40,20 +40,19 @@ state invariant violation.
 
 ## Runtime Modes
 
-CT2 recognizes three Codex runtime modes.
+CT2 recognizes two Codex runtime modes.
 
 | Mode | Current status | Use case | Control surface |
 |------|----------------|----------|-----------------|
-| `tui` | implemented for lens-cx | Visible operator-supervised review loop | `ct2-lens-cx-tui`, Codex TUI, slash commands, skill mentions |
-| `exec` | implemented for legacy lens-cx daemon | Headless one-shot review or automation | `codex exec`, `codex review`, stdout files, schema validation |
-| `app-server` | target architecture | Robust local controller without PTY paste | JSON-RPC over stdio or unix socket |
+| `exec` | implemented through adapters | Headless one-shot review or automation | `ct2-lens-cx`, `codex exec`, adapter markdown, schema validation |
+| `app-server` | implemented for thread/goal control where available | Local controller without CT2-owned polling | JSON-RPC over stdio or unix socket |
 
 The runtime mode is an execution detail. The CT2 ticket state machine, sidecar
 format, inbox protocol, and git workflow do not change by mode.
 
 ## Codex Thread Metadata
 
-Future app-server and goal-aware TUI integrations SHOULD persist Codex thread
+Future app-server and goal-aware adapter integrations SHOULD persist Codex thread
 metadata under `.ct2/` so CT2 can recover after terminal restarts.
 
 Recommended layout:
@@ -124,7 +123,7 @@ final path. Metadata loss must not corrupt ticket state.
 ## Goal Contract
 
 Codex 0.128.0 added persisted goal workflows with app-server APIs, model tools,
-runtime continuation, and TUI controls. CT2 uses this as a role-local
+and runtime continuation. CT2 uses this as a role-local
 continuation mechanism.
 
 ### Goal API Mapping
@@ -143,9 +142,6 @@ Observed status enum from the 0.128.0 generated schema:
 - `paused`
 - `budgetLimited`
 - `complete`
-
-TUI controls are documented in the 0.128.0 release as create, pause, resume,
-and clear. CT2 should not rely on undocumented extra subcommands.
 
 `thread/goal/set` accepts `threadId` and optional `objective`, `status`, and
 `tokenBudget`. `thread/goal/get` returns `objective`, `status`, `tokenBudget`,
@@ -180,9 +176,9 @@ Lens-cx:
 Drain Codex reviews for CT2 goal scope {scope_id}. Write independent cx
 sidecars for every in-scope ticket that reaches .ct2/in-review/. Do not read cc
 sidecars before the matching cx sidecar exists. If no reviewable ticket is
-present but upstream in-scope helm/forge work is still active, wait with a
-heartbeat instead of completing the goal. Reconcile only after writing your own
-sidecar.
+present but upstream in-scope helm/forge work is still active, record
+`upstream_work_pending` instead of completing the goal. Reconcile after writing
+your own sidecar.
 ```
 
 Helm-auto-cx:
@@ -227,8 +223,7 @@ A CT2 Codex role running with `/goal` behaves as a supervisor:
 2. Set or resume the Codex goal.
 3. Observe CT2 state directly from `.ct2/`.
 4. If work is actionable, start a Codex turn with the next bounded action.
-5. If work is not actionable, enter a named wait state and update heartbeat
-   metadata.
+5. If work is not actionable, enter a named wait state and persist metadata.
 6. After every turn or wait interval, refresh the goal, CT2 state, and ledger.
 7. Before marking goal complete, run a prompt-to-artifact audit against the
    scope completion conditions.
@@ -243,8 +238,9 @@ Named wait states:
 | `blocked_by_policy` | any | operator changes policy, pauses, or clears the goal |
 | `budget_limited` | any | token budget is increased, scope is reduced, or the goal is closed with incomplete evidence |
 
-The supervisor loop must not busy-wait. TUI fallback uses the configured poll
-interval; app-server drivers may use event notifications plus a bounded sleep.
+The supervisor loop must not busy-wait. App-server drivers may use event
+notifications plus a bounded sleep; external schedulers may reinvoke one-shot
+adapter commands.
 
 ### Forge Multi-Ticket Completion
 
@@ -377,9 +373,9 @@ answer shape is expected.
 
 ## App-Server Control Contract
 
-The target Codex driver uses `codex app-server` instead of tmux prompt paste.
-The app-server docs state that schema output is version-specific; CT2 preflight
-therefore generates or inspects schemas from the installed Codex binary.
+The Codex driver uses `codex app-server` where available. The app-server docs
+state that schema output is version-specific; CT2 preflight therefore generates
+or inspects schemas from the installed Codex binary.
 
 ### Transport
 
@@ -405,7 +401,7 @@ Minimum app-server sequence:
 6. Stream notifications until `turn/completed`.
 7. Respond to approval and `item/tool/requestUserInput` server requests
    according to role policy.
-8. Persist wait-state, heartbeat, and ledger updates through `.ct2/.tmp/`.
+8. Persist wait-state and ledger updates through `.ct2/.tmp/`.
 9. Read `thread/goal/get` before deciding whether to continue, pause, or stop.
 10. Run the role-specific completion audit before setting status `complete`.
 
@@ -530,7 +526,7 @@ Role defaults:
 |------|---------|--------|
 | `ct2-helm` | `workspace-write` | `.ct2/draft/`, `.ct2/backlog/` through `ct2-seal`, inbox |
 | `ct2-forge` | `workspace-write` | project source, tests, `.ct2/in-progress/`, `.ct2/in-review/`, git helpers |
-| `ct2-lens-cx` | `workspace-write` minimum for `.ct2/reviews/`; source-read-only by policy | own cx sidecar, heartbeat, inbox, reconciler-triggered state move |
+| `ct2-lens-cx` | `workspace-write` minimum for `.ct2/reviews/`; source-read-only by policy | own cx sidecar, inbox, reconciler-triggered state move |
 | `ct2-helm-auto-cx` | `workspace-write` | `.ct2/draft/`, `.ct2/backlog/` through `ct2-seal`, `.ct2/codex/ledgers/`, inbox |
 | `ct2-status` | `read-only` | none |
 
@@ -559,7 +555,7 @@ test -d "${CODEX_HOME:-$HOME/.codex}/skills"
 Reported fields:
 
 - Codex version.
-- Runtime mode support: TUI, exec, app-server.
+- Runtime mode support: exec, app-server.
 - Goal support and current feature flag state.
 - Request-input schema presence and `default_mode_request_user_input` state.
 - Whether request-input setup was applied, declined, policy-blocked, or absent.
@@ -581,7 +577,7 @@ Reported fields:
 | Forge goal drains current tickets | Scratch project has two scoped tickets; forge goal record stays active through `in-review/`, waits for reviews, reworks a rejection, and completes only after terminal CT2 state. |
 | Lens-cx goal drains and waits | Scratch project has one immediate review and one upstream in-progress ticket; lens-cx writes independent cx sidecars and does not complete while upstream in-scope work is pending. |
 | Helm-auto-cx planning completes | Scratch project goal requests N tickets with a quality bar; planning ledger maps N produced tickets to conditions, overlap checks, and final paths. |
-| Lens-cx current path works | `ct2-lens-cx-tui --help` and `ct2-lens-cx-daemon` validation pass. |
+| Lens-cx current path works | `ct2-lens-cx --dry-run` validates adapter dispatch, and `ct2-reconcile` passes sidecar fixtures. |
 | No state corruption | scratch `ct2-init`, ticket seal, review sidecar write, and `ct2-status` preserve state invariants. |
 | Docs indexed | README spec table links this document and the PRD. |
 
@@ -589,7 +585,7 @@ Reported fields:
 
 - Whether CT2 should add `.ct2/codex/` in Phase 1 or wait for app-server
   implementation.
-- Whether goal budgets live in ticket frontmatter, harness config, or runtime
+- Whether goal budgets live in ticket frontmatter, protocol config, or runtime
   prompts.
 - Whether setup should always create a CT2-specific Codex profile before
   enabling `default_mode_request_user_input`, or mutate the active profile after
@@ -602,5 +598,5 @@ Reported fields:
   client, or an optional external package outside CT2 core.
 - Whether CT2 should add Codex-specific hooks once plugin-bundled hooks become
   stable enough for role-boundary enforcement.
-- Whether `ct2-lens-cx-daemon` should move from free-form output validation to
+- Whether Codex lens adapters should move from free-form output validation to
   `--output-schema` first, before the app-server driver exists.
