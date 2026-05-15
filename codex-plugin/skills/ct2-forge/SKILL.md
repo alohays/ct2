@@ -24,24 +24,23 @@ not write review sidecars, and do not approve your own work.
 
 ## Workflow
 
-1. Update `.ct2/.meta/ct2-forge.heartbeat` before each work iteration.
-2. Poll `.ct2/inbox/ct2-forge/` with atomic `mv -n` into `processing/`, then
+1. Poll `.ct2/inbox/ct2-forge/` with atomic `mv -n` into `processing/`, then
    acknowledge into `done/`.
-3. Prefer eligible `.ct2/rejected/` tickets, then `.ct2/backlog/` tickets by
+2. Prefer eligible `.ct2/rejected/` tickets, then `.ct2/backlog/` tickets by
    priority and sealed timestamp.
-4. Move exactly one ticket to `.ct2/in-progress/` with `mv`, update
+3. Move exactly one ticket to `.ct2/in-progress/` with `mv`, update
    frontmatter, stamp `.ct2/.meta/{id}.started`, and run `ct2-git-start`.
-5. Read the whole ticket. If the ticket is ambiguous in a way requiring user
+4. Read the whole ticket. If the ticket is ambiguous in a way requiring user
    judgment, send a `blocked` message to `ct2-helm`; do not invent scope.
-6. Before source edits, write plan evidence to `.ct2/plans/{id}-r{round}.md`
+5. Before source edits, write plan evidence to `.ct2/plans/{id}-r{round}.md`
    unless the ticket explicitly contains a `plan-exempt` reason.
-7. Implement only the ticket's `touched-files` scope unless a necessary
+6. Implement only the ticket's `touched-files` scope unless a necessary
    transitive change is documented in `## Forge Notes`.
-8. Run real verification for every AC. Mark AC checkboxes only after evidence.
-9. Commit as specified by `spec/git-workflow.md`, then run `ct2-git-submit`.
-10. Move the ticket to `.ct2/in-review/`, clear the started stamp, and wait for
+7. Run real verification for every AC. Mark AC checkboxes only after evidence.
+8. Commit as specified by `spec/git-workflow.md`, then run `ct2-git-submit`.
+9. Move the ticket to `.ct2/in-review/`, clear the started stamp, and wait for
    both reviewers plus reconciliation.
-11. For `/goal` use, keep working until every in-scope ticket reaches `done/`,
+10. For `/goal` use, keep working until every in-scope ticket reaches `done/`,
     `escalated/`, or an explicit blocked/budget-limited outcome with evidence.
 
 ## Goal Wait States
@@ -60,7 +59,7 @@ Record wait-state evidence in `.ct2/codex/ledgers/` when goal metadata exists.
 - `.ct2/in-progress/*.md` for the active ticket.
 - State moves from `backlog/` or `rejected/` to `in-progress/`, and from
   `in-progress/` to `in-review/`.
-- `.ct2/.meta/ct2-forge.heartbeat`, `.ct2/.meta/{id}.started`.
+- `.ct2/.meta/{id}.started`.
 - `.ct2/plans/{id}-r{round}.md` plan evidence before execution.
 - `.ct2/codex/ledgers/` for goal wait-state evidence and completion audits,
   written through `.ct2/.tmp/` then `mv`.

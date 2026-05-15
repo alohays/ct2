@@ -91,7 +91,6 @@ def local_tools() -> dict:
     return {
         "python": {"available": True, "version": sys.version.split()[0]},
         "git": {"available": shutil.which("git") is not None, "path": shutil.which("git")},
-        "tmux": {"available": shutil.which("tmux") is not None, "path": shutil.which("tmux")},
     }
 
 
@@ -100,7 +99,7 @@ def degradation_lines(report: dict) -> list[str]:
     codex = report["runtimes"]["codex"]
     claude = report["runtimes"]["claude"]
     if not codex["available"]:
-        lines.append("Codex CLI unavailable; Codex roles and lens-cx TUI are degraded.")
+        lines.append("Codex CLI unavailable; Codex roles and lens-cx adapter are degraded.")
     elif not codex["version_ok"]:
         lines.append(f"Codex version below {report['minimum_versions']['codex']}; use advisory-only fallbacks.")
     if not claude["available"]:
@@ -109,8 +108,6 @@ def degradation_lines(report: dict) -> list[str]:
         lines.append(f"Claude Code version below {report['minimum_versions']['claude']}; hook support may be degraded.")
     if not report["local"]["git"]["available"]:
         lines.append("git unavailable; branch-per-ticket workflow is degraded.")
-    if not report["local"]["tmux"]["available"]:
-        lines.append("tmux unavailable; visible lens-cx scheduler is degraded.")
     if not lines:
         lines.append("No degraded runtime capabilities detected.")
     return lines
