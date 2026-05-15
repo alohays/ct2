@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ct2-init — Initialize the CT2 harness in a project directory.
+# ct2-init — Initialize the CT2 protocol ledger in a project directory.
 # Usage: ct2-init [project-dir]
 # If project-dir is omitted, uses the current working directory.
 
@@ -183,7 +183,7 @@ echo "  2. Enter the planner role:       /ct2:helm"
 echo "  3. Author a ticket and seal it:  /ct2:helm → ct2-seal {ticket}"
 echo "  4. Start the engineer loop:      claude → /ct2:forge"
 echo "  5. Start the reviewer loop:      claude → /ct2:lens-cc"
-echo "  6. Start the Codex reviewer:     ct2-lens-cx-tui"
+echo "  6. Start the Codex reviewer:     ct2-lens-cx"
 echo "  7. Check Codex support:          ct2-codex-doctor"
 echo ""
 echo "Run 'ct2-status' at any time to check the current state."

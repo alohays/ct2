@@ -122,7 +122,7 @@ fi
 # ── Create env.sh for PATH (rustup-style idempotent sourcing) ─────────────────
 ENV_FILE="${CT2_HOME}/env.sh"
 cat > "$ENV_FILE" << 'ENVEOF'
-# CT2: Context Control Protocol — PATH setup (sourced from shell RC)
+# CT2: Protocol for Multi-Agent Code Operations — PATH setup (sourced from shell RC)
 case ":${PATH}:" in
   *:"${HOME}/.ct2/bin":*) ;;
   *) export PATH="${HOME}/.ct2/bin:${PATH}" ;;
@@ -152,7 +152,7 @@ esac
 SOURCE_LINE='. "${HOME}/.ct2/env.sh"'
 if ! grep -qF '.ct2/env.sh' "$SHELL_RC" 2>/dev/null; then
   echo "" >> "$SHELL_RC"
-  echo "# CT2: Context Control Protocol" >> "$SHELL_RC"
+  echo "# CT2: Protocol for Multi-Agent Code Operations" >> "$SHELL_RC"
   echo "$SOURCE_LINE" >> "$SHELL_RC"
   info "Added CT2 PATH source to ${SHELL_RC}"
 else
@@ -162,17 +162,6 @@ fi
 # Make bin scripts and hook scripts executable
 chmod +x "${CT2_HOME}/bin/"*
 chmod +x "${CT2_HOME}/claude-plugin/hooks/"*.sh 2>/dev/null || true
-
-# ── Copy launchd plist template (macOS only) ─────────────────────────────────
-if [[ "$(uname)" == "Darwin" ]]; then
-  LAUNCH_AGENTS="${HOME}/Library/LaunchAgents"
-  PLIST_SRC="${CT2_HOME}/launchd/com.ct2.lens-cx.plist.template"
-  if [[ -f "$PLIST_SRC" ]]; then
-    info "launchd plist template available at:"
-    info "  ${PLIST_SRC}"
-    info "  Copy and customize it, then load with: launchctl load ~/Library/LaunchAgents/com.ct2.lens-cx.plist"
-  fi
-fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
@@ -186,11 +175,6 @@ if ! command -v claude &>/dev/null; then
   echo ""
   warning "Claude Code CLI not found. CT2 requires Claude Code to function."
   warning "Install from: https://claude.ai/claude-code"
-fi
-if ! command -v tmux &>/dev/null; then
-  echo ""
-  warning "tmux not found. Install tmux to use the visible Codex reviewer loop:"
-  warning "  brew install tmux   # macOS"
 fi
 if ! command -v codex &>/dev/null; then
   echo ""
@@ -214,6 +198,6 @@ echo "  claude            # Open Claude Code"
 echo "  /ct2:helm         # Enter planner role"
 echo "  ct2-codex-doctor  # Check Codex CLI feature support"
 echo "  ct2-codex-app-driver ct2-status \"Inspect CT2 state\" --sandbox read-only"
-echo "  ct2-lens-cx-tui   # Open visible Codex reviewer loop"
+echo "  ct2-lens-cx       # Start the Codex reviewer adapter"
 echo ""
 echo "Full documentation: ${CT2_HOME}/spec/"
