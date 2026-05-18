@@ -14,6 +14,11 @@ commands against what actually happened.
 
 Plans live under `.ct2/plans/{ticket-id}-r{review-round}.md` or `.json`.
 
+Helm planning canvases live under `.ct2/plans/canvas/{open,answered,sealed,
+expired}/` and are governed by `spec/helm-canvas.md`. A sealed canvas
+(`canvas/sealed/{ticket}/`) is plan evidence: it records the plan the user
+agreed to before the ticket entered `backlog/`.
+
 Each plan should include:
 
 - ticket id and review round;
