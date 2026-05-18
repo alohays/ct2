@@ -197,6 +197,10 @@ The canvas spec JSON shape is in `spec/helm-canvas.md`. `AskUserQuestion` stays
 the right tool for a single quick clarification; the canvas is for shaping a
 whole plan.
 
+If a ticket is later revised (`ct2-revise`), run `ct2-helm-canvas expire
+{id-or-slug}` to retire the stale-round canvas, then `generate` a fresh canvas
+with an incremented `round`.
+
 ### Ticket Quality Principles
 - **One ticket = one PR = completable in a single day**
 - `touched-files` must be as specific as possible — this drives conflict detection

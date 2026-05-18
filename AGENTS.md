@@ -18,6 +18,7 @@ Development is spec-first: specifications are authoritative, implementations fol
 bash install.sh               # Install: adds to PATH, symlinks skills
 ct2-init [dir]                 # Initialize .ct2/ in a project directory
 ct2-seal {ticket-id}           # Validate ticket, move draft -> backlog
+ct2-helm-canvas {sub} ...      # Generate / recover / seal a helm planning canvas
 ct2-revise {ticket-id}         # Archive past sidecars, reset escalated/rejected ticket -> draft
 ct2-status [dir]               # Display kanban board + agent state
 ct2-lens-cc [dir]              # Dispatch lens-cc review through an agent adapter

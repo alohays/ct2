@@ -51,6 +51,8 @@ questions (see `spec/helm-canvas.md`):
   conversation before sealing.
 - After `ct2-seal`, run `ct2-helm-canvas seal {id-or-slug}` to move the canvas
   to `sealed/{ticket}/` as plan evidence.
+- On revision (`ct2-revise`), run `ct2-helm-canvas expire {id-or-slug}` to retire
+  the stale-round canvas, then `generate` a fresh canvas with the next `round`.
 - `ct2-helm-canvas` subcommands are one-shot; CT2 runs no canvas server.
 
 ## Allowed Writes
