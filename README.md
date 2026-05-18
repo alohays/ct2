@@ -89,11 +89,31 @@ feature command surface.
 
 ### Workflow
 
-1. **Plan** — `/ct2:helm` helps you author tickets in `.ct2/draft/`
+1. **Plan** — `/ct2:helm` helps you author tickets in `.ct2/draft/`, optionally
+   through an interactive HTML planning canvas (see below)
 2. **Seal** — `ct2-seal 001` validates and moves the ticket to `backlog/`
 3. **Build** — `ct2-forge` picks up the ticket and implements it autonomously
 4. **Review** — `ct2-lens-cc` and `ct2-lens-cx` review independently
 5. **Reconcile** — when both approve, the ticket moves to `done/`
+
+### Planning canvas
+
+`ct2-helm` can turn a planning conversation into a self-contained HTML page —
+the Helm Canvas — so you decide scope, ticket split, acceptance criteria,
+priority, and constraints visually instead of through a long question stream.
+
+```bash
+ct2-helm-canvas generate --spec spec.json      # writes .ct2/plans/canvas/open/*.canvas.html
+# open the printed path in a browser, edit the panels, confirm the decision
+ct2-helm-canvas recover '<CT2-DECISION token>' # records the decision, open/ -> answered/
+ct2-helm-canvas seal <ticket>                  # after ct2-seal: answered/ -> sealed/
+```
+
+The canvas is the HTML provider format of a `.ct2/decisions/` record — the JSON
+stays the source of truth. It references no external assets, returns its result
+as a copy-paste token (or a downloaded file), and runs no server: every
+`ct2-helm-canvas` subcommand is one-shot. See
+[`spec/helm-canvas.md`](spec/helm-canvas.md).
 
 ### Running Adapter Reviewers
 
@@ -166,6 +186,7 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-init [dir]` | Initialize `.ct2/` in a project directory (prompts for git strategy on first run) |
 | `ct2-seal <ticket>` | Validate and move a draft ticket to backlog |
 | `ct2-revise <ticket>` | Archive past sidecars and return an escalated/rejected ticket to `draft/` |
+| `ct2-helm-canvas <sub> ...` | Generate, recover, seal, or expire a helm planning canvas (`spec/helm-canvas.md`) |
 | `ct2-status [dir]` | Display Kanban board, filesystem workflow summary, and inbox |
 | `ct2-codex-doctor [dir]` | Preflight installed Codex capabilities and write `.ct2/codex/preflight.json` |
 | `ct2-runtime-doctor [dir]` | Probe Codex/Claude/local runtime capabilities and write `.ct2/runtime/capabilities.json` |
@@ -255,6 +276,7 @@ Full protocol specifications are in [`spec/`](spec/):
 | [`spec/reconciler.md`](spec/reconciler.md) | `ct2-reconcile` contract |
 | [`spec/adapter-format.md`](spec/adapter-format.md) | Agent adapter markdown contract |
 | [`spec/conformance.md`](spec/conformance.md) | Conformance rules and verification expectations |
+| [`spec/helm-canvas.md`](spec/helm-canvas.md) | Helm planning canvas — HTML provider format and lifecycle |
 | [`spec/git-workflow.md`](spec/git-workflow.md) | Git branch, commit, PR, and merge lifecycle |
 | [`spec/codex-full-support-prd.md`](spec/codex-full-support-prd.md) | Product requirements for first-class Codex support |
 | [`spec/codex-runtime-contract.md`](spec/codex-runtime-contract.md) | Technical contract for Codex CLI, `/goal`, app-server, skills, MCP, and request-input integration |
@@ -274,6 +296,7 @@ Full protocol specifications are in [`spec/`](spec/):
 | [`docs/ct2-vao-self-verification-report-2026-05-11.md`](docs/ct2-vao-self-verification-report-2026-05-11.md) | Executed self-verification report with gate scores and caveats |
 | [`docs/ct2-verified-autonomy-os-full-phase-audit-2026-05-11.md`](docs/ct2-verified-autonomy-os-full-phase-audit-2026-05-11.md) | Full strategy phase audit confirming local phase-exit evidence and separating it from production claims |
 | [`docs/ct2-vao-phase-completion-report-2026-05-11.md`](docs/ct2-vao-phase-completion-report-2026-05-11.md) | Local pilot report showing every VAO phase gate completed with runtime evidence |
+| [`docs/ct2-helm-canvas-plan-2026-05.md`](docs/ct2-helm-canvas-plan-2026-05.md) | Helm Canvas development plan — HTML planning GUI direction and phased roadmap |
 
 ## Requirements
 
