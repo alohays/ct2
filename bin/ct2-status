@@ -147,10 +147,13 @@ def workflow_summary():
             pending_reviews += 1
         if not (reviews_dir / f"{tid}-cx-r{round_num}.md").exists():
             pending_reviews += 1
+    canvas_open_dir = ct2_dir / "plans" / "canvas" / "open"
+    open_canvases = len(list(canvas_open_dir.glob("*.canvas.html"))) if canvas_open_dir.is_dir() else 0
     print("WORKFLOW")
     print(f"  in-progress tickets: {len(in_progress)}")
     print(f"  in-review tickets:   {len(in_review)}")
     print(f"  missing sidecars:    {pending_reviews}")
+    print(f"  open canvases:       {open_canvases}")
 
 def inbox_summary():
     inbox_dir = ct2_dir / "inbox"
