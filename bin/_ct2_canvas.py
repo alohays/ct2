@@ -114,6 +114,7 @@ background:var(--surface);color:var(--faint);border-radius:5px;padding:4px 7px}
 input[type=range]{flex:1 1 200px;accent-color:var(--accent)}
 .prio-val{font:700 12px/1 ui-monospace,monospace;padding:6px 10px;border-radius:6px;
 background:var(--accent-soft);color:var(--accent);min-width:78px;text-align:center}
+.depgraph{margin-top:11px;overflow-x:auto}.depgraph:empty{display:none}
 .depedit,.con{display:flex;gap:10px;font-size:13px}
 .depedit{margin-top:10px}.con{padding:7px 0;border-top:1px solid var(--line)}
 .con:first-child{border-top:0}
@@ -250,6 +251,7 @@ def _panel_prio(canvas: dict) -> str:
         f'<input type="range" id="prio" min="0" max="3" step="1" value="{idx}">'
         '<span style="font-size:12px;color:var(--mut)">critical</span>'
         f'<span class="prio-val" id="prioVal">{esc(priority)}</span></div>'
+        '<div class="depgraph" id="depGraph"></div>'
         '<div class="depedit"><span class="k">의존성</span>'
         f'<span class="v edit" id="depText" contenteditable="true">{esc(canvas.get("dependency"))}</span></div>'
         '<p class="edithint">의존 관계는 자유롭게 적으세요.</p>')
@@ -515,6 +517,26 @@ function colorJSON(obj){
     .replace(/: (-?[0-9]+)/g,': <span class="n">$1</span>');
 }
 
+function renderDep(tickets){
+  var el=$('#depGraph'); if(!el) return;
+  var n=tickets.length;
+  if(!n){ el.innerHTML=''; return; }
+  var bw=118,gap=34,h=54,W=n*(bw+gap)-gap+8;
+  var svg='<svg width="'+W+'" height="'+h+'" viewBox="0 0 '+W+' '+h+'" role="img" aria-label="티켓 순서">';
+  for(var i=0;i<n;i++){
+    var x=i*(bw+gap)+4;
+    if(i>0){
+      svg+='<line x1="'+(x-gap)+'" y1="27" x2="'+(x-5)+'" y2="27" stroke="#9a958a" stroke-width="1.5"/>';
+      svg+='<path d="M'+(x-4)+' 27 l-7 -4 l0 8 z" fill="#9a958a"/>';
+    }
+    svg+='<rect x="'+x+'" y="11" width="'+bw+'" height="32" rx="7" fill="#eaeefb" stroke="#1d4ed8"/>';
+    var label=tickets[i].title||('#'+(i+1));
+    if(label.length>15) label=label.slice(0,14)+'…';
+    svg+='<text x="'+(x+bw/2)+'" y="31" font-size="11" fill="#1d4ed8" text-anchor="middle">'+esc(label)+'</text>';
+  }
+  el.innerHTML=svg+'</svg>';
+}
+
 var lastJSON="",committed=false;
 function render(){
   var s=read(),adv=advisory(s),d=delta(s);
@@ -540,6 +562,7 @@ function render(){
       return '<li data-jump="'+x.jump+'"><span class="ic">⚑</span><span>'+esc(x.t)+'</span></li>'; }).join("");
     ah.textContent="이 항목들은 복사를 막지 않습니다. 그대로 두면 토큰의 open_items 에 실려 helm이 이어서 확인합니다.";
   } else { al.innerHTML='<li class="none">helm이 확인을 권하는 항목이 없습니다 ✓</li>'; ah.textContent=""; }
+  renderDep(s.tickets);
   var pre=$('#json'),nj=JSON.stringify(recordObj(s));
   pre.innerHTML=colorJSON(recordObj(s));
   if(nj!==lastJSON&&lastJSON!==""){ pre.classList.add('flash');
