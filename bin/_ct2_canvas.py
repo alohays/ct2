@@ -375,6 +375,79 @@ var BASELINE={scope:{},acFlags:{}};
   BASELINE.dependency=b.dependency;
 })();
 
+// ── DOM builders (shared by add-buttons and localStorage restore) ──
+function chipNode(item){
+  var c=document.createElement('span');
+  c.className='chip'; c.dataset.s=item.state||'in';
+  if(item.key) c.dataset.key=item.key;
+  c.innerHTML='<span class="dot"></span>'
+    +'<span class="lbl edit" contenteditable="true" data-ph="새 범위 항목…"></span>'
+    +'<span class="st" role="button" tabindex="0">'+((item.state||'in').toUpperCase())+'</span>'
+    +'<span class="x" role="button" tabindex="0" aria-label="삭제">✕</span>';
+  $('.lbl',c).textContent=item.label||'';
+  return c;
+}
+function itemNode(text){
+  var li=document.createElement('li'); li.className='t-item';
+  li.innerHTML='<span class="it edit" contenteditable="true" data-ph="세부 항목…"></span>'
+    +'<span class="li-x" role="button" tabindex="0">✕</span>';
+  $('.it',li).textContent=text||'';
+  return li;
+}
+function ticketNode(tk){
+  var c=document.createElement('div'); c.className='tcard';
+  c.innerHTML='<div class="tcard-top">'
+    +'<h3 class="t-title edit" contenteditable="true" data-ph="새 티켓 제목…"></h3>'
+    +'<span class="x" role="button" tabindex="0" aria-label="티켓 삭제">✕</span></div>'
+    +'<span class="t-size edit" contenteditable="true" data-ph="규모·기간 (예: small · ~1일)"></span>'
+    +'<ul class="t-items"></ul><button class="addbtn mini add-item" type="button">+ 항목</button>';
+  $('.t-title',c).textContent=(tk&&tk.title)||'';
+  $('.t-size',c).textContent=(tk&&tk.size)||'';
+  var ul=$('.t-items',c);
+  ((tk&&tk.items)||[]).forEach(function(it){ ul.appendChild(itemNode(it)); });
+  return c;
+}
+function acNode(ac){
+  var row=document.createElement('div'); row.className='ac';
+  row.dataset.id=ac.id||('new-'+Date.now()+'-'+Math.random().toString(16).slice(2,6));
+  if(ac.orig!=null) row.dataset.orig=ac.orig;
+  row.innerHTML='<input type="checkbox"'+(ac.accepted!==false?' checked':'')+'>'
+    +'<span class="txt edit" contenteditable="true" data-ph="새 인수 기준 — 검증 가능하게…"></span>'
+    +'<button class="flag'+(ac.flagged?' on':'')+'" type="button">⚑ 모호</button>'
+    +'<span class="x" role="button" tabindex="0" aria-label="삭제">✕</span>';
+  $('.txt',row).textContent=ac.text||'';
+  return row;
+}
+function conNode(con){
+  var row=document.createElement('div'); row.className='con';
+  row.innerHTML='<span class="k edit" contenteditable="true" data-ph="분류"></span>'
+    +'<span class="v edit" contenteditable="true" data-ph="제약·엣지케이스 내용…"></span>'
+    +'<span class="x" role="button" tabindex="0">✕</span>';
+  $('.k',row).textContent=(con&&con.label)||'';
+  $('.v',row).textContent=(con&&con.text)||'';
+  return row;
+}
+
+// ── localStorage restore — survive a browser refresh (P-state) ──
+function applyState(s){
+  $$('.pick').forEach(function(p){p.setAttribute('aria-pressed','false')});
+  if(s.misread){ var pb=$('.pick[data-misread="'+s.misread+'"]'); if(pb) pb.setAttribute('aria-pressed','true'); }
+  $('#misreadNote').value=s.misreadNote||'';
+  $('#misreadNote').style.display=(s.misread==="wrong")?"block":"none";
+  var sc=$('#scope'); sc.innerHTML='';
+  (s.scope||[]).forEach(function(x){ sc.appendChild(chipNode(x)); });
+  var cd=$('#cards'); cd.innerHTML='';
+  (s.tickets||[]).forEach(function(t){ cd.appendChild(ticketNode(t)); });
+  var ac=$('#aclist'); ac.innerHTML='';
+  (s.ac||[]).forEach(function(a){ ac.appendChild(acNode(a)); });
+  var pi=PRIO.indexOf(s.priority); if(pi<0) pi=1;
+  $('#prio').value=pi; $('#prioVal').textContent=PRIO[pi];
+  $('#depText').textContent=s.dependency||'';
+  var cl=$('#conlist'); cl.innerHTML='';
+  (s.constraints||[]).forEach(function(c){ cl.appendChild(conNode(c)); });
+  $('#freeNote').value=s.note||'';
+}
+
 function advisory(s){
   var a=[];
   if(s.misread===null) a.push({t:"helm의 해석이 맞는지 아직 확인 안 됨",jump:"#p-interpret"});
@@ -476,7 +549,7 @@ function render(){
   if(committed) gm.innerHTML="";
   else if(adv.length) gm.innerHTML="복사하면 <b>"+adv.length+"건의 확인 권장 항목</b>도 함께 helm에 전달됩니다";
   else gm.innerHTML="모든 항목이 정리되었습니다 — 깔끔하게 전달됩니다 ✓";
-  try{ localStorage.setItem(SKEY,nj); }catch(e){}
+  try{ localStorage.setItem(SKEY,JSON.stringify(s)); }catch(e){}
 }
 
 $('.askrow').addEventListener('click',function(e){
@@ -501,11 +574,7 @@ $('#scope').addEventListener('click',function(e){
   }
 });
 $('#addScope').addEventListener('click',function(){
-  var c=document.createElement('span');
-  c.className='chip'; c.dataset.s='in';
-  c.innerHTML='<span class="dot"></span><span class="lbl edit" contenteditable="true" data-ph="새 범위 항목…"></span>'
-    +'<span class="st" role="button" tabindex="0">IN</span>'
-    +'<span class="x" role="button" tabindex="0" aria-label="삭제">✕</span>';
+  var c=chipNode({state:'in'});
   $('#scope').appendChild(c); $('.lbl',c).focus(); committed=false; render();
 });
 
@@ -517,12 +586,7 @@ aclist.addEventListener('click',function(e){
 });
 aclist.addEventListener('change',function(){committed=false;render()});
 $('#addAC').addEventListener('click',function(){
-  var row=document.createElement('div');
-  row.className='ac'; row.dataset.id='new-'+Date.now();
-  row.innerHTML='<input type="checkbox" checked>'
-    +'<span class="txt edit" contenteditable="true" data-ph="새 인수 기준 — 검증 가능하게…"></span>'
-    +'<button class="flag" type="button">⚑ 모호</button>'
-    +'<span class="x" role="button" tabindex="0" aria-label="삭제">✕</span>';
+  var row=acNode({accepted:true});
   aclist.appendChild(row); $('.txt',row).focus(); committed=false; render();
 });
 
@@ -531,20 +595,12 @@ $('#cards').addEventListener('click',function(e){
   if(e.target.classList.contains('x')){ card.remove(); committed=false; render(); }
   else if(e.target.classList.contains('li-x')){ e.target.closest('.t-item').remove(); committed=false; render(); }
   else if(e.target.classList.contains('add-item')){
-    var li=document.createElement('li');
-    li.className='t-item';
-    li.innerHTML='<span class="it edit" contenteditable="true" data-ph="세부 항목…"></span>'
-      +'<span class="li-x" role="button" tabindex="0">✕</span>';
+    var li=itemNode('');
     $('.t-items',card).appendChild(li); $('.it',li).focus(); committed=false; render();
   }
 });
 $('#addTicket').addEventListener('click',function(){
-  var c=document.createElement('div');
-  c.className='tcard';
-  c.innerHTML='<div class="tcard-top"><h3 class="t-title edit" contenteditable="true" data-ph="새 티켓 제목…"></h3>'
-    +'<span class="x" role="button" tabindex="0" aria-label="티켓 삭제">✕</span></div>'
-    +'<span class="t-size edit" contenteditable="true" data-ph="규모·기간 (예: small · ~1일)"></span>'
-    +'<ul class="t-items"></ul><button class="addbtn mini add-item" type="button">+ 항목</button>';
+  var c=ticketNode({});
   $('#cards').appendChild(c); $('.t-title',c).focus(); committed=false; render();
 });
 
@@ -552,11 +608,7 @@ $('#conlist').addEventListener('click',function(e){
   if(e.target.classList.contains('x')){ e.target.closest('.con').remove(); committed=false; render(); }
 });
 $('#addCon').addEventListener('click',function(){
-  var row=document.createElement('div');
-  row.className='con';
-  row.innerHTML='<span class="k edit" contenteditable="true">기타</span>'
-    +'<span class="v edit" contenteditable="true" data-ph="제약·엣지케이스 내용…"></span>'
-    +'<span class="x" role="button" tabindex="0">✕</span>';
+  var row=conNode({label:'기타'});
   $('#conlist').appendChild(row); $('.v',row).focus(); committed=false; render();
 });
 
@@ -606,6 +658,12 @@ $('#dlBtn').addEventListener('click',function(){
   document.body.appendChild(a); a.click();
   setTimeout(function(){a.remove();URL.revokeObjectURL(a.href);},0);
 });
+
+(function(){
+  var saved=null;
+  try{ saved=localStorage.getItem(SKEY); }catch(e){}
+  if(saved){ try{ applyState(JSON.parse(saved)); }catch(e){} }
+})();
 
 render();
 """
