@@ -620,6 +620,14 @@ document.addEventListener('input',function(e){
   if(e.target.classList&&e.target.classList.contains('edit')){ committed=false; render(); }
 });
 
+// keyboard access: role=button spans (state badges, delete handles) respond to Enter/Space
+document.addEventListener('keydown',function(e){
+  var t=e.target;
+  if((e.key==="Enter"||e.key===" ")&&t&&t.getAttribute&&t.getAttribute('role')==="button"){
+    e.preventDefault(); t.click();
+  }
+});
+
 $('#advisList').addEventListener('click',function(e){
   var li=e.target.closest('li[data-jump]'); if(!li) return;
   var el=$(li.dataset.jump);
