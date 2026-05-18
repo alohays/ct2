@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import subprocess
 import sys
@@ -65,17 +66,19 @@ Regression fixture.
     )
 
 
-def write_sidecar(path, ticket="001-reconcile-smoke", reviewer="ct2-lens-cc", verdict="approved", round_num=0):
+def write_sidecar(
+    path,
+    ticket="001-reconcile-smoke",
+    reviewer="ct2-lens-cc",
+    verdict="approved",
+    round_num=0,
+    include_timestamp=True,
+    include_sections=True,
+):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        f"""---
-ticket: {ticket}
-reviewer: {reviewer}
-round: {round_num}
-verdict: {verdict}
-timestamp: 2026-05-13T00:10:00Z
----
-
+    timestamp = "timestamp: 2026-05-13T00:10:00Z\n" if include_timestamp else ""
+    body = (
+        f"""
 ## Summary
 Fixture review.
 
@@ -87,9 +90,39 @@ Fixture review.
 
 ## Recommendation
 {verdict} - fixture.
-""",
+"""
+        if include_sections
+        else """
+## Summary
+Fixture review without the full required body.
+"""
+    )
+    path.write_text(
+        f"""---
+ticket: {ticket}
+reviewer: {reviewer}
+round: {round_num}
+verdict: {verdict}
+{timestamp}---
+
+{body}""",
         encoding="utf-8",
     )
+
+
+def load_update_verdict_module():
+    spec = importlib.util.spec_from_file_location("ct2_update_verdict", REPO_ROOT / "bin" / "_ct2_update_verdict.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def read_frontmatter_value(path, key):
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith(f"{key}:"):
+            return line.split(":", 1)[1].strip()
+    return None
 
 
 class ReconcileTest(unittest.TestCase):
@@ -181,6 +214,47 @@ class ReconcileTest(unittest.TestCase):
         self.assertTrue((ct2 / "in-review" / "001-reconcile-smoke.md").exists())
         self.assertFalse((ct2 / "done" / "001-reconcile-smoke.md").exists())
 
+    def test_sidecar_metadata_mismatch_does_not_move_ticket(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-review" / "001-reconcile-smoke.md"
+        write_ticket(ticket)
+        write_sidecar(
+            ct2 / "reviews" / "001-cc-r0.md",
+            ticket="999-other-ticket",
+            reviewer="ct2-lens-cx",
+            round_num=99,
+        )
+        write_sidecar(
+            ct2 / "reviews" / "001-cx-r0.md",
+            ticket="999-other-ticket",
+            reviewer="ct2-lens-cx",
+            round_num=99,
+        )
+
+        proc = self.reconcile(project)
+
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("invalid sidecar", proc.stderr)
+        self.assertTrue(ticket.exists())
+        self.assertFalse((ct2 / "done" / "001-reconcile-smoke.md").exists())
+
+    def test_missing_sidecar_timestamp_or_sections_does_not_move_ticket(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-review" / "001-reconcile-smoke.md"
+        write_ticket(ticket)
+        write_sidecar(ct2 / "reviews" / "001-cc-r0.md", reviewer="ct2-lens-cc", include_timestamp=False)
+        write_sidecar(ct2 / "reviews" / "001-cx-r0.md", reviewer="ct2-lens-cx", include_sections=False)
+
+        proc = self.reconcile(project)
+
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("timestamp is required", proc.stderr)
+        self.assertIn("missing section", proc.stderr)
+        self.assertTrue(ticket.exists())
+        self.assertFalse((ct2 / "done" / "001-reconcile-smoke.md").exists())
+
     def test_discover_reconciles_complete_sidecar_pair(self):
         project = self.make_project()
         ct2 = project / ".ct2"
@@ -192,6 +266,65 @@ class ReconcileTest(unittest.TestCase):
 
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertTrue((ct2 / "done" / "001-reconcile-smoke.md").exists())
+
+    def test_discover_skips_stale_previous_round_pairs(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "in-review" / "001-reconcile-smoke.md", review_round=1)
+        write_sidecar(ct2 / "reviews" / "001-cc-r0.md", reviewer="ct2-lens-cc", verdict="rejected")
+        write_sidecar(ct2 / "reviews" / "001-cx-r0.md", reviewer="ct2-lens-cx", verdict="rejected")
+        write_sidecar(ct2 / "reviews" / "001-cc-r1.md", reviewer="ct2-lens-cc", round_num=1)
+        write_sidecar(ct2 / "reviews" / "001-cx-r1.md", reviewer="ct2-lens-cx", round_num=1)
+
+        proc = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-reconcile", "--discover", project])
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue((ct2 / "done" / "001-reconcile-smoke.md").exists())
+
+    def test_destination_collision_does_not_mutate_in_review_ticket(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-review" / "001-reconcile-smoke.md"
+        done = ct2 / "done" / "001-reconcile-smoke.md"
+        write_ticket(ticket)
+        write_ticket(done, status="done")
+        write_sidecar(ct2 / "reviews" / "001-cc-r0.md", reviewer="ct2-lens-cc")
+        write_sidecar(ct2 / "reviews" / "001-cx-r0.md", reviewer="ct2-lens-cx")
+
+        proc = self.reconcile(project)
+
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("ambiguous ticket state", proc.stderr)
+        self.assertEqual("in-review", read_frontmatter_value(ticket, "status"))
+        self.assertEqual("pending", read_frontmatter_value(ticket, "verdict"))
+        self.assertTrue(done.exists())
+
+    def test_update_verdict_stages_ticket_rewrite_under_ct2_tmp(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-review" / "001-reconcile-smoke.md"
+        write_ticket(ticket)
+        write_sidecar(ct2 / "reviews" / "001-cc-r0.md", reviewer="ct2-lens-cc")
+        write_sidecar(ct2 / "reviews" / "001-cx-r0.md", reviewer="ct2-lens-cx")
+        module = load_update_verdict_module()
+        original_mkstemp = module.tempfile.mkstemp
+        staging_dirs = []
+
+        def spy_mkstemp(*args, **kwargs):
+            staging_dirs.append(Path(kwargs["dir"]).resolve())
+            return original_mkstemp(*args, **kwargs)
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(project)
+            module.tempfile.mkstemp = spy_mkstemp
+            module.rewrite(str(ticket), "approved", ".ct2/reviews/001-cc-r0.md", ".ct2/reviews/001-cx-r0.md")
+        finally:
+            module.tempfile.mkstemp = original_mkstemp
+            os.chdir(old_cwd)
+
+        self.assertEqual([ct2 / ".tmp"], staging_dirs)
+        self.assertEqual([], list((ct2 / "in-review").glob(".*.tmp")))
 
     def test_stale_lock_is_recovered(self):
         project = self.make_project()
