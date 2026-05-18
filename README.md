@@ -281,7 +281,7 @@ Full protocol specifications are in [`spec/`](spec/):
 - Python 3.9+
 - Git 2.5+
 - [Claude Code](https://claude.ai/claude-code) (for helm, forge, lens-cc roles)
-- [Codex CLI](https://github.com/openai/codex) 0.130.0+ (for Codex role skills, goal/app-server preflight, and lens-cx)
+- [Codex CLI](https://github.com/openai/codex) 0.128.0+ (for Codex role skills, goal/app-server preflight, and lens-cx)
 
 ## License
 
