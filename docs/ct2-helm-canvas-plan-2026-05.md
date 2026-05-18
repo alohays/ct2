@@ -409,6 +409,8 @@ Phase 0–2를 구현 완료했다. Phase 3은 본 계획이 처음부터 "점�
 | 완료 게이트 | `tests/test_canvas_lifecycle.py`(9 케이스), `ct2-verify` green, 전체 95 테스트 통과 | ✅ |
 | Phase 3 | 드래그 병합/분할, 의존선 SVG 연결 — 후속 | ⏸ 의도적 후속 |
 
+재검증(2026-05-19): §7 항목을 다시 대조해 누락분을 닫았다 — localStorage **복원**(저장만 있고 복원이 없었음), `role=button` 컨트롤의 **키보드 조작**, 패널 ⑤의 **의존성 그래프 SVG**(데이터 기반·실시간). 전체 96 테스트 + `ct2-verify` green.
+
 ---
 
 ## 부록 A. Helm Canvas 데모
