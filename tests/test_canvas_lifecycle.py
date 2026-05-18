@@ -94,6 +94,23 @@ class CanvasLifecycleTest(unittest.TestCase):
         for external in ("http://", "https://", "src="):
             self.assertNotIn(external, html, "canvas must reference no external resources")
 
+    def test_generated_canvas_js_parses_when_node_available(self):
+        import re
+        import shutil
+
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node not available")
+        project = self.make_project()
+        self.generate(project)
+        html = (project / ".ct2" / "plans" / "canvas" / "open"
+                / "001-demo-plan-r0.canvas.html").read_text(encoding="utf-8")
+        scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
+        js_path = project / "canvas.js"
+        js_path.write_text(scripts[-1], encoding="utf-8")
+        res = run_cmd([node, "--check", js_path], cwd=project)
+        self.assertEqual(res.returncode, 0, res.stderr)
+
     # ── recover ───────────────────────────────────────────────────────────
     def test_recover_moves_open_to_answered(self):
         project = self.make_project()
