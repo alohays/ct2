@@ -20,9 +20,9 @@ perform one-shot mutations, and agent runtimes own all continuation loops.
 6. `spec/adapter-format.md` defines agent adapter markdown.
 7. `spec/conformance.md` defines conformance gates.
 
-Existing role, git, evidence, runtime, decision, and eval specs compose with
-this protocol. When a lower-level spec and this document disagree, this document
-is the entry point and the lower-level spec must be aligned.
+Existing role, git, evidence, runtime, decision, helm-canvas, and eval specs
+compose with this protocol. When a lower-level spec and this document disagree,
+this document is the entry point and the lower-level spec must be aligned.
 
 ## Protocol Laws
 
