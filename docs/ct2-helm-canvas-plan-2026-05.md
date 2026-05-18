@@ -392,6 +392,25 @@ helm이 본 계획을 채택하면 아래 순서로 티켓을 끊는다 (1티켓
 
 ---
 
+## 11. 구현 현황 (2026-05-19, `feat/helm-canvas`)
+
+Phase 0–2를 구현 완료했다. Phase 3은 본 계획이 처음부터 "점진적·후속"으로 둔 표현력 강화이므로 후속 작업으로 남긴다.
+
+| 항목 | 산출물 | 상태 |
+|---|---|---|
+| Phase 0 spec | `spec/helm-canvas.md`(신규), `PROTOCOL.md`·`decision-bridge.md`·`plan-evidence.md`·`AGENTS.md` 보강 | ✅ |
+| 디렉터리 | `ct2-init`·`ensure_ct2`가 `plans/canvas/{open,answered,sealed,expired}/` 생성 | ✅ |
+| 캔버스 렌더러 | `bin/_ct2_canvas.py` — 7패널·P1–P5·자기완결 HTML + 토큰 파서 | ✅ |
+| CLI | `bin/ct2-helm-canvas` — `generate`/`recover`/`seal`/`expire` one-shot 서브커맨드 | ✅ |
+| provider format | `ct2-decision format --html` | ✅ |
+| 인박스 표시 | `ct2-status`의 "open canvases" 카운트 | ✅ |
+| 워크플로 | claude·codex helm SKILL.md의 `plan-canvas` | ✅ |
+| Phase 2 파일 드롭 | 캔버스 "다운로드" 버튼 + `ct2-helm-canvas recover --file` | ✅ |
+| 완료 게이트 | `tests/test_canvas_lifecycle.py`(9 케이스), `ct2-verify` green, 전체 95 테스트 통과 | ✅ |
+| Phase 3 | 드래그 병합/분할, 의존선 SVG 연결 — 후속 | ⏸ 의도적 후속 |
+
+---
+
 ## 부록 A. Helm Canvas 데모
 
 본 계획의 컨셉을 글이 아니라 화면으로 확인할 수 있도록, 동작하는 데모 캔버스를 함께 제공한다:
