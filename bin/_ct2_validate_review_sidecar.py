@@ -14,6 +14,12 @@ REQUIRED_SECTIONS = (
 )
 
 
+def accepted_ticket_values(expected_ticket: str) -> set[str]:
+    stem = expected_ticket[:-3] if expected_ticket.endswith(".md") else expected_ticket
+    ticket_id = stem.split("-", 1)[0]
+    return {ticket_id, stem, f"{stem}.md"}
+
+
 def read_frontmatter(content: str) -> dict[str, str]:
     match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
     if not match:
@@ -48,8 +54,9 @@ def main() -> int:
         return 1
 
     errors: list[str] = []
-    if fm.get("ticket") != expected_ticket:
-        errors.append(f"ticket must be {expected_ticket!r}")
+    accepted_tickets = accepted_ticket_values(expected_ticket)
+    if fm.get("ticket") not in accepted_tickets:
+        errors.append(f"ticket must be one of {sorted(accepted_tickets)!r}")
     if fm.get("reviewer") != expected_reviewer:
         errors.append(f"reviewer must be {expected_reviewer!r}")
     if fm.get("round") != expected_round:

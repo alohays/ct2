@@ -1,7 +1,7 @@
 {
   "name": "ct2",
   "version": "0.1.0",
-  "description": "CT2 Codex role skills for a file-backed multi-agent engineering harness with dual independent review.",
+  "description": "CT2 Codex role skills for a file-backed multi-agent code operations protocol with dual independent review.",
   "author": {
     "name": "CT2"
   },
@@ -11,14 +11,14 @@
   "keywords": [
     "ct2",
     "codex",
-    "harness",
+    "protocol",
     "multi-agent",
     "review"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "CT2",
-    "shortDescription": "Codex roles for the CT2 harness",
+    "shortDescription": "Codex roles for the CT2 protocol",
     "longDescription": "CT2 packages Codex-native planner, forge, status, autonomous planning, and independent reviewer role skills for file-backed ticket workflows with dual review.",
     "developerName": "CT2",
     "category": "Engineering",

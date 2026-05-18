@@ -31,9 +31,10 @@ REJECTED   {count}
 ESCALATED  {count}
 DONE       {count}
 ─────────────────────────────────────────────────────────
-Forge:    {ACTIVE (heartbeat Xm ago) | IDLE | DEAD (last seen Xh ago)}
-Lens-CC:  {ACTIVE (heartbeat Xm ago) | IDLE | DEAD}
-Lens-CX:  {ACTIVE (heartbeat Xm ago) | IDLE | DEAD}
+WORKFLOW
+  in-progress tickets: {N}
+  in-review tickets:   {N}
+  missing sidecars:    {N}
 ─────────────────────────────────────────────────────────
 INBOX
   ct2-helm    {N} unread   {type} from {role} [{ticket-id}]
@@ -51,14 +52,12 @@ For each ticket in `.ct2/in-review/`:
 - Check for `.ct2/reviews/{id}-cx-r{round}.md` → cx verdict
 - Show as `(r{round}: cc={verdict}, cx={verdict})` where verdict is `pending`, `approved`, or `rejected`
 
-### How to Read Heartbeat Status
+### How to Read Workflow State
 
-For each role (`forge`, `lens-cc`, `lens-cx`):
-- Read `.ct2/.meta/ct2-{role}.heartbeat` modification time
-- `heartbeat_timeout_min` from `harness.yaml` (default 15)
-- If file missing: `IDLE`
-- If mtime < timeout: `ACTIVE (heartbeat Xm ago)`
-- If mtime ≥ timeout: `DEAD (last seen Xh ago)`
+- Count `.ct2/in-progress/*.md`.
+- Count `.ct2/in-review/*.md`.
+- For every in-review ticket, read `review-round` and count missing
+  `.ct2/reviews/{id}-cc-r{round}.md` and `{id}-cx-r{round}.md` sidecars.
 
 ### How to Count Inbox Unread
 

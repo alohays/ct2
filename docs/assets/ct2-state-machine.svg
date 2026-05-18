@@ -1,126 +1,116 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="760" viewBox="0 0 1600 760" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="620" viewBox="0 0 1400 620" role="img" aria-labelledby="title desc">
   <title id="title">CT2 ticket state machine</title>
-  <desc id="desc">A precise CT2 state machine diagram showing the normal ticket path, review outcomes, rejected rework, duration circuit breaker, and manual ct2-revise recovery.</desc>
+  <desc id="desc">A flat state machine diagram showing the CT2 ticket lifecycle, dual-review gate, rejected rework, escalation, and manual revise recovery.</desc>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#fbfaf6"/>
-      <stop offset="0.62" stop-color="#f5f8f8"/>
-      <stop offset="1" stop-color="#faf6ef"/>
-    </linearGradient>
-    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
-      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#20333a" flood-opacity="0.08"/>
-    </filter>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8.4" refY="5" markerWidth="8" markerHeight="8" orient="auto">
-      <path d="M0 0 L10 5 L0 10 z" fill="#20333a"/>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.3" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#243238"/>
     </marker>
-    <marker id="mutedArrow" viewBox="0 0 10 10" refX="8.4" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-      <path d="M0 0 L10 5 L0 10 z" fill="#687c80"/>
+    <marker id="mutedArrow" viewBox="0 0 10 10" refX="8.3" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#778588"/>
     </marker>
     <style>
-      .title { font: 800 44px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #20333a; letter-spacing: 0; }
-      .subtitle { font: 650 20px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526a70; letter-spacing: 0; }
-      .section { font: 800 14px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #687c80; letter-spacing: 0.8px; text-transform: uppercase; }
-      .stateName { font: 800 22px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #20333a; letter-spacing: 0; }
-      .stateNote { font: 650 14px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526a70; letter-spacing: 0; }
-      .edgeText { font: 750 13px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526a70; letter-spacing: 0; }
-      .legend { font: 650 14px ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526a70; letter-spacing: 0; }
-      .state { fill: #fffefa; stroke: #20333a; stroke-width: 2.8; filter: url(#softShadow); }
-      .review { fill: #f4fbfa; stroke: #20333a; stroke-width: 2.8; filter: url(#softShadow); }
-      .done { fill: #eaf7ef; stroke: #2d6b4f; stroke-width: 2.8; filter: url(#softShadow); }
-      .rejected { fill: #fff5df; stroke: #7a5b20; stroke-width: 2.6; filter: url(#softShadow); }
-      .escalated { fill: #fff0ea; stroke: #7a4a3d; stroke-width: 2.6; filter: url(#softShadow); }
-      .gate { fill: #fffefa; stroke: #20333a; stroke-width: 2.8; filter: url(#softShadow); }
-      .arrow { fill: none; stroke: #20333a; stroke-width: 3.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
-      .muted { fill: none; stroke: #687c80; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#mutedArrow); }
-      .dashed { fill: none; stroke: #687c80; stroke-width: 2.7; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 8 9; marker-end: url(#mutedArrow); }
-      .rule { stroke: #d7e1e0; stroke-width: 2; }
-      .track { stroke: #d7e1e0; stroke-width: 2; stroke-dasharray: 4 8; }
+      .bg { fill: #f7f8f5; }
+      .state { fill: #ffffff; stroke: #243238; stroke-width: 2.4; }
+      .review { fill: #f3faf8; stroke: #243238; stroke-width: 2.4; }
+      .gate { fill: #fff7e6; stroke: #8a6a26; stroke-width: 2.2; }
+      .done { fill: #eaf6ef; stroke: #2e6c52; stroke-width: 2.2; }
+      .reject { fill: #fff5df; stroke: #8a6a26; stroke-width: 2.2; }
+      .esc { fill: #fff0ea; stroke: #8a4f40; stroke-width: 2.2; }
+      .title { font-family: Helvetica, Arial, sans-serif; font-size: 34px; font-weight: 700; fill: #243238; letter-spacing: 0; }
+      .subtitle { font-family: Helvetica, Arial, sans-serif; font-size: 16px; font-weight: 500; fill: #5a696d; letter-spacing: 0; }
+      .label { font-family: Helvetica, Arial, sans-serif; font-size: 19px; font-weight: 700; fill: #243238; letter-spacing: 0; }
+      .small { font-family: Helvetica, Arial, sans-serif; font-size: 13px; font-weight: 500; fill: #5a696d; letter-spacing: 0; }
+      .edge { font-family: Menlo, Consolas, monospace; font-size: 12px; font-weight: 600; fill: #5a696d; letter-spacing: 0; }
+      .mono { font-family: Menlo, Consolas, monospace; font-size: 14px; font-weight: 600; fill: #243238; letter-spacing: 0; }
+      .line { fill: none; stroke: #243238; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+      .muted { fill: none; stroke: #778588; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#mutedArrow); }
+      .dash { fill: none; stroke: #778588; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 7 8; marker-end: url(#mutedArrow); }
+      .rule { stroke: #dce4e1; stroke-width: 2; }
     </style>
   </defs>
 
-  <rect width="1600" height="760" fill="url(#bg)"/>
-  <text x="76" y="76" class="title">Ticket State Machine</text>
-  <text x="76" y="112" class="subtitle">State is the containing directory. Automated transitions are atomic mv operations.</text>
-  <line x1="76" y1="146" x2="1524" y2="146" class="rule"/>
+  <rect class="bg" width="1400" height="620"/>
+  <text x="64" y="60" class="title">Ticket state is the directory</text>
+  <text x="64" y="92" class="subtitle">Every automated transition is an atomic mv. Terminal success still requires both independent sidecars.</text>
+  <line x1="64" y1="120" x2="1336" y2="120" class="rule"/>
 
-  <text x="88" y="190" class="section">normal path</text>
-  <line x1="96" y1="296" x2="1468" y2="296" class="track"/>
-
-  <g transform="translate(96 250)">
-    <rect x="0" y="0" width="166" height="92" rx="10" class="state"/>
-    <text x="50" y="37" class="stateName">draft/</text>
-    <text x="35" y="62" class="stateNote">helm authors</text>
+  <g transform="translate(74 190)">
+    <rect class="state" width="150" height="76" rx="8"/>
+    <text x="47" y="32" class="label">draft/</text>
+    <text x="31" y="54" class="small">helm authors</text>
   </g>
-  <g transform="translate(314 250)">
-    <rect x="0" y="0" width="178" height="92" rx="10" class="state"/>
-    <text x="45" y="37" class="stateName">backlog/</text>
-    <text x="32" y="62" class="stateNote">sealed queue</text>
+  <g transform="translate(274 190)">
+    <rect class="state" width="160" height="76" rx="8"/>
+    <text x="43" y="32" class="label">backlog/</text>
+    <text x="35" y="54" class="small">sealed queue</text>
   </g>
-  <g transform="translate(550 250)">
-    <rect x="0" y="0" width="214" height="92" rx="10" class="state"/>
-    <text x="34" y="37" class="stateName">in-progress/</text>
-    <text x="40" y="62" class="stateNote">forge working</text>
+  <g transform="translate(494 190)">
+    <rect class="state" width="190" height="76" rx="8"/>
+    <text x="28" y="32" class="label">in-progress/</text>
+    <text x="39" y="54" class="small">forge owns patch</text>
   </g>
-  <g transform="translate(830 250)">
-    <rect x="0" y="0" width="190" height="92" rx="10" class="review"/>
-    <text x="34" y="37" class="stateName">in-review/</text>
-    <text x="30" y="62" class="stateNote">dual review</text>
+  <g transform="translate(744 190)">
+    <rect class="review" width="170" height="76" rx="8"/>
+    <text x="30" y="32" class="label">in-review/</text>
+    <text x="24" y="54" class="small">sidecars pending</text>
   </g>
-  <g transform="translate(1120 238)">
-    <path d="M58 0 L116 58 L58 116 L0 58 Z" class="gate"/>
-    <text x="31" y="54" class="edgeText">reconciler</text>
-    <text x="37" y="73" class="edgeText">verdict</text>
+  <g transform="translate(974 178)">
+    <path class="gate" d="M54 0 L108 54 L54 108 L0 54 Z"/>
+    <text x="28" y="50" class="edge">AND</text>
+    <text x="18" y="68" class="edge">reconcile</text>
   </g>
-  <g transform="translate(1360 250)">
-    <rect x="0" y="0" width="156" height="92" rx="10" class="done"/>
-    <text x="48" y="37" class="stateName">done/</text>
-    <text x="25" y="62" class="stateNote">both approve</text>
+  <g transform="translate(1210 190)">
+    <rect class="done" width="150" height="76" rx="8"/>
+    <text x="48" y="32" class="label">done/</text>
+    <text x="22" y="54" class="small">both approve</text>
   </g>
 
-  <path class="arrow" d="M262 296 H292"/>
-  <text x="274" y="234" class="edgeText">ct2-seal</text>
-  <path class="arrow" d="M492 296 H528"/>
-  <text x="502" y="234" class="edgeText">forge pickup</text>
-  <path class="arrow" d="M764 296 H808"/>
-  <text x="775" y="234" class="edgeText">all ACs checked</text>
-  <path class="arrow" d="M1020 296 H1098"/>
-  <text x="1032" y="234" class="edgeText">both sidecars present</text>
-  <path class="arrow" d="M1236 296 H1338"/>
-  <text x="1260" y="234" class="edgeText">cc AND cx approve</text>
+  <path class="line" d="M224 228 H256"/>
+  <text x="226" y="178" class="edge">ct2-seal</text>
+  <path class="line" d="M434 228 H474"/>
+  <text x="442" y="178" class="edge">pickup</text>
+  <path class="line" d="M684 228 H724"/>
+  <text x="686" y="178" class="edge">all ACs checked</text>
+  <path class="line" d="M914 228 H966"/>
+  <text x="922" y="178" class="edge">two sidecars</text>
+  <path class="line" d="M1082 232 H1190"/>
+  <text x="1100" y="178" class="edge">cc AND cx approve</text>
 
-  <text x="88" y="420" class="section">review outcomes and recovery</text>
-  <g transform="translate(844 478)">
-    <rect x="0" y="0" width="184" height="88" rx="10" class="rejected"/>
-    <text x="42" y="36" class="stateName">rejected/</text>
-    <text x="31" y="61" class="stateNote">any reviewer rejects</text>
+  <g transform="translate(736 370)">
+    <rect class="reject" width="178" height="72" rx="8"/>
+    <text x="40" y="30" class="label">rejected/</text>
+    <text x="28" y="52" class="small">any rejection</text>
   </g>
-  <g transform="translate(1092 478)">
-    <rect x="0" y="0" width="194" height="88" rx="10" class="escalated"/>
-    <text x="34" y="36" class="stateName">escalated/</text>
-    <text x="34" y="61" class="stateNote">review-round limit</text>
+  <g transform="translate(984 370)">
+    <rect class="esc" width="188" height="72" rx="8"/>
+    <text x="32" y="30" class="label">escalated/</text>
+    <text x="24" y="52" class="small">round limit</text>
   </g>
 
-  <path class="dashed" d="M1178 354 V436 H936 V462"/>
-  <text x="944" y="450" class="edgeText">any rejected</text>
-  <path class="dashed" d="M1178 354 V436 H1189 V462"/>
-  <text x="1194" y="450" class="edgeText">max rounds</text>
+  <path class="dash" d="M1028 286 V334 H825 V354"/>
+  <text x="830" y="344" class="edge">if any rejected</text>
+  <path class="dash" d="M1028 286 V334 H1078 V354"/>
+  <text x="1084" y="344" class="edge">if max rounds</text>
+  <path class="dash" d="M736 406 H589 C560 406 536 382 536 350 V286"/>
+  <text x="590" y="390" class="edge">rework: review-round++</text>
 
-  <path class="dashed" d="M844 522 H660 C630 522 606 498 606 468 V364"/>
-  <text x="662" y="506" class="edgeText">rework: review-round++</text>
+  <path class="muted" d="M590 190 C558 148 410 146 354 176"/>
+  <text x="414" y="152" class="edge">duration circuit breaker -> backlog/</text>
 
-  <path class="muted" d="M660 250 C632 204 548 194 404 194 C376 194 360 214 360 238"/>
-  <text x="424" y="178" class="edgeText">duration circuit breaker -> backlog/</text>
+  <path class="dash" d="M825 442 V512 H149 V286"/>
+  <path class="dash" d="M1078 442 V512 H149 V286"/>
+  <text x="198" y="500" class="edge">ct2-revise: archive sidecars, reset frontmatter, return to draft/</text>
 
-  <path class="dashed" d="M936 566 V626 H170 V364"/>
-  <path class="dashed" d="M1189 566 V626 H170 V364"/>
-  <text x="216" y="612" class="edgeText">ct2-revise: archive sidecars, reset frontmatter, return to draft/</text>
-
-  <g transform="translate(96 678)">
-    <rect x="0" y="0" width="336" height="46" rx="9" fill="#fffefa" stroke="#9baeb0" stroke-width="2"/>
-    <text x="24" y="29" class="legend">done/ has only one path: both reviewers approve</text>
-    <rect x="370" y="0" width="258" height="46" rx="9" fill="#fffefa" stroke="#9baeb0" stroke-width="2"/>
-    <text x="394" y="29" class="legend">state = containing directory</text>
-    <rect x="662" y="0" width="296" height="46" rx="9" fill="#fffefa" stroke="#9baeb0" stroke-width="2"/>
-    <text x="686" y="29" class="legend">review sidecars are immutable</text>
+  <g transform="translate(74 548)">
+    <rect class="state" width="290" height="38" rx="8"/>
+    <text x="22" y="25" class="mono">done/ has exactly one path</text>
+  </g>
+  <g transform="translate(396 548)">
+    <rect class="state" width="310" height="38" rx="8"/>
+    <text x="22" y="25" class="mono">review sidecars are immutable</text>
+  </g>
+  <g transform="translate(738 548)">
+    <rect class="state" width="322" height="38" rx="8"/>
+    <text x="22" y="25" class="mono">reconciler owns verdict fields</text>
   </g>
 </svg>

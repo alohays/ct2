@@ -105,7 +105,8 @@ The current hard-coded pool size (10) is a bottleneck under production load.
 
 ## Review Sidecar Format
 
-Stored in `.ct2/reviews/{ticket-id}-{cc|cx}-r{n}.md`. See `spec/review-protocol.md`.
+Stored in `.ct2/reviews/{ticket-id}-{cc|cx}-r{n}.md`. See
+`spec/sidecar-format.md`.
 
 ## Priority Pickup Order
 

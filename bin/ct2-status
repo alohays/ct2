@@ -131,25 +131,26 @@ def list_state(state_dir: Path, state_label: str, extra_fn=None):
             review_info = f" {get_review_status(t, reviews_dir)}" if state_label == "IN-REVIEW" else ""
             print(f"{'':>13}  {t.name}{prio_tag}{review_info}")
 
-def heartbeat_status(role: str) -> str:
-    hb_path = ct2_dir / ".meta" / f"ct2-{role}.heartbeat"
-    timeout_path = ct2_dir / "config" / "harness.yaml"
-
-    timeout_min = 15
-    try:
-        cfg = timeout_path.read_text()
-        m = re.search(r'heartbeat_timeout_min:\s*(\d+)', cfg)
-        if m:
-            timeout_min = int(m.group(1))
-    except Exception:
-        pass
-
-    if not hb_path.exists():
-        return "IDLE"
-    elapsed = time.time() - hb_path.stat().st_mtime
-    if elapsed > timeout_min * 60:
-        return f"DEAD (last seen {age_str(hb_path)})"
-    return f"ACTIVE (heartbeat {age_str(hb_path)})"
+def workflow_summary():
+    in_progress = list((ct2_dir / "in-progress").glob("*.md")) if (ct2_dir / "in-progress").is_dir() else []
+    in_review = list((ct2_dir / "in-review").glob("*.md")) if (ct2_dir / "in-review").is_dir() else []
+    pending_reviews = 0
+    reviews_dir = ct2_dir / "reviews"
+    for ticket in in_review:
+        fm = read_frontmatter(ticket)
+        ticket_id = re.match(r"^(\d+)", ticket.stem)
+        if not ticket_id:
+            continue
+        tid = ticket_id.group(1)
+        round_num = fm.get("review-round", "0")
+        if not (reviews_dir / f"{tid}-cc-r{round_num}.md").exists():
+            pending_reviews += 1
+        if not (reviews_dir / f"{tid}-cx-r{round_num}.md").exists():
+            pending_reviews += 1
+    print("WORKFLOW")
+    print(f"  in-progress tickets: {len(in_progress)}")
+    print(f"  in-review tickets:   {len(in_review)}")
+    print(f"  missing sidecars:    {pending_reviews}")
 
 def inbox_summary():
     inbox_dir = ct2_dir / "inbox"
@@ -299,9 +300,7 @@ list_state(ct2_dir / "escalated",   "ESCALATED")
 list_state(ct2_dir / "done",        "DONE")
 
 print(SEP)
-print(f"Forge:    {heartbeat_status('forge')}")
-print(f"Lens-CC:  {heartbeat_status('lens-cc')}")
-print(f"Lens-CX:  {heartbeat_status('lens-cx')}")
+workflow_summary()
 print(SEP)
 print("INBOX")
 inbox_summary()

@@ -2,7 +2,7 @@
 # _ct2_update_verdict.py — Single source of truth for ticket frontmatter
 # updates performed by the reconciler.
 #
-# Callers: ct2-lens-cx (TUI/daemon) and ct2-lens-cc (via reconciler-ref).
+# Callers: ct2-reconcile and legacy role references.
 # Keeping this logic in one place prevents the regex drift we hit when each
 # reconciler had its own copy (a subtle bug where the `sidecar:` nested key
 # was never updated because the pattern could not span the intermediate
@@ -19,6 +19,7 @@
 #   cx_sidecar    Path to .ct2/reviews/{id}-cx-r{n}.md
 #
 # What gets written:
+#   - top-level `status:`     <- done | rejected | escalated, derived from verdict
 #   - top-level `verdict:`    <- argument
 #   - top-level `updated:`    <- now (UTC, second precision)
 #   - review-status.lens-claude.status   <- verdict field parsed from cc_sidecar
@@ -32,7 +33,10 @@
 #   2  ticket file missing or unparseable
 import re
 import sys
+import os
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 def extract_verdict(path: str) -> str:
@@ -50,7 +54,14 @@ def rewrite(ticket_path: str, verdict: str, cc_sidecar: str, cx_sidecar: str) ->
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    status = {
+        "approved": "done",
+        "rejected": "rejected",
+        "escalated": "escalated",
+    }[verdict]
+
     # Top-level scalar fields — anchored to line start via re.MULTILINE.
+    c = re.sub(r"^(status:\s*).*$", rf"\g<1>{status}", c, flags=re.MULTILINE)
     c = re.sub(r"^(verdict:\s*).*$", rf"\g<1>{verdict}", c, flags=re.MULTILINE)
     c = re.sub(r"^(updated:\s*).*$", rf"\g<1>{now}", c, flags=re.MULTILINE)
 
@@ -72,8 +83,17 @@ def rewrite(ticket_path: str, verdict: str, cc_sidecar: str, cx_sidecar: str) ->
         c,
     )
 
-    with open(ticket_path, "w") as f:
+    ticket = Path(ticket_path).resolve()
+    ct2_dir = next((parent for parent in ticket.parents if parent.name == ".ct2"), None)
+    if ct2_dir is None:
+        raise OSError(f"cannot locate .ct2 ancestor for {ticket_path}")
+    tmp_dir = ct2_dir / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    prefix = f".{os.path.basename(ticket_path)}."
+    fd, tmp_name = tempfile.mkstemp(prefix=prefix, suffix=".tmp", dir=str(tmp_dir))
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(c)
+    os.replace(tmp_name, ticket_path)
 
 
 def main() -> int:

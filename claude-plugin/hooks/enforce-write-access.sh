@@ -39,8 +39,13 @@ deny() {
   exit 2
 }
 
+state_path_re="${CT2}/(draft|backlog|in-progress|in-review|rejected|escalated|done)/"
+
 # ── Edit / Write guard ────────────────────────────────────────────────────────
 if { [ "$TOOL" = "Edit" ] || [ "$TOOL" = "Write" ]; } && [ -n "$FILE" ]; then
+  if [[ "$FILE" == "${CT2}"/reviews/*.md && -e "$FILE" ]]; then
+    deny "cannot overwrite existing review sidecar (sidecars are immutable)"
+  fi
   case "$ROLE" in
     forge)
       [[ "$FILE" == "${CT2}"/reviews/* ]]   && deny "cannot write to reviews/ (verdicts are read-only for forge)"
@@ -75,6 +80,13 @@ fi
 # Catches obvious patterns: redirect (>), mv, cp targeting protected paths.
 # Not exhaustive — defense-in-depth layer, not airtight.
 if [ "$TOOL" = "Bash" ] && [ -n "$CMD" ]; then
+  if echo "$CMD" | grep -qE "\bcp\b" && echo "$CMD" | grep -qE "$state_path_re"; then
+    deny "state transitions must use mv, never cp"
+  fi
+  if echo "$CMD" | grep -qE "(>|>>)[[:space:]]*['\"]?${CT2}/reviews/|\\btee\\b.*${CT2}/reviews/"; then
+    deny "write review sidecars through .ct2/.tmp/ then mv; do not redirect directly into reviews/"
+  fi
+
   PROTECTED=()
   case "$ROLE" in
     forge)   PROTECTED=("${CT2}/reviews/" "${CT2}/done/" "${CT2}/draft/" "${CT2}/escalated/") ;;

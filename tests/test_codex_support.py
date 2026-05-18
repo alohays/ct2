@@ -136,7 +136,7 @@ class CodexSupportTest(unittest.TestCase):
             ".tmp",
         ):
             (ct2 / rel).mkdir(parents=True, exist_ok=True)
-        (ct2 / "config" / "harness.yaml").write_text("heartbeat_timeout_min: 15\n", encoding="utf-8")
+        (ct2 / "config" / "harness.yaml").write_text("max_review_rounds: 3\n", encoding="utf-8")
         return project
 
     def test_forge_goal_audit_requires_terminal_state_and_dual_sidecars(self):
@@ -474,7 +474,7 @@ Missing required sections.
 
     def test_codex_plugin_and_role_skills_expose_required_contract_sections(self):
         plugin = json.loads((REPO_ROOT / "codex-plugin" / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertIn("harness", plugin["description"].lower())
+        self.assertIn("protocol", plugin["description"].lower())
         self.assertEqual("./skills/", plugin["skills"])
 
         expected = {

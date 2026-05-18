@@ -260,7 +260,7 @@ def main() -> int:
         if not schema_report["request_input"]:
             degradations.append("app-server schema lacks requestUserInput; using inbox fallback")
     else:
-        degradations.append("app-server schema generation failed; fall back to TUI or codex exec")
+        degradations.append("app-server schema generation failed; fall back to codex exec")
         schema_report["stderr"] = schema_res["stderr"].strip()
     shutil.rmtree(schema_dir, ignore_errors=True)
     report["schema"] = schema_report
@@ -290,10 +290,6 @@ def main() -> int:
         "repo_plugin_skill_root": str(repo_skill_root),
         "required": skill_report,
     }
-
-    report["tmux"] = {"ok": shutil.which("tmux") is not None}
-    if not report["tmux"]["ok"]:  # type: ignore[index]
-        degradations.append("tmux missing; ct2-lens-cx-tui unavailable, use codex exec path")
 
     sandbox_report = {
         "role_defaults": {

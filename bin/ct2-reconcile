@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+"""One-shot CT2 review reconciler."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+LOCK_TTL_SECONDS = 600
+VALID_VERDICTS = {"approved", "rejected"}
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def compact_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def frontmatter_value(path: Path, key: str, default: str = "") -> str:
+    try:
+        match = re.search(rf"^{re.escape(key)}:\s*([^\n#]+)", read_text(path), re.MULTILINE)
+    except OSError:
+        return default
+    if not match:
+        return default
+    return match.group(1).strip().strip('"')
+
+
+def sidecar_verdict(path: Path) -> str:
+    verdict = frontmatter_value(path, "verdict", "pending")
+    return verdict if verdict in VALID_VERDICTS else "invalid"
+
+
+def max_review_rounds(ct2_dir: Path) -> int:
+    try:
+        cfg = read_text(ct2_dir / "config" / "harness.yaml")
+    except OSError:
+        return 3
+    match = re.search(r"max_review_rounds:\s*(\d+)", cfg)
+    return int(match.group(1)) if match else 3
+
+
+def lock_is_live(lock: Path) -> bool:
+    try:
+        pid_text = lock.read_text(encoding="utf-8").strip()
+        pid = int(pid_text)
+    except (OSError, ValueError):
+        return False
+    age = datetime.now(timezone.utc).timestamp() - lock.stat().st_mtime
+    if age >= LOCK_TTL_SECONDS:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def acquire_lock(ct2_dir: Path, ticket_id: str, round_num: str) -> tuple[Path | None, bool]:
+    meta = ct2_dir / ".meta"
+    meta.mkdir(parents=True, exist_ok=True)
+    lock = meta / f"{ticket_id}-r{round_num}-reconcile.lock"
+    try:
+        fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        if lock_is_live(lock):
+            return None, False
+        try:
+            lock.unlink()
+        except OSError:
+            return None, False
+        try:
+            fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        except FileExistsError:
+            return None, False
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(f"{os.getpid()}\n")
+    return lock, True
+
+
+def find_ticket(ct2_dir: Path, ticket_id: str) -> Path | None:
+    matches = sorted((ct2_dir / "in-review").glob(f"{ticket_id}-*.md"))
+    if not matches:
+        return None
+    if len(matches) > 1:
+        raise RuntimeError(f"ambiguous in-review ticket id {ticket_id}: {', '.join(p.name for p in matches)}")
+    return matches[0]
+
+
+def update_ticket(script_dir: Path, project_dir: Path, ticket: Path, verdict: str, ticket_id: str, round_num: str) -> int:
+    helper = script_dir / "_ct2_update_verdict.py"
+    cc = f".ct2/reviews/{ticket_id}-cc-r{round_num}.md"
+    cx = f".ct2/reviews/{ticket_id}-cx-r{round_num}.md"
+    proc = subprocess.run(
+        [sys.executable, str(helper), str(ticket), verdict, cc, cx],
+        cwd=str(project_dir),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stderr)
+    return proc.returncode
+
+
+def validate_review_sidecar(script_dir: Path, sidecar: Path, reviewer: str, round_num: str, ticket_stem: str) -> int:
+    validator = script_dir / "_ct2_validate_review_sidecar.py"
+    proc = subprocess.run(
+        [sys.executable, str(validator), str(sidecar), reviewer, round_num, ticket_stem],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stderr)
+    return proc.returncode
+
+
+def send_escalation(ct2_dir: Path, actor: str, ticket_name: str, round_num: str, max_rounds: int) -> None:
+    inbox = ct2_dir / "inbox" / "ct2-helm"
+    tmp_dir = ct2_dir / ".tmp"
+    inbox.mkdir(parents=True, exist_ok=True)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    msgid = f"msg-{compact_now()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    text = f"""---
+id: {msgid}
+from: {actor}
+to: ct2-helm
+type: escalation
+ticket: {ticket_name}
+timestamp: {now()}
+---
+
+## Subject
+Ticket {ticket_name} - Circuit Breaker Triggered (max_review_rounds={max_rounds})
+
+## Body
+Ticket {ticket_name} failed to pass review after round {round_num}.
+Please inspect the ticket manually and either revise requirements or close it.
+"""
+    fd, tmp_name = tempfile.mkstemp(prefix=f"{msgid}-", dir=str(tmp_dir))
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.replace(tmp_name, inbox / f"{msgid}.md")
+
+
+def git_finalize(project_dir: Path, verdict: str, ticket_id: str) -> None:
+    cmd = shutil.which("ct2-git-finalize")
+    if not cmd:
+        return
+    subprocess.run([cmd, verdict, ticket_id], cwd=str(project_dir), check=False)
+
+
+def reconcile_one(project_dir: Path, ticket_id: str, round_num: str, actor: str) -> int:
+    ct2_dir = project_dir / ".ct2"
+    if not ct2_dir.is_dir():
+        print(f"ct2-reconcile: .ct2/ not found in {project_dir}", file=sys.stderr)
+        return 1
+    if not re.fullmatch(r"\d+", ticket_id) or not re.fullmatch(r"\d+", round_num):
+        print("ct2-reconcile: ticket-id and round must be numeric", file=sys.stderr)
+        return 1
+
+    try:
+        ticket = find_ticket(ct2_dir, ticket_id)
+    except RuntimeError as exc:
+        print(f"ct2-reconcile: {exc}", file=sys.stderr)
+        return 2
+    if ticket is None:
+        print(f"ct2-reconcile: {ticket_id} already terminal or not in-review")
+        return 0
+
+    ticket_round = frontmatter_value(ticket, "review-round", "0")
+    if ticket_round != round_num:
+        print(
+            f"ct2-reconcile: ticket {ticket.name} is round {ticket_round}, not requested round {round_num}",
+            file=sys.stderr,
+        )
+        return 2
+
+    cc_sidecar = ct2_dir / "reviews" / f"{ticket_id}-cc-r{round_num}.md"
+    cx_sidecar = ct2_dir / "reviews" / f"{ticket_id}-cx-r{round_num}.md"
+    if not cc_sidecar.exists() or not cx_sidecar.exists():
+        print(f"ct2-reconcile: {ticket_id} r{round_num} incomplete; waiting for both sidecars")
+        return 0
+
+    lock, acquired = acquire_lock(ct2_dir, ticket_id, round_num)
+    if not acquired:
+        print(f"ct2-reconcile: {ticket_id} r{round_num} locked by another reconciler")
+        return 0
+
+    try:
+        if not ticket.exists():
+            print(f"ct2-reconcile: {ticket_id} r{round_num} already moved by another reconciler")
+            return 0
+
+        script_dir = Path(__file__).resolve().parent
+        validations = (
+            validate_review_sidecar(script_dir, cc_sidecar, "ct2-lens-cc", round_num, ticket.stem),
+            validate_review_sidecar(script_dir, cx_sidecar, "ct2-lens-cx", round_num, ticket.stem),
+        )
+        if any(rc != 0 for rc in validations):
+            return 2
+
+        cc_v = sidecar_verdict(cc_sidecar)
+        cx_v = sidecar_verdict(cx_sidecar)
+        if "invalid" in {cc_v, cx_v}:
+            print(f"ct2-reconcile: invalid sidecar verdicts cc={cc_v} cx={cx_v}", file=sys.stderr)
+            return 2
+
+        if cc_v == "approved" and cx_v == "approved":
+            final_verdict = "approved"
+            dest_state = "done"
+        elif int(round_num) + 1 >= max_review_rounds(ct2_dir):
+            final_verdict = "escalated"
+            dest_state = "escalated"
+        else:
+            final_verdict = "rejected"
+            dest_state = "rejected"
+
+        dest = ct2_dir / dest_state / ticket.name
+        if dest.exists():
+            print(
+                f"ct2-reconcile: ambiguous ticket state: {ticket.name} already exists in {dest_state}/",
+                file=sys.stderr,
+            )
+            return 2
+
+        rc = update_ticket(script_dir, project_dir, ticket, final_verdict, ticket_id, round_num)
+        if rc != 0:
+            return rc
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.rename(ticket, dest)
+        except FileNotFoundError:
+            print(f"ct2-reconcile: {ticket.name} already moved by another reconciler")
+            return 0
+        print(f"ct2-reconcile: {ticket.name} -> {dest_state} (cc={cc_v}, cx={cx_v})")
+
+        if final_verdict == "escalated":
+            send_escalation(ct2_dir, actor, ticket.name, round_num, max_review_rounds(ct2_dir))
+        git_finalize(project_dir, final_verdict, ticket_id)
+        return 0
+    finally:
+        if lock is not None:
+            try:
+                lock.unlink()
+            except OSError:
+                pass
+
+
+def discover_pairs(ct2_dir: Path) -> list[tuple[str, str]]:
+    seen: dict[tuple[str, str], set[str]] = {}
+    for path in (ct2_dir / "reviews").glob("*.md"):
+        match = re.fullmatch(r"(\d+)-(cc|cx)-r(\d+)\.md", path.name)
+        if not match:
+            continue
+        ticket_id, side, round_num = match.groups()
+        seen.setdefault((ticket_id, round_num), set()).add(side)
+    pairs = []
+    for (ticket_id, round_num), sides in seen.items():
+        if sides != {"cc", "cx"}:
+            continue
+        try:
+            ticket = find_ticket(ct2_dir, ticket_id)
+        except RuntimeError:
+            pairs.append((ticket_id, round_num))
+            continue
+        if ticket is None:
+            continue
+        if frontmatter_value(ticket, "review-round", "0") != round_num:
+            continue
+        pairs.append((ticket_id, round_num))
+    return sorted(pairs)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Reconcile CT2 review sidecars")
+    parser.add_argument("args", nargs="*")
+    parser.add_argument("--project-dir", default=".")
+    parser.add_argument("--discover", action="store_true")
+    parser.add_argument("--actor", default=os.environ.get("CT2_RECONCILER_ACTOR", "ct2-reconcile"))
+    ns = parser.parse_args()
+
+    project_dir = Path(ns.project_dir).resolve()
+    if ns.discover:
+        if ns.args:
+            if len(ns.args) != 1:
+                parser.error("--discover accepts at most one project-dir positional")
+            project_dir = Path(ns.args[0]).resolve()
+        ct2_dir = project_dir / ".ct2"
+        if not ct2_dir.is_dir():
+            print(f"ct2-reconcile: .ct2/ not found in {project_dir}", file=sys.stderr)
+            return 1
+        result = 0
+        for ticket_id, round_num in discover_pairs(ct2_dir):
+            result = max(result, reconcile_one(project_dir, ticket_id, round_num, ns.actor))
+        return result
+
+    if len(ns.args) != 2:
+        parser.error("expected {ticket-id} {round}, or --discover [project-dir]")
+    return reconcile_one(project_dir, ns.args[0], ns.args[1], ns.actor)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

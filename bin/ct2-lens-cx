@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# ct2-lens-cx — Dispatch the CT2 lens-cx role through an agent adapter.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "${SCRIPT_DIR}/_ct2_lens_dispatch.py" lens-cx "$@"

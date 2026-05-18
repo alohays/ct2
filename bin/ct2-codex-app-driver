@@ -539,8 +539,8 @@ def main() -> int:
                     if goal_result:
                         persist_app_goal(ct2_dir, args.role, thread_id, objective, previous_thread, goal_result)
                 if re.match(r"turn/", method_name):
-                    heartbeat = ct2_dir / ".meta" / f"{args.role}.app-server.heartbeat"
-                    atomic_write_text(ct2_dir, heartbeat, utc_now() + "\n")
+                    last_seen = ct2_dir / "runtime" / f"{args.role}.app-server.last-seen"
+                    atomic_write_text(ct2_dir, last_seen, utc_now() + "\n")
 
             rid, _ = app.request("thread/goal/get", {"threadId": thread_id})
             pending[rid] = "thread/goal/get"

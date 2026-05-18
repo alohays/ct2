@@ -7,7 +7,8 @@ version: "0.1.0"
 # CT2 Codex Full Support PRD
 
 This document defines the product direction for making CT2 a first-class
-Codex CLI harness, not merely a Claude-first harness with a Codex reviewer.
+Codex CLI protocol participant, not merely a Claude-first workflow with a Codex
+reviewer.
 Implementation details that affect protocol behavior are specified in
 `spec/codex-runtime-contract.md`.
 
@@ -21,7 +22,7 @@ capabilities verified on 2026-05-07:
 | `codex --version` | `codex-cli 0.128.0` |
 | `codex features list` | `goals` enabled, `multi_agent`, `plugins`, `tool_search`, `tool_suggest`, `tool_call_mcp_elicitation`, `browser_use`, `image_generation`, and `apps` available; `default_mode_request_user_input` is not enabled, so request-input must be runtime-gated |
 | `codex app-server generate-json-schema --experimental --out <tmpdir>` | includes `thread/goal/*`, `ToolRequestUserInput*`, `item/tool/requestUserInput`, thread, turn, command, fs, model, config, feature, skill, plugin, and MCP schemas |
-| OpenAI Codex 0.128.0 release | added persisted `/goal` workflows, app-server APIs, model tools, runtime continuation, and TUI controls for create, pause, resume, and clear |
+| OpenAI Codex 0.128.0 release | added persisted `/goal` workflows, app-server APIs, model tools, and runtime continuation controls |
 | OpenAI Codex issue #10384 | request-input was reported unavailable in code mode in Codex 0.93; CT2 must therefore preflight and enable the relevant feature when available instead of assuming every local Codex exposes it |
 | OpenAI Codex docs | document CLI skills, MCP, app-server, non-interactive mode, subagents, slash commands, sandboxing, and command-line options |
 
@@ -39,7 +40,7 @@ Primary references:
 
 ## Product Thesis
 
-CT2 should become a file-backed harness layer that lets Codex run structured,
+CT2 should become a file-backed protocol layer that lets Codex run structured,
 auditable engineering workflows across interactive, headless, and app-server
 runtimes while preserving CT2's core invariants:
 
@@ -60,9 +61,10 @@ CT2 already supports Codex in a narrow lane:
 
 - `codex-plugin/skills/ct2-lens-cx/SKILL.md` defines the Codex reviewer role.
 - `install.sh` symlinks Codex skills into `$CODEX_HOME/skills`.
-- `ct2-lens-cx-tui` starts a visible Codex TUI in tmux and injects scheduled
-  review ticks.
-- `ct2-lens-cx-daemon` provides a legacy headless runner using `codex exec`.
+- `ct2-lens-cx` dispatches the Codex reviewer through
+  `adapters/codex/lens-cx.md`.
+- `ct2-reconcile` is the one-shot terminal-state authority after sidecars are
+  present.
 - `README.md` documents the Codex reviewer path and known limitations.
 
 Gaps:
@@ -71,8 +73,7 @@ Gaps:
   `ct2:helm-auto-cx`, or `ct2:status` skills.
 - CT2 does not yet model Codex thread ids, goal ids, token budgets, or goal
   completion audits.
-- The current visible reviewer loop uses tmux prompt injection rather than
-  Codex app-server control.
+- Codex goal invocation syntax remains version-sensitive and adapter-owned.
 - The Codex "ask user" path is not normalized into CT2's inbox and blocked
   protocols.
 - CT2 does not yet package a full Codex plugin with role skills, metadata,
@@ -97,7 +98,7 @@ Gaps:
 | Skills | Provide `ct2:helm`, `ct2:forge`, `ct2:lens-cx`, `ct2:helm-auto-cx`, and `ct2:status` workflows with progressive disclosure. | Role skills must repeat CT2 writer ownership and atomic write rules. |
 | Plugins | Package CT2 as an installable Codex distribution unit with role skills and optional metadata. | Plugin install must not track `.ct2/` or mutate project source. |
 | `/goal` | Keep a long-running Codex role focused on a concrete CT2 objective until audited complete, paused, or budget-limited. | Goal completion never moves a ticket to `done`; CT2 state machine remains authoritative. |
-| App-server | Replace tmux paste control with JSON-RPC thread, turn, goal, approval, input, model, feature, skill, and fs APIs. | Prefer stdio or unix socket transports; websocket requires explicit auth. |
+| App-server | Drive JSON-RPC thread, turn, goal, approval, input, model, feature, skill, and fs APIs when available. | Prefer stdio or unix socket transports; websocket requires explicit auth. |
 | `request_user_input` / `item/tool/requestUserInput` | Ask bounded clarification questions from Codex-driven helm or app-server clients. | Reviewers do not ask humans for approval; unclear review criteria become blocked/rejected sidecars. |
 | `codex exec` | Headless one-shot or CI-safe role actions, especially sidecar generation and summaries. | Use least-privilege sandbox; output must be schema-validated for machine writes. |
 | `codex review` | Optional extra review aid for diffs or PR-quality checks. | Advisory only; CT2 sidecar verdict remains the authoritative review artifact. |
@@ -151,7 +152,8 @@ Required mappings:
 - Lens-cx goal: drain all goal-scoped Codex review work without violating
   independence. Empty `in-review/` is not completion while upstream helm/forge
   work in the same goal scope can still create reviewable tickets; lens-cx waits
-  with heartbeats instead of declaring early success.
+  with an `upstream_work_pending` wait record instead of declaring early
+  success.
 - Helm-auto-cx goal: continuously plan repository-improvement tickets until the
   initial `/goal` completion conditions for ticket count, ticket quality, and
   total planning scope are satisfied.
@@ -193,19 +195,17 @@ Acceptance:
 
 ### CFS-4: Native App-Server Control Plane
 
-CT2 should evolve from tmux prompt injection to app-server control for Codex
-role sessions.
+CT2 should use app-server control for Codex role sessions when that surface is
+available, while keeping CT2 state changes in one-shot protocol tools.
 
 Acceptance:
 
-- A future driver can start/resume/fork a Codex thread, set or read a goal,
-  start turns, stream events, answer approval/input requests, and update
-  `.ct2/.meta/` heartbeats.
+- A driver can start/resume/fork a Codex thread, set or read a goal, start
+  turns, stream events, answer approval/input requests, and update advisory
+  runtime metadata.
 - The driver stores thread metadata under `.ct2/` using tmpfile-then-`mv`.
 - Stdio or unix socket is the default transport. Websocket requires explicit
   token or signed bearer auth.
-- The tmux TUI remains as a visible fallback for operators who prefer it.
-
 ### CFS-5: Headless And CI-Safe Codex
 
 CT2 must retain a non-interactive path for automated environments.
@@ -244,7 +244,6 @@ Checks:
 - `codex mcp list`
 - required skill links under `$CODEX_HOME/skills` or repo-scoped skill roots
 - sandbox/profile compatibility for the requested role
-- tmux availability for the TUI fallback
 
 Acceptance:
 
@@ -252,7 +251,7 @@ Acceptance:
 - A missing `/goal` feature disables goal mode but does not disable core CT2.
 - A disabled `default_mode_request_user_input` feature triggers setup-time
   enablement for the CT2 Codex profile when policy allows it.
-- A missing app-server falls back to TUI or `codex exec`.
+- A missing app-server falls back to `codex exec`.
 
 ### CFS-8: Controlled Subagent Use
 
@@ -262,7 +261,7 @@ benefit.
 Acceptance:
 
 - Subagent usage is opt-in through explicit prompt, ticket field, or future
-  harness setting.
+  protocol configuration.
 - Worker write scopes are disjoint.
 - Explorer tasks are read-only.
 - Parent roles integrate results and remain responsible for CT2 state writes.
@@ -273,7 +272,7 @@ CT2 should be packaged as a Codex plugin when role coverage is complete.
 
 Acceptance:
 
-- Plugin metadata presents CT2 as a harness, not a generic code assistant.
+- Plugin metadata presents CT2 as a protocol, not a generic code assistant.
 - Bundled skills declare clear trigger conditions and dependencies.
 - Optional `agents/openai.yaml` metadata is used where it improves install,
   display, or dependency handling.
@@ -285,7 +284,7 @@ Codex support must make long-running work inspectable and recoverable.
 
 Acceptance:
 
-- `ct2-status` reports Codex role heartbeat, runtime mode, active thread,
+- `ct2-status` reports CT2 filesystem state, Codex runtime mode, active thread,
   active goal status, and degraded capability warnings when metadata exists.
 - App-server drivers write compact logs under `.ct2/logs/`.
 - Paused, budget-limited, failed, and interrupted goals produce actionable
@@ -342,9 +341,9 @@ Acceptance:
 |-------|-------------|---------------|
 | 0 | Specs and compatibility audit | This PRD plus runtime contract are merged and indexed. |
 | 1 | Codex role parity | Helm, forge, lens-cx, helm-auto-cx, and status Codex skills exist and pass scratch CT2 workflow checks. |
-| 2 | Goal-aware TUI support | Docs and scripts can start Codex roles with `/goal` guidance, record thread metadata, and preserve multi-ticket goal scope manually or semi-automatically. |
+| 2 | Goal-aware adapter support | Docs and scripts can start Codex roles with goal guidance, record thread metadata, and preserve multi-ticket goal scope manually or semi-automatically. |
 | 3 | Request-input setup | `ct2-init` or `ct2-codex-doctor` can enable `default_mode_request_user_input` for the CT2 Codex profile when available and policy allows it. |
-| 4 | App-server driver | CT2 can drive Codex threads, turns, goals, request-input, approvals, waits, and heartbeats without tmux paste. |
+| 4 | App-server driver | CT2 can drive Codex threads, turns, goals, request-input, approvals, and waits while preserving one-shot state mutation. |
 | 5 | Plugin distribution | CT2 installs as a Codex plugin with role skills and preflight checks. |
 | 6 | Advanced orchestration | Optional subagent work, MCP dependency flows, helm-auto-cx planning ledgers, and richer status surfaces are stable. |
 
@@ -382,10 +381,10 @@ Acceptance:
 
 ## Open Questions
 
-- Should CT2 store Codex thread metadata in `.ct2/.meta/` or a dedicated
-  `.ct2/codex/` subtree?
+- Which Codex thread metadata belongs in `.ct2/codex/` versus advisory
+  `.ct2/runtime/` records?
 - Should `ct2-init` offer a Codex-only installation profile?
-- Should goal token budgets be ticket frontmatter, harness config, or an
+- Should goal token budgets be ticket frontmatter, protocol config, or an
   operator-supplied runtime choice?
 - Should multi-ticket forge goals default to a start-time ticket snapshot or a
   live queue that includes tickets added while the goal is active?

@@ -1,6 +1,6 @@
 ---
 name: "ct2:lens-cx"
-description: "Start the CT2 Codex reviewer role inside Codex TUI. Reviews in-review tickets independently and writes ct2-lens-cx sidecars."
+description: "Start the CT2 Codex reviewer role. Reviews in-review tickets independently and writes ct2-lens-cx sidecars."
 ---
 
 # CT2-Lens-CX: Codex Reviewer
@@ -12,13 +12,9 @@ orchestration system.
 
 **Loop**: one idempotent iteration per invocation.
 
-You run inside a normal Codex TUI session. Do not invoke `codex` recursively.
+You run inside a normal Codex session. Do not invoke `codex` recursively.
 Use the current session's tools to inspect code, write your own review sidecar,
 and reconcile only after your sidecar is written.
-
-For continuous visible operation, use `ct2-lens-cx-tui`. It opens a tmux session
-with Codex TUI in the main pane and periodically injects scheduled
-`ct2:lens-cx` tick prompts into that same visible Codex pane.
 
 When attached to a Codex `/goal`, the goal is a role-local continuation aid. It
 does not replace CT2 review sidecars, reconciler verdicts, or ticket state.
@@ -50,7 +46,7 @@ does not replace CT2 review sidecars, reconciler verdicts, or ticket state.
 3. **Load configuration**:
    - `.ct2/config/harness.yaml`
    - `.ct2/config/ct2-lens-cx-role.md`
-   - `.ct2/config/ct2-reconciler-ref.md` only when reconciliation is needed
+   - `spec/sidecar-format.md` and `spec/reconciler.md` when needed
 
 4. **Scan state**:
    - Count `.ct2/in-review/*.md`
@@ -65,15 +61,10 @@ does not replace CT2 review sidecars, reconciler verdicts, or ticket state.
 
 ## Review Iteration
 
-Run exactly one idempotent review iteration. The repeat interval is owned by the
-caller:
+Run exactly one idempotent review iteration. Repetition is owned by the agent's
+native goal/background/task primitive or by an external scheduler.
 
-- `ct2-lens-cx-tui` reads `.ct2/config/harness.yaml` key
-  `lens_cx.poll_interval_sec`.
-- If the key is missing, the fallback is 180 seconds.
-- Manual `ct2:lens-cx` use should perform one iteration and then stop.
-
-### Step 1: Identity Refresh + Heartbeat
+### Step 1: Identity Refresh
 
 Re-anchor identity:
 
@@ -81,11 +72,6 @@ Re-anchor identity:
 > work from ct2-forge. I do not plan features, implement code, or interact with
 > users. I write structured verdict sidecars and run reconciliation only after
 > my sidecar exists.
-
-Update heartbeat:
-```bash
-date -u > .ct2/.meta/ct2-lens-cx.heartbeat
-```
 
 ### Step 2: Poll Inbox
 
@@ -177,20 +163,18 @@ sidecar first. Remove the temp file and skip reconciliation for that ticket.
 
 Only after writing your own cx sidecar, check whether the cc sidecar exists.
 
-If `.ct2/reviews/{ticket_id}-cc-r{round}.md` exists:
+Run the one-shot reconciler. It is safe to call even if the cc sidecar is still
+missing:
 
-1. Load `.ct2/config/ct2-reconciler-ref.md`.
-2. Execute its reconciler with `CT2_RECONCILER_ACTOR=ct2-lens-cx` in the shell
-   environment when sending escalation messages.
-3. Reconciler responsibilities:
-   - acquire the O_EXCL lockfile
-   - read both sidecar verdicts
-   - update ticket verdict via `_ct2_update_verdict.py`
-   - move the ticket from `in-review/` to `done/`, `rejected/`, or `escalated/`
-   - send escalation to `ct2-helm` when max review rounds is reached
-   - call `ct2-git-finalize <verdict> <ticket-id>` (fail-soft): squash-merges
-     the PR on approval when `git_auto_merge_on_approval: true`, posts a
-     comment on escalation, no-op on rejection. See `spec/git-workflow.md`.
+```bash
+CT2_RECONCILER_ACTOR=ct2-lens-cx ct2-reconcile "$ticket_id" "$round"
+```
+
+The reconciler acquires the O_EXCL lockfile, reads both sidecar verdicts,
+updates ticket review fields, moves the ticket from `in-review/` to `done/`,
+`rejected/`, or `escalated/`, sends helm escalation when needed, and calls
+`ct2-git-finalize` fail-soft. See `spec/reconciler.md` and
+`spec/git-workflow.md`.
 
 Lens-cx never runs git itself — git operations belong to forge (create/commit/push)
 and the reconciler finalization helper (merge/comment).
@@ -207,7 +191,7 @@ independence.
 - Read `.ct2/codex/scopes/*.json` when a scope is present.
 - If an in-scope ticket is in `.ct2/in-review/`, write the missing cx sidecar.
 - If no reviewable ticket is present but in-scope upstream forge work can still
-  enter review, update heartbeat and record `upstream_work_pending` instead of
+  enter review, record `upstream_work_pending` instead of
   completing the goal.
 - Empty `in-review/` is completion only when the scope proves no more in-scope
   upstream work remains.
@@ -230,7 +214,6 @@ independence.
 | `.ct2/done/`, `.ct2/rejected/`, `.ct2/escalated/` | Move ticket only through reconciler |
 | `.ct2/inbox/ct2-lens-cx/` | Claim and acknowledge |
 | `.ct2/inbox/ct2-helm/` | Send blocked/escalation messages only |
-| `.ct2/.meta/ct2-lens-cx.heartbeat` | Write |
 | `.ct2/codex/ledgers/` | Append goal wait/audit notes through `.ct2/.tmp/` |
 | Project source files | Read-only |
 | Any existing sidecar | Never modify or delete |
@@ -282,8 +265,7 @@ Before claiming a lens-cx iteration or goal is complete:
 
 ## Fallbacks
 
-- If skill dispatch fails, follow the inline instructions injected by
-  `ct2-lens-cx-tui`.
+- If skill dispatch fails, follow `adapters/codex/lens-cx.md`.
 - If app-server or `/goal` is unavailable, continue one idempotent review tick
   using CT2 filesystem state.
 - If requirements are unverifiable, write a rejecting sidecar with a BLOCKING
