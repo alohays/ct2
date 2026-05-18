@@ -119,6 +119,20 @@ def update_ticket(script_dir: Path, project_dir: Path, ticket: Path, verdict: st
     return proc.returncode
 
 
+def validate_review_sidecar(script_dir: Path, sidecar: Path, reviewer: str, round_num: str, ticket_stem: str) -> int:
+    validator = script_dir / "_ct2_validate_review_sidecar.py"
+    proc = subprocess.run(
+        [sys.executable, str(validator), str(sidecar), reviewer, round_num, ticket_stem],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stderr)
+    return proc.returncode
+
+
 def send_escalation(ct2_dir: Path, actor: str, ticket_name: str, round_num: str, max_rounds: int) -> None:
     inbox = ct2_dir / "inbox" / "ct2-helm"
     tmp_dir = ct2_dir / ".tmp"
@@ -196,6 +210,14 @@ def reconcile_one(project_dir: Path, ticket_id: str, round_num: str, actor: str)
             print(f"ct2-reconcile: {ticket_id} r{round_num} already moved by another reconciler")
             return 0
 
+        script_dir = Path(__file__).resolve().parent
+        validations = (
+            validate_review_sidecar(script_dir, cc_sidecar, "ct2-lens-cc", round_num, ticket.stem),
+            validate_review_sidecar(script_dir, cx_sidecar, "ct2-lens-cx", round_num, ticket.stem),
+        )
+        if any(rc != 0 for rc in validations):
+            return 2
+
         cc_v = sidecar_verdict(cc_sidecar)
         cx_v = sidecar_verdict(cx_sidecar)
         if "invalid" in {cc_v, cx_v}:
@@ -212,16 +234,19 @@ def reconcile_one(project_dir: Path, ticket_id: str, round_num: str, actor: str)
             final_verdict = "rejected"
             dest_state = "rejected"
 
-        script_dir = Path(__file__).resolve().parent
+        dest = ct2_dir / dest_state / ticket.name
+        if dest.exists():
+            print(
+                f"ct2-reconcile: ambiguous ticket state: {ticket.name} already exists in {dest_state}/",
+                file=sys.stderr,
+            )
+            return 2
+
         rc = update_ticket(script_dir, project_dir, ticket, final_verdict, ticket_id, round_num)
         if rc != 0:
             return rc
 
-        dest = ct2_dir / dest_state / ticket.name
         dest.parent.mkdir(parents=True, exist_ok=True)
-        if dest.exists():
-            print(f"ct2-reconcile: {ticket.name} already exists in {dest_state}/")
-            return 0
         try:
             os.rename(ticket, dest)
         except FileNotFoundError:
@@ -249,7 +274,21 @@ def discover_pairs(ct2_dir: Path) -> list[tuple[str, str]]:
             continue
         ticket_id, side, round_num = match.groups()
         seen.setdefault((ticket_id, round_num), set()).add(side)
-    return sorted((tid, rnd) for (tid, rnd), sides in seen.items() if sides == {"cc", "cx"})
+    pairs = []
+    for (ticket_id, round_num), sides in seen.items():
+        if sides != {"cc", "cx"}:
+            continue
+        try:
+            ticket = find_ticket(ct2_dir, ticket_id)
+        except RuntimeError:
+            pairs.append((ticket_id, round_num))
+            continue
+        if ticket is None:
+            continue
+        if frontmatter_value(ticket, "review-round", "0") != round_num:
+            continue
+        pairs.append((ticket_id, round_num))
+    return sorted(pairs)
 
 
 def main() -> int:

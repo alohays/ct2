@@ -70,7 +70,7 @@ The paper is **real**: 29,585 PR lifecycles analyzed, Initiator × Approver taxo
 
 **Downstream impact on prior session work**:
 
-Earlier in the session, I "verified" 5 arxiv citations using WebFetch. The result was: "4 real, 1 fabricated (2605.08017)." Based on that verification, I edited §2.4 of the reframe doc to **remove the 2605.08017 citation** and replace it with [arXiv:2602.17084](https://arxiv.org/abs/2602.17084) and [arXiv:2605.06464](https://arxiv.org/abs/2605.06464). **That removal was wrong.** The original citation by the other agent was accurate. 
+Earlier in the session, I "verified" 5 arxiv citations using WebFetch. The result was: "4 real, 1 fabricated (2605.08017)." Based on that verification, I edited §2.4 of the reframe doc to **remove the 2605.08017 citation** and replace it with [arXiv:2602.17084](https://arxiv.org/abs/2602.17084) and [arXiv:2605.06464](https://arxiv.org/abs/2605.06464). **That removal was wrong.** The original citation by the other agent was accurate.
 
 The other 4 papers I "verified as real" — those WebFetch reads happened to return substantive content (abstract excerpts, named authors). Those are likely actually real for the same reason 2605.08017 turned out to be real: the pages exist, WebFetch just sometimes uses model-side date reasoning to reject them and sometimes doesn't. My verification method was unreliable.
 

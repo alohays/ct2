@@ -36,6 +36,7 @@ import sys
 import os
 import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 def extract_verdict(path: str) -> str:
@@ -82,9 +83,14 @@ def rewrite(ticket_path: str, verdict: str, cc_sidecar: str, cx_sidecar: str) ->
         c,
     )
 
-    ticket_dir = os.path.dirname(os.path.abspath(ticket_path)) or "."
+    ticket = Path(ticket_path).resolve()
+    ct2_dir = next((parent for parent in ticket.parents if parent.name == ".ct2"), None)
+    if ct2_dir is None:
+        raise OSError(f"cannot locate .ct2 ancestor for {ticket_path}")
+    tmp_dir = ct2_dir / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
     prefix = f".{os.path.basename(ticket_path)}."
-    fd, tmp_name = tempfile.mkstemp(prefix=prefix, suffix=".tmp", dir=ticket_dir)
+    fd, tmp_name = tempfile.mkstemp(prefix=prefix, suffix=".tmp", dir=str(tmp_dir))
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(c)
     os.replace(tmp_name, ticket_path)

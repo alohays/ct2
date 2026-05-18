@@ -323,7 +323,7 @@ class ReconcileTest(unittest.TestCase):
             module.tempfile.mkstemp = original_mkstemp
             os.chdir(old_cwd)
 
-        self.assertEqual([ct2 / ".tmp"], staging_dirs)
+        self.assertEqual([(ct2 / ".tmp").resolve()], staging_dirs)
         self.assertEqual([], list((ct2 / "in-review").glob(".*.tmp")))
 
     def test_stale_lock_is_recovered(self):
