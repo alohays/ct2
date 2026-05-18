@@ -20,8 +20,10 @@ ct2-init [dir]                 # Initialize .ct2/ in a project directory
 ct2-seal {ticket-id}           # Validate ticket, move draft -> backlog
 ct2-revise {ticket-id}         # Archive past sidecars, reset escalated/rejected ticket -> draft
 ct2-status [dir]               # Display kanban board + agent state
-ct2-lens-cx-tui [dir]           # Start visible Codex reviewer loop
-ct2-lens-cx-daemon {project}   # Start legacy headless Codex reviewer daemon
+ct2-lens-cc [dir]              # Dispatch lens-cc review through an agent adapter
+ct2-lens-cx [dir]              # Dispatch lens-cx review through an agent adapter
+ct2-reconcile {id} {round}     # Reconcile independent review sidecars into terminal state
+ct2-verify [dir]               # Run local CT2 protocol conformance checks
 ```
 
 Manual verification: `ct2-init` in a scratch directory, author a ticket, `ct2-seal`, confirm with `ct2-status`.
