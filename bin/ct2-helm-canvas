@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -111,6 +112,17 @@ def _ingest_token(ct2_dir: Path, token_obj: dict) -> int:
         print("ct2-helm-canvas: nonce mismatch — token rejected", file=sys.stderr)
         return 1
 
+    # spec/helm-canvas.md: a canvas and its decision record move together.
+    # Verify the open canvas is present *before* touching the decision record,
+    # so a missing canvas fails cleanly with no half-applied transition.
+    ticket = record.get("ticket")
+    round_n = int((record.get("canvas") or {}).get("round", 0))
+    open_canvas = _canvas_dir(ct2_dir, "open") / _canvas_name(ticket, round_n)
+    if not open_canvas.exists():
+        print(f"ct2-helm-canvas: open canvas missing for {ticket} r{round_n} — "
+              f"refusing to answer the decision without its canvas", file=sys.stderr)
+        return 1
+
     record.update(
         {
             "status": "answered",
@@ -126,15 +138,13 @@ def _ingest_token(ct2_dir: Path, token_obj: dict) -> int:
     atomic_write_json(ct2_dir, audit, record, "canvas-audit-")
     pending.unlink()
 
-    ticket = record.get("ticket")
-    round_n = int((record.get("canvas") or {}).get("round", 0))
-    moved = _move_canvas(ct2_dir, ticket, round_n, "open", "answered")
+    answered_dir = _canvas_dir(ct2_dir, "answered")
+    answered_dir.mkdir(parents=True, exist_ok=True)
+    os.replace(open_canvas, answered_dir / open_canvas.name)
 
     print(f"ct2-helm-canvas: recovered {decision_id} -> answered")
     if record["open_items"]:
         print(f"  open_items: {len(record['open_items'])} — helm should follow up")
-    if not moved:
-        print(f"  warning: no open canvas found for {ticket} r{round_n}", file=sys.stderr)
     return 0
 
 
@@ -154,49 +164,80 @@ def cmd_recover(args: argparse.Namespace) -> int:
     return _ingest_token(ct2_dir, token_obj)
 
 
-def _move_canvas(ct2_dir: Path, ticket: str, round_n: int, src: str, dst: str) -> bool:
-    src_path = _canvas_dir(ct2_dir, src) / _canvas_name(ticket, round_n)
-    if not src_path.exists():
-        return False
-    if dst == "sealed":
-        dst_dir = _canvas_dir(ct2_dir, "sealed") / ticket
-    else:
-        dst_dir = _canvas_dir(ct2_dir, dst)
-    dst_dir.mkdir(parents=True, exist_ok=True)
-    os.replace(src_path, dst_dir / src_path.name)
-    return True
-
-
 def _canvases_for(ct2_dir: Path, state: str, ticket: str) -> list[Path]:
     return sorted(_canvas_dir(ct2_dir, state).glob(f"{ticket}-r*.canvas.html"))
 
 
+# kanban states a ticket can occupy once ct2-seal has accepted it
+SEALED_STATES = ("backlog", "in-progress", "in-review", "done", "rejected", "escalated")
+
+
+def _round_of(path: Path, ticket: str) -> int | None:
+    match = re.match(re.escape(ticket) + r"-r(\d+)\.canvas\.html$", path.name)
+    return int(match.group(1)) if match else None
+
+
+def _find_decision(ct2_dir: Path, ticket: str, round_n: int):
+    """Return (state, path, record) for the decision record paired to a canvas."""
+    for state in ("pending", "answered"):
+        state_dir = ct2_dir / "decisions" / state
+        if not state_dir.is_dir():
+            continue
+        for path in sorted(state_dir.glob("*.json")):
+            try:
+                rec = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if rec.get("ticket") == ticket and int((rec.get("canvas") or {}).get("round", 0)) == round_n:
+                return state, path, rec
+    return None
+
+
 def cmd_seal(args: argparse.Namespace) -> int:
     ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
-    found = _canvases_for(ct2_dir, "answered", args.ticket)
-    if not found:
-        print(f"ct2-helm-canvas: no answered canvas for {args.ticket}", file=sys.stderr)
+    ticket = args.ticket
+    # spec/helm-canvas.md: this transition happens *after* ct2-seal succeeds.
+    if not any((ct2_dir / state / f"{ticket}.md").exists() for state in SEALED_STATES):
+        print(f"ct2-helm-canvas: ticket {ticket} is not sealed — no {ticket}.md in "
+              f"backlog/ or a later state. Run ct2-seal first.", file=sys.stderr)
         return 1
-    dst_dir = _canvas_dir(ct2_dir, "sealed") / args.ticket
+    found = _canvases_for(ct2_dir, "answered", ticket)
+    if not found:
+        print(f"ct2-helm-canvas: no answered canvas for {ticket}", file=sys.stderr)
+        return 1
+    dst_dir = _canvas_dir(ct2_dir, "sealed") / ticket
     dst_dir.mkdir(parents=True, exist_ok=True)
     for path in found:
         os.replace(path, dst_dir / path.name)
-        print(f"ct2-helm-canvas: sealed {path.name} -> canvas/sealed/{args.ticket}/")
+        print(f"ct2-helm-canvas: sealed {path.name} -> canvas/sealed/{ticket}/")
     return 0
 
 
 def cmd_expire(args: argparse.Namespace) -> int:
     ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    ticket = args.ticket
     dst_dir = _canvas_dir(ct2_dir, "expired")
     dst_dir.mkdir(parents=True, exist_ok=True)
+    rec_expired = ct2_dir / "decisions" / "expired"
+    rec_expired.mkdir(parents=True, exist_ok=True)
     moved = 0
     for state in ("open", "answered"):
-        for path in _canvases_for(ct2_dir, state, args.ticket):
+        for path in _canvases_for(ct2_dir, state, ticket):
+            round_n = _round_of(path, ticket)
+            # spec/helm-canvas.md: the canvas and its decision record move together.
+            if round_n is not None:
+                found = _find_decision(ct2_dir, ticket, round_n)
+                if found:
+                    _state, rec_path, rec = found
+                    rec["status"] = "expired"
+                    atomic_write_json(ct2_dir, rec_expired / rec_path.name, rec, "canvas-expire-")
+                    rec_path.unlink()
+                    print(f"ct2-helm-canvas: expired decision {rec_path.stem}")
             os.replace(path, dst_dir / path.name)
             print(f"ct2-helm-canvas: expired {path.name}")
             moved += 1
     if not moved:
-        print(f"ct2-helm-canvas: no open/answered canvas for {args.ticket}", file=sys.stderr)
+        print(f"ct2-helm-canvas: no open/answered canvas for {ticket}", file=sys.stderr)
         return 1
     return 0
 
