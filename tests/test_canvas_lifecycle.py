@@ -70,6 +70,12 @@ class CanvasLifecycleTest(unittest.TestCase):
         }
         return "CT2-DECISION " + json.dumps(payload)
 
+    def put_backlog_ticket(self, project, ticket="001-demo-plan"):
+        """Simulate a post-ct2-seal ticket sitting in backlog/."""
+        path = project / ".ct2" / "backlog" / f"{ticket}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('---\nid: "001"\nstatus: backlog\n---\n', encoding="utf-8")
+
     # ── generate ──────────────────────────────────────────────────────────
     def test_generate_creates_open_canvas_and_pending_record(self):
         project = self.make_project()
@@ -153,6 +159,17 @@ class CanvasLifecycleTest(unittest.TestCase):
         res = run_cmd(["python3", CANVAS, "recover", "CT2-DECISION not-json"], cwd=project)
         self.assertNotEqual(res.returncode, 0)
 
+    def test_recover_aborts_when_open_canvas_missing(self):
+        project = self.make_project()
+        record = self.generate(project)
+        ct2 = project / ".ct2"
+        (ct2 / "plans" / "canvas" / "open" / "001-demo-plan-r0.canvas.html").unlink()
+        res = run_cmd(["python3", CANVAS, "recover", self.token_for(record)], cwd=project)
+        self.assertNotEqual(res.returncode, 0)
+        # the decision record must not be answered without its canvas
+        self.assertTrue((ct2 / "decisions" / "pending" / f"{record['id']}.json").exists())
+        self.assertEqual([], list((ct2 / "decisions" / "answered").iterdir()))
+
     def test_recover_carries_open_items(self):
         project = self.make_project()
         record = self.generate(project)
@@ -174,17 +191,68 @@ class CanvasLifecycleTest(unittest.TestCase):
         self.assertTrue((project / ".ct2" / "decisions" / "answered"
                          / f"{record['id']}.json").exists())
 
+    def test_recover_from_bare_json_file(self):
+        # the canvas download button writes a bare JSON object (no token prefix)
+        project = self.make_project()
+        record = self.generate(project)
+        payload = json.loads(self.token_for(record)[len("CT2-DECISION "):])
+        drop = project / "decision.json"
+        drop.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        res = run_cmd(["python3", CANVAS, "recover", "--file", "decision.json"], cwd=project)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertTrue((project / ".ct2" / "decisions" / "answered"
+                         / f"{record['id']}.json").exists())
+
     # ── seal ──────────────────────────────────────────────────────────────
     def test_seal_moves_answered_canvas_to_sealed(self):
         project = self.make_project()
         record = self.generate(project)
         ct2 = project / ".ct2"
         run_cmd(["python3", CANVAS, "recover", self.token_for(record)], cwd=project)
+        self.put_backlog_ticket(project)
         res = run_cmd(["python3", CANVAS, "seal", "001-demo-plan"], cwd=project)
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual([], list((ct2 / "plans" / "canvas" / "answered").iterdir()))
         sealed = ct2 / "plans" / "canvas" / "sealed" / "001-demo-plan" / "001-demo-plan-r0.canvas.html"
         self.assertTrue(sealed.exists())
+
+    def test_seal_rejects_when_ticket_not_sealed(self):
+        # seal must not fabricate plan evidence when ct2-seal never ran
+        project = self.make_project()
+        record = self.generate(project)
+        ct2 = project / ".ct2"
+        run_cmd(["python3", CANVAS, "recover", self.token_for(record)], cwd=project)
+        res = run_cmd(["python3", CANVAS, "seal", "001-demo-plan"], cwd=project)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertTrue((ct2 / "plans" / "canvas" / "answered"
+                         / "001-demo-plan-r0.canvas.html").exists())
+        self.assertFalse((ct2 / "plans" / "canvas" / "sealed" / "001-demo-plan").exists())
+
+    # ── expire ────────────────────────────────────────────────────────────
+    def test_expire_moves_open_canvas_and_decision_together(self):
+        project = self.make_project()
+        record = self.generate(project)
+        ct2 = project / ".ct2"
+        res = run_cmd(["python3", CANVAS, "expire", "001-demo-plan"], cwd=project)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertTrue((ct2 / "plans" / "canvas" / "expired"
+                         / "001-demo-plan-r0.canvas.html").exists())
+        self.assertEqual([], list((ct2 / "plans" / "canvas" / "open").iterdir()))
+        # the paired decision record must not stay actionable in pending/
+        self.assertFalse((ct2 / "decisions" / "pending" / f"{record['id']}.json").exists())
+        self.assertTrue((ct2 / "decisions" / "expired" / f"{record['id']}.json").exists())
+
+    def test_expire_after_recover_moves_answered_decision(self):
+        project = self.make_project()
+        record = self.generate(project)
+        ct2 = project / ".ct2"
+        run_cmd(["python3", CANVAS, "recover", self.token_for(record)], cwd=project)
+        res = run_cmd(["python3", CANVAS, "expire", "001-demo-plan"], cwd=project)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertTrue((ct2 / "plans" / "canvas" / "expired"
+                         / "001-demo-plan-r0.canvas.html").exists())
+        self.assertFalse((ct2 / "decisions" / "answered" / f"{record['id']}.json").exists())
+        self.assertTrue((ct2 / "decisions" / "expired" / f"{record['id']}.json").exists())
 
     # ── lifecycle pairing: no orphans ─────────────────────────────────────
     def test_canvas_and_record_move_together(self):
