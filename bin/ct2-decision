@@ -9,6 +9,7 @@ import os
 import sys
 from pathlib import Path
 
+import _ct2_canvas
 from _ct2_vao import atomic_write_json, ensure_ct2, new_id, now
 
 
@@ -99,6 +100,12 @@ def provider_payload(record: dict, provider: str) -> dict:
                 },
             },
         }
+    if provider == "html":
+        return {
+            "provider": "html",
+            "decision_id": record.get("id"),
+            "html": _ct2_canvas.render(record),
+        }
     raise SystemExit(f"ct2-decision: unsupported provider format {provider}")
 
 
@@ -164,6 +171,9 @@ def cmd_format(args: argparse.Namespace) -> int:
     _path, record = found
     provider = args.provider or record.get("provider")
     payload = provider_payload(record, str(provider))
+    if payload["provider"] == "html" and not args.json:
+        sys.stdout.write(payload["html"])
+        return 0
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
@@ -199,7 +209,7 @@ def main() -> int:
     fmt = sub.add_parser("format")
     fmt.add_argument("decision_id")
     fmt.add_argument("--project-dir", default=".")
-    fmt.add_argument("--provider", choices=("codex", "claude"))
+    fmt.add_argument("--provider", choices=("codex", "claude", "html"))
     fmt.add_argument("--json", action="store_true")
     fmt.set_defaults(func=cmd_format)
 

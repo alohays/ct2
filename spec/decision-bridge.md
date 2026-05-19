@@ -32,9 +32,16 @@ surface expected by the runtime:
 - Codex: `item/tool/requestUserInput` payload with one bounded `questions`
   entry.
 - Claude Code: `AskUserQuestion` payload with question, options, and metadata.
+- HTML: a self-contained `canvas.html` render of the record, used by the helm
+  planning canvas (see `spec/helm-canvas.md`).
 
-The provider format is an adapter view over the same `.ct2/decisions/` record;
-it is not a second source of truth.
+A provider format is a render of the same `.ct2/decisions/` record; it is not a
+second source of truth. "Provider format" is distinct from a CT2 *adapter*
+(`spec/adapter-format.md`), which is a runtime-and-role markdown contract.
+
+A canvas record carries a single-use `nonce`. The helm canvas returns its
+answer through `ct2-helm-canvas recover`, which validates the `nonce` against
+the pending record before writing `answered/`.
 
 ## Rules
 

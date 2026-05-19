@@ -1,0 +1,276 @@
+#!/usr/bin/env python3
+"""ct2-helm-canvas — generate and recover helm planning canvases.
+
+All subcommands perform bounded one-shot work and exit (PROTOCOL.md
+"Agent Owns the Loop"). See spec/helm-canvas.md.
+
+  generate --spec FILE   create a decision record + canvas HTML in canvas/open/
+  recover  TOKEN         validate a decision token, move canvas open/ -> answered/
+  recover  --file FILE   same, reading the token from a downloaded file
+  seal     TICKET        move an answered canvas to canvas/sealed/{ticket}/
+  expire   TICKET        move an open/answered canvas to canvas/expired/
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import uuid
+from pathlib import Path
+
+import _ct2_canvas
+from _ct2_vao import atomic_write_json, atomic_write_text, ensure_ct2, new_id, now
+
+CANVAS_STATES = ("open", "answered", "sealed", "expired")
+
+
+def _read_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _canvas_dir(ct2_dir: Path, state: str) -> Path:
+    return ct2_dir / "plans" / "canvas" / state
+
+
+def _canvas_name(ticket: str, round_n: int) -> str:
+    return f"{ticket}-r{round_n}.canvas.html"
+
+
+def _normalize_canvas(canvas: dict) -> dict:
+    """Ensure scope keys and AC ids exist so delta tracking is stable."""
+    for idx, item in enumerate(canvas.get("scope") or []):
+        if not item.get("key"):
+            item["key"] = f"s{idx + 1}"
+    for idx, ac in enumerate(canvas.get("acceptance_criteria") or []):
+        if not ac.get("id"):
+            ac["id"] = f"a{idx + 1}"
+        ac.setdefault("accepted", True)
+        ac.setdefault("flagged", False)
+    return canvas
+
+
+def cmd_generate(args: argparse.Namespace) -> int:
+    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    raw = sys.stdin.read() if args.spec == "-" else Path(args.spec).read_text(encoding="utf-8")
+    try:
+        spec = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        print(f"ct2-helm-canvas: malformed spec JSON: {exc}", file=sys.stderr)
+        return 1
+    ticket = spec.get("ticket")
+    if not ticket:
+        print("ct2-helm-canvas: spec must include a 'ticket' field", file=sys.stderr)
+        return 1
+    canvas = _normalize_canvas(dict(spec.get("canvas") or {}))
+    round_n = int(canvas.get("round", 0))
+    canvas["round"] = round_n
+
+    decision_id = new_id("decision")
+    record = {
+        "id": decision_id,
+        "schema_version": "1",
+        "status": "pending",
+        "created_at": now(),
+        "provider": "html",
+        "role": "ct2-helm",
+        "kind": "plan-canvas",
+        "ticket": ticket,
+        "nonce": uuid.uuid4().hex,
+        "canvas": canvas,
+    }
+    record_path = ct2_dir / "decisions" / "pending" / f"{decision_id}.json"
+    atomic_write_json(ct2_dir, record_path, record, "canvas-decision-")
+
+    html = _ct2_canvas.render(record)
+    canvas_path = _canvas_dir(ct2_dir, "open") / _canvas_name(ticket, round_n)
+    atomic_write_text(ct2_dir, canvas_path, html, "canvas-html-")
+
+    rel = canvas_path.relative_to(ct2_dir.parent)
+    if args.json:
+        print(json.dumps({"decision": decision_id, "canvas": str(rel)}, indent=2))
+    else:
+        print(f"ct2-helm-canvas: generated {decision_id}")
+        print(f"  canvas: {rel}")
+        print(f"  open it in a browser, decide, then return the token to helm.")
+    return 0
+
+
+def _ingest_token(ct2_dir: Path, token_obj: dict) -> int:
+    decision_id = token_obj.get("decision")
+    if not decision_id:
+        print("ct2-helm-canvas: token missing 'decision'", file=sys.stderr)
+        return 1
+    pending = ct2_dir / "decisions" / "pending" / f"{decision_id}.json"
+    if not pending.exists():
+        print(f"ct2-helm-canvas: no pending decision {decision_id}", file=sys.stderr)
+        return 1
+    record = _read_json(pending)
+    if record.get("nonce") != token_obj.get("nonce"):
+        print("ct2-helm-canvas: nonce mismatch — token rejected", file=sys.stderr)
+        return 1
+
+    # spec/helm-canvas.md: a canvas and its decision record move together.
+    # Verify the open canvas is present *before* touching the decision record,
+    # so a missing canvas fails cleanly with no half-applied transition.
+    ticket = record.get("ticket")
+    round_n = int((record.get("canvas") or {}).get("round", 0))
+    open_canvas = _canvas_dir(ct2_dir, "open") / _canvas_name(ticket, round_n)
+    if not open_canvas.exists():
+        print(f"ct2-helm-canvas: open canvas missing for {ticket} r{round_n} — "
+              f"refusing to answer the decision without its canvas", file=sys.stderr)
+        return 1
+
+    record.update(
+        {
+            "status": "answered",
+            "answered_at": now(),
+            "answer": token_obj.get("answer"),
+            "overrides": token_obj.get("overrides") or [],
+            "open_items": token_obj.get("open_items") or [],
+        }
+    )
+    answered = ct2_dir / "decisions" / "answered" / pending.name
+    audit = ct2_dir / "decisions" / "audit" / pending.name
+    atomic_write_json(ct2_dir, answered, record, "canvas-answered-")
+    atomic_write_json(ct2_dir, audit, record, "canvas-audit-")
+    pending.unlink()
+
+    answered_dir = _canvas_dir(ct2_dir, "answered")
+    answered_dir.mkdir(parents=True, exist_ok=True)
+    os.replace(open_canvas, answered_dir / open_canvas.name)
+
+    print(f"ct2-helm-canvas: recovered {decision_id} -> answered")
+    if record["open_items"]:
+        print(f"  open_items: {len(record['open_items'])} — helm should follow up")
+    return 0
+
+
+def cmd_recover(args: argparse.Namespace) -> int:
+    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    if args.file:
+        text = Path(args.file).read_text(encoding="utf-8")
+    elif args.token:
+        text = args.token
+    else:
+        text = sys.stdin.read()
+    try:
+        token_obj = _ct2_canvas.parse_token(text)
+    except ValueError as exc:
+        print(f"ct2-helm-canvas: {exc}", file=sys.stderr)
+        return 1
+    return _ingest_token(ct2_dir, token_obj)
+
+
+def _canvases_for(ct2_dir: Path, state: str, ticket: str) -> list[Path]:
+    return sorted(_canvas_dir(ct2_dir, state).glob(f"{ticket}-r*.canvas.html"))
+
+
+# kanban states a ticket can occupy once ct2-seal has accepted it
+SEALED_STATES = ("backlog", "in-progress", "in-review", "done", "rejected", "escalated")
+
+
+def _round_of(path: Path, ticket: str) -> int | None:
+    match = re.match(re.escape(ticket) + r"-r(\d+)\.canvas\.html$", path.name)
+    return int(match.group(1)) if match else None
+
+
+def _find_decision(ct2_dir: Path, ticket: str, round_n: int):
+    """Return (state, path, record) for the decision record paired to a canvas."""
+    for state in ("pending", "answered"):
+        state_dir = ct2_dir / "decisions" / state
+        if not state_dir.is_dir():
+            continue
+        for path in sorted(state_dir.glob("*.json")):
+            try:
+                rec = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            if rec.get("ticket") == ticket and int((rec.get("canvas") or {}).get("round", 0)) == round_n:
+                return state, path, rec
+    return None
+
+
+def cmd_seal(args: argparse.Namespace) -> int:
+    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    ticket = args.ticket
+    # spec/helm-canvas.md: this transition happens *after* ct2-seal succeeds.
+    if not any((ct2_dir / state / f"{ticket}.md").exists() for state in SEALED_STATES):
+        print(f"ct2-helm-canvas: ticket {ticket} is not sealed — no {ticket}.md in "
+              f"backlog/ or a later state. Run ct2-seal first.", file=sys.stderr)
+        return 1
+    found = _canvases_for(ct2_dir, "answered", ticket)
+    if not found:
+        print(f"ct2-helm-canvas: no answered canvas for {ticket}", file=sys.stderr)
+        return 1
+    dst_dir = _canvas_dir(ct2_dir, "sealed") / ticket
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    for path in found:
+        os.replace(path, dst_dir / path.name)
+        print(f"ct2-helm-canvas: sealed {path.name} -> canvas/sealed/{ticket}/")
+    return 0
+
+
+def cmd_expire(args: argparse.Namespace) -> int:
+    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    ticket = args.ticket
+    dst_dir = _canvas_dir(ct2_dir, "expired")
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    rec_expired = ct2_dir / "decisions" / "expired"
+    rec_expired.mkdir(parents=True, exist_ok=True)
+    moved = 0
+    for state in ("open", "answered"):
+        for path in _canvases_for(ct2_dir, state, ticket):
+            round_n = _round_of(path, ticket)
+            # spec/helm-canvas.md: the canvas and its decision record move together.
+            if round_n is not None:
+                found = _find_decision(ct2_dir, ticket, round_n)
+                if found:
+                    _state, rec_path, rec = found
+                    rec["status"] = "expired"
+                    atomic_write_json(ct2_dir, rec_expired / rec_path.name, rec, "canvas-expire-")
+                    rec_path.unlink()
+                    print(f"ct2-helm-canvas: expired decision {rec_path.stem}")
+            os.replace(path, dst_dir / path.name)
+            print(f"ct2-helm-canvas: expired {path.name}")
+            moved += 1
+    if not moved:
+        print(f"ct2-helm-canvas: no open/answered canvas for {ticket}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Generate and recover helm planning canvases")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    gen = sub.add_parser("generate")
+    gen.add_argument("--spec", required=True, help="canvas spec JSON file, or - for stdin")
+    gen.add_argument("--project-dir", default=".")
+    gen.add_argument("--json", action="store_true")
+    gen.set_defaults(func=cmd_generate)
+
+    rec = sub.add_parser("recover")
+    rec.add_argument("token", nargs="?", help="CT2-DECISION token text")
+    rec.add_argument("--file", help="read the token from a file")
+    rec.add_argument("--project-dir", default=".")
+    rec.set_defaults(func=cmd_recover)
+
+    seal = sub.add_parser("seal")
+    seal.add_argument("ticket")
+    seal.add_argument("--project-dir", default=".")
+    seal.set_defaults(func=cmd_seal)
+
+    exp = sub.add_parser("expire")
+    exp.add_argument("ticket")
+    exp.add_argument("--project-dir", default=".")
+    exp.set_defaults(func=cmd_expire)
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

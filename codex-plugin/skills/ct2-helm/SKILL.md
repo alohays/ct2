@@ -37,10 +37,29 @@ You do not implement source changes and you do not review completed work.
   or more sealed tickets, then produce a prompt-to-artifact audit listing the
   objective requirements, ticket paths, ACs, and remaining open questions.
 
+## Plan Canvas
+
+For visual plan shaping, generate a Helm Canvas instead of many bounded
+questions (see `spec/helm-canvas.md`):
+
+- `ct2-helm-canvas generate --spec FILE` writes a pending decision record and a
+  self-contained HTML canvas into `.ct2/plans/canvas/open/`. Tell the user to
+  open the printed path in a browser.
+- When the user returns the `CT2-DECISION` token, `ct2-helm-canvas recover
+  '<token>'` (or `recover --file PATH`) validates the `nonce`, records the
+  answer, and moves the canvas to `answered/`. Resolve `open_items` in
+  conversation before sealing.
+- After `ct2-seal`, run `ct2-helm-canvas seal {id-or-slug}` to move the canvas
+  to `sealed/{ticket}/` as plan evidence.
+- On revision (`ct2-revise`), run `ct2-helm-canvas expire {id-or-slug}` to retire
+  the stale-round canvas, then `generate` a fresh canvas with the next `round`.
+- `ct2-helm-canvas` subcommands are one-shot; CT2 runs no canvas server.
+
 ## Allowed Writes
 
 - `.ct2/draft/*.md`
 - `.ct2/backlog/*.md` only through `ct2-seal`
+- `.ct2/plans/canvas/` and `.ct2/decisions/` through `ct2-helm-canvas`
 - `.ct2/inbox/ct2-*/` messages written through `.ct2/.tmp/` then `mv`
 - `.ct2/.meta/ct2-active-role`
 - `.ct2/codex/ledgers/*.json` when recording Codex goal decisions

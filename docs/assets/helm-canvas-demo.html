@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Helm Canvas — 티켓 #42 OAuth 로그인 계획</title>
+<!--
+  CT2 Helm Canvas — 데모 / 참조 구현
+  설계 원칙:
+   P1 캔버스는 결정 레코드를 렌더한 것이다 — 우측 JSON이 곧 진실원천의 미러
+   P2 모든 결정은 비용을 보여준다 — 토글하면 계획 요약이 즉시 바뀐다
+   P3 helm과 다른 선택은 증거다 — 변경 delta를 추적한다
+   P4 캔버스는 안내하되 가두지 않는다 — copy는 절대 막지 않는다.
+      미해결 항목은 토큰에 정직하게 실려 helm이 이어받는다.
+   P5 캔버스는 양식이 아니라 제안서다 — 모든 텍스트는 자유 편집/추가/삭제 가능
+  자기완결: 외부 CDN·폰트·스크립트 0. file:// 에서 완전 동작.
+  관련 계획서: docs/ct2-helm-canvas-plan-2026-05.md
+-->
+<style>
+  :root {
+    --bg:#f6f5f1; --surface:#fffefb; --raised:#fbfaf6;
+    --ink:#1b1a17; --mut:#6e6a61; --faint:#9a958a; --line:#e7e3d8;
+    --accent:#1d4ed8; --accent-soft:#eaeefb;
+    --in:#15803d; --in-soft:#e7f2ea; --out:#b4332a; --out-soft:#f6e9e7;
+    --hold:#b06f0d; --hold-soft:#f7efdf;
+    --r:12px; --shadow:0 1px 2px rgba(40,36,28,.05),0 8px 24px -12px rgba(40,36,28,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg)}
+  body{
+    color:var(--ink); font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased; padding:34px 22px 60px;
+  }
+  .wrap{max-width:1180px;margin:0 auto}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
+
+  /* ── header ── */
+  header.top{margin-bottom:24px}
+  .eyebrow{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;
+    letter-spacing:.11em;color:var(--accent);text-transform:uppercase}
+  .eyebrow::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
+  header.top h1{font-size:25px;font-weight:680;letter-spacing:-.02em;margin:8px 0 6px}
+  header.top .lede{color:var(--mut);font-size:14px;max-width:66ch}
+  header.top .lede b{color:var(--ink);font-weight:600}
+  .cstate{margin-top:9px;font-size:11.5px;color:var(--mut);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .cstate code{background:var(--raised);border:1px solid var(--line);padding:2px 7px;
+    border-radius:5px;font-size:11px;color:var(--mut)}
+  .cstate code b{color:var(--accent);font-weight:700}
+
+  /* ── 5단계 워크플로 스테퍼 ── */
+  .flow{display:flex;margin:16px 0 20px;border:1px solid var(--line);border-radius:10px;
+    overflow:hidden;background:var(--surface);box-shadow:var(--shadow)}
+  .step{flex:1;padding:9px 12px;border-right:1px solid var(--line)}
+  .step:last-child{border-right:0}
+  .step .s{font:700 10px/1 ui-monospace,monospace;color:var(--faint);letter-spacing:.04em}
+  .step .t{font-size:11.5px;color:var(--mut);margin-top:3px;line-height:1.35}
+  .step.done{background:var(--in-soft)} .step.done .s{color:var(--in)}
+  .step.now{background:var(--accent-soft)} .step.now .s{color:var(--accent)}
+  .step.now .t{color:var(--ink);font-weight:600}
+
+  /* ── layout ── */
+  .grid{display:grid;grid-template-columns:1fr;gap:18px}
+  @media(min-width:920px){.grid{grid-template-columns:1.55fr 1fr;align-items:start}}
+  .right{position:static}
+  @media(min-width:920px){.right{position:sticky;top:24px}}
+
+  /* ── panels ── */
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+    margin-bottom:14px;box-shadow:var(--shadow);overflow:hidden}
+  .panel-hd{display:flex;align-items:baseline;gap:9px;padding:13px 16px 11px}
+  .panel-hd .num{font:700 11px/1 ui-monospace,monospace;color:var(--faint);
+    border:1px solid var(--line);border-radius:5px;padding:4px 6px;flex:none}
+  .panel-hd h2{font-size:14px;font-weight:660;letter-spacing:-.01em}
+  .panel-hd .meta{margin-left:auto;font-size:11.5px;color:var(--faint)}
+  .panel-bd{padding:2px 16px 15px}
+  .resolved-tick{color:var(--in);font-weight:700}
+  .open-tick{color:var(--hold);font-weight:700}
+
+  /* editable text — 자유 편집 (P5) */
+  .edit{outline:none;border-radius:5px;padding:2px 5px;margin:-2px -2px;
+    transition:background .12s,box-shadow .12s;cursor:text}
+  .edit:hover{background:var(--accent-soft)}
+  .edit:focus{background:#fff;box-shadow:0 0 0 2px var(--accent)}
+  .edit:empty::before{content:attr(data-ph);color:var(--faint)}
+  .edithint{font-size:11px;color:var(--faint);margin-top:6px}
+  .edithint b{color:var(--mut);font-weight:600}
+
+  .quote{border-left:2.5px solid var(--accent);background:var(--accent-soft);
+    padding:8px 13px;border-radius:0 7px 7px 0;color:#33405e;font-size:13.5px;margin:9px 0}
+  .askrow{display:flex;gap:8px;margin-top:4px}
+  .pick{flex:1;cursor:pointer;border:1px solid var(--line);background:var(--raised);
+    border-radius:8px;padding:9px 11px;font-size:13px;text-align:left;color:var(--ink);transition:.12s}
+  .pick:hover{border-color:var(--faint)}
+  .pick small{display:block;color:var(--mut);font-size:11.5px;margin-top:1px}
+  .pick[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+  .pick.warn[aria-pressed="true"]{border-color:var(--hold);background:var(--hold-soft);box-shadow:inset 0 0 0 1px var(--hold)}
+  textarea.free{width:100%;margin-top:9px;background:var(--raised);color:var(--ink);
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:13px/1.55 inherit;
+    resize:vertical;min-height:62px}
+  textarea.free:focus{outline:none;border-color:var(--accent);background:#fff}
+
+  /* scope chips */
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 6px}
+  .chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);
+    border-radius:8px;padding:6px 9px;font-size:13px;background:var(--raised);transition:.12s}
+  .chip .dot{width:8px;height:8px;border-radius:2px;background:var(--faint);flex:none;transition:.12s}
+  .chip .st{font:700 10px/1 ui-monospace,monospace;letter-spacing:.04em;color:var(--faint);
+    cursor:pointer;border:1px solid var(--line);border-radius:5px;padding:3px 5px;background:var(--surface);user-select:none}
+  .chip .st:hover{border-color:var(--faint)}
+  .chip .x{cursor:pointer;color:var(--faint);font-size:13px;line-height:1;padding:0 2px;user-select:none}
+  .chip .x:hover{color:var(--out)}
+  .chip[data-s="in"]{border-color:var(--in);background:var(--in-soft)}
+  .chip[data-s="in"] .dot{background:var(--in)} .chip[data-s="in"] .st{color:var(--in);border-color:var(--in)}
+  .chip[data-s="out"]{border-color:var(--out-soft);background:var(--out-soft);color:var(--mut)}
+  .chip[data-s="out"] .dot{background:var(--out)} .chip[data-s="out"] .st{color:var(--out);border-color:var(--out)}
+  .chip[data-s="out"] .lbl{text-decoration:line-through;text-decoration-color:var(--out)}
+  .chip[data-s="hold"]{border-color:var(--hold);background:var(--hold-soft)}
+  .chip[data-s="hold"] .dot{background:var(--hold);border-radius:50%} .chip[data-s="hold"] .st{color:var(--hold);border-color:var(--hold)}
+
+  .addbtn{cursor:pointer;border:1px dashed var(--line);background:none;border-radius:7px;
+    padding:6px 11px;font-size:12px;color:var(--mut);transition:.12s}
+  .addbtn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+
+  /* ticket cards */
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:9px}
+  @media(max-width:560px){.cards{grid-template-columns:1fr}}
+  .tcard{border:1px solid var(--line);border-radius:9px;padding:11px 12px;background:var(--raised)}
+  .tcard-top{display:flex;align-items:flex-start;gap:6px}
+  .t-title{flex:1;font-size:13px;font-weight:640}
+  .t-size{font:700 10px/1.3 ui-monospace,monospace;color:var(--accent);background:var(--accent-soft);
+    padding:3px 6px;border-radius:4px;display:inline-block;margin-top:6px}
+  .t-items{list-style:none;margin:8px 0 0}
+  .t-item{display:flex;align-items:flex-start;gap:6px;padding:2px 0;color:var(--mut);font-size:12px}
+  .t-item .it{flex:1}
+  .t-item .li-x,.tcard-top .x{flex:none;cursor:pointer;color:var(--faint);font-size:12px;
+    line-height:1.5;user-select:none}
+  .t-item .li-x:hover,.tcard-top .x:hover{color:var(--out)}
+  .addbtn.mini{padding:3px 9px;font-size:11px;margin-top:7px}
+  .splitnote{font-size:11.5px;color:var(--faint);margin-top:8px}
+
+  /* AC rows */
+  .ac{display:flex;align-items:flex-start;gap:9px;padding:9px 0;border-top:1px solid var(--line)}
+  .ac:first-child{border-top:0}
+  .ac input[type=checkbox]{margin-top:4px;width:15px;height:15px;accent-color:var(--in);cursor:pointer;flex:none}
+  .ac .txt{flex:1;font-size:13px;min-height:20px}
+  .ac.dropped .txt{text-decoration:line-through;color:var(--faint)}
+  .ac .flag{flex:none;font:600 10.5px/1 ui-monospace,monospace;cursor:pointer;
+    border:1px solid var(--line);background:var(--surface);color:var(--faint);border-radius:5px;padding:4px 7px}
+  .ac .flag.on{border-color:var(--hold);background:var(--hold-soft);color:var(--hold)}
+  .ac .x{flex:none;cursor:pointer;color:var(--faint);font-size:14px;line-height:1.4;padding:0 2px;user-select:none}
+  .ac .x:hover{color:var(--out)}
+
+  /* priority + deps */
+  .prio{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  input[type=range]{flex:1 1 200px;accent-color:var(--accent)}
+  .prio-val{font:700 12px/1 ui-monospace,monospace;padding:6px 10px;border-radius:6px;
+    background:var(--accent-soft);color:var(--accent);min-width:78px;text-align:center}
+  .depgraph{margin-top:11px}
+  .depedit{display:flex;gap:10px;margin-top:4px;font-size:13px}
+  .depedit .k{flex:none;width:64px;color:var(--faint);font-size:11.5px}
+  .depedit .v{flex:1}
+  .con{display:flex;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+  .con:first-child{border-top:0}
+  .con .k{flex:none;width:64px;color:var(--faint);font-size:11.5px}
+  .con .v{flex:1}
+  .con .x{flex:none;cursor:pointer;color:var(--faint);font-size:13px;line-height:1.4;user-select:none}
+  .con .x:hover{color:var(--out)}
+
+  /* ── right column ── */
+  .summary{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+    box-shadow:var(--shadow);overflow:hidden;margin-bottom:14px}
+  .summary .hd{padding:12px 15px 4px;font-size:11px;font-weight:700;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--faint)}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);
+    border-top:1px solid var(--line);margin-top:9px}
+  .stat{background:var(--surface);padding:12px 15px}
+  .stat .v{font-size:23px;font-weight:700;letter-spacing:-.02em}
+  .stat .v.adv{color:var(--hold)} .stat .v.adv0{color:var(--in)}
+  .stat .l{font-size:11.5px;color:var(--mut);margin-top:1px}
+
+  .block{padding:11px 15px;border-top:1px solid var(--line)}
+  .block .lbl{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:7px}
+  .delta ul,.advis ul{list-style:none}
+  .delta li{font-size:12.5px;padding:5px 0;border-top:1px solid var(--line);display:flex;gap:7px}
+  .delta li:first-of-type{border-top:0}
+  .delta li .f{flex:none;font:700 10px/1.4 ui-monospace,monospace;color:var(--accent);
+    background:var(--accent-soft);padding:3px 6px;border-radius:4px;height:fit-content}
+  .none{font-size:12.5px;color:var(--faint);font-style:italic}
+  .advis li{font-size:12.5px;padding:6px 0;border-top:1px solid var(--line);display:flex;gap:8px;
+    cursor:pointer;color:var(--mut)}
+  .advis li:first-of-type{border-top:0}
+  .advis li:hover{color:var(--ink)}
+  .advis li .ic{flex:none;color:var(--hold)}
+  .advis li .jump{margin-left:auto;font-size:11px;color:var(--accent)}
+  .advis .hint{font-size:11px;color:var(--faint);margin-top:7px;line-height:1.5}
+
+  details.record{border-top:1px solid var(--line)}
+  details.record summary{padding:11px 15px;cursor:pointer;font-size:12px;color:var(--mut);
+    list-style:none;display:flex;align-items:center;gap:7px}
+  details.record summary::-webkit-details-marker{display:none}
+  details.record summary .tw{transition:.15s;color:var(--faint)}
+  details.record[open] summary .tw{transform:rotate(90deg)}
+  details.record summary .path{margin-left:auto;font:11px ui-monospace,monospace;color:var(--faint)}
+  pre.json{margin:0 15px 14px;background:#1c1b17;color:#e8e4d8;border-radius:8px;
+    padding:12px 13px;font:11.5px/1.55 ui-monospace,monospace;overflow:auto;max-height:300px;
+    transition:box-shadow .4s}
+  pre.json.flash{box-shadow:0 0 0 2px var(--accent)}
+  pre.json .k{color:#9ecbff} pre.json .s{color:#c3e88d} pre.json .n{color:#f7a35c} pre.json .b{color:#c792ea}
+
+  .commit{padding:13px 15px;border-top:1px solid var(--line);background:var(--raised)}
+  button.go{width:100%;border:1.5px solid transparent;border-radius:9px;padding:12px;
+    font-size:14px;font-weight:660;cursor:pointer;background:var(--accent);color:#fff;transition:.12s}
+  button.go:hover{filter:brightness(1.07)}
+  button.go:active{transform:translateY(1px)}
+  .gatemsg{font-size:11.5px;color:var(--mut);margin-top:7px;text-align:center;line-height:1.5}
+  .gatemsg b{color:var(--hold);font-weight:600}
+  .donebox{display:none;margin-top:10px}
+  .donebox textarea{width:100%;background:#1c1b17;color:#e8e4d8;border:0;border-radius:8px;
+    padding:10px;font:11px/1.5 ui-monospace,monospace;min-height:92px;resize:vertical}
+  .donebox .copied{font-size:12px;color:var(--in);font-weight:600;margin-top:6px;display:block}
+
+  footer.note{margin-top:24px;color:var(--faint);font-size:11.5px;text-align:center;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <span class="eyebrow">Helm Canvas · 결정 레코드 dec-0007</span>
+    <h1>티켓 #42 — OAuth 소셜 로그인 계획</h1>
+    <p class="lede">helm이 <b>제안</b>한 계획안입니다 — 양식이 아닙니다. 어떤 텍스트든 직접 고치고, 항목을 더하거나 빼세요. helm이 확인을 권하는 항목이 남아 있어도 <b>언제든 복사할 수 있습니다</b> — 미해결 항목은 토큰에 함께 실려 helm이 이어서 확인합니다.</p>
+    <div class="cstate" id="cstate">
+      <span>이 캔버스 파일:</span>
+      <code id="cstatePath">.ct2/plans/canvas/<b>open</b>/42-oauth-login-r0.canvas.html</code>
+      <span id="cstateNote">— 결정 대기 상태 · 복사하면 <code>answered/</code> 로 이동</span>
+    </div>
+  </header>
+
+  <!-- helm 워크플로 5단계 — 이 캔버스는 S3 -->
+  <div class="flow" id="flow">
+    <div class="step done"><div class="s">S1 ✓</div><div class="t">유저 ↔ helm 대화로 계획</div></div>
+    <div class="step done"><div class="s">S2 ✓</div><div class="t">helm이 캔버스 HTML 생성</div></div>
+    <div class="step now"  data-step="3"><div class="s">S3 ●</div><div class="t">지금 — 결정하고 복사</div></div>
+    <div class="step"      data-step="4"><div class="s">S4</div><div class="t">helm이 토큰 회수 → md 티켓 작성</div></div>
+    <div class="step"      data-step="5"><div class="s">S5</div><div class="t">backlog에 forge용 티켓 생성</div></div>
+  </div>
+
+  <div class="grid">
+
+    <!-- ════ LEFT ════ -->
+    <div class="left">
+
+      <!-- 01 해석 -->
+      <section class="panel" data-panel="interpret" id="p-interpret">
+        <div class="panel-hd"><span class="num">01</span><h2>helm의 해석</h2>
+          <span class="meta" data-meta="interpret">확인 권장</span></div>
+        <div class="panel-bd">
+          <p>helm은 의도를 이렇게 읽었습니다 — <b>구글·깃허브 OAuth 로그인을 추가</b>하되 기존 이메일/비밀번호 로그인은 그대로 둡니다.</p>
+          <div class="quote">"소셜 로그인 좀 붙여줘. 구글이랑 깃허브. 기존 로그인은 그대로 두고."</div>
+          <div class="askrow">
+            <button class="pick" data-misread="ok" aria-pressed="false">정확합니다<small>이대로 진행</small></button>
+            <button class="pick warn" data-misread="wrong" aria-pressed="false">고칠 부분이 있습니다<small>아래에 적어주세요</small></button>
+          </div>
+          <textarea class="free" id="misreadNote" style="display:none" placeholder="helm이 어떻게 이해해야 하나요? 자유롭게 적으세요."></textarea>
+        </div>
+      </section>
+
+      <!-- 02 범위 -->
+      <section class="panel" data-panel="scope" id="p-scope">
+        <div class="panel-hd"><span class="num">02</span><h2>범위</h2>
+          <span class="meta" data-meta="scope">보류 항목 확인 권장</span></div>
+        <div class="panel-bd">
+          <div class="chips" id="scope">
+            <span class="chip" data-s="in" data-key="google"><span class="dot"></span><span class="lbl edit" contenteditable="true">구글 OAuth</span><span class="st" role="button" tabindex="0">IN</span><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></span>
+            <span class="chip" data-s="in" data-key="github"><span class="dot"></span><span class="lbl edit" contenteditable="true">깃허브 OAuth</span><span class="st" role="button" tabindex="0">IN</span><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></span>
+            <span class="chip" data-s="in" data-key="keep-email"><span class="dot"></span><span class="lbl edit" contenteditable="true">기존 이메일 로그인 유지</span><span class="st" role="button" tabindex="0">IN</span><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></span>
+            <span class="chip" data-s="hold" data-key="linking"><span class="dot"></span><span class="lbl edit" contenteditable="true">계정 연결(account linking)</span><span class="st" role="button" tabindex="0">HOLD</span><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></span>
+            <span class="chip" data-s="out" data-key="kakao"><span class="dot"></span><span class="lbl edit" contenteditable="true">카카오/네이버</span><span class="st" role="button" tabindex="0">OUT</span><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></span>
+            <span class="chip" data-s="out" data-key="2fa"><span class="dot"></span><span class="lbl edit" contenteditable="true">2단계 인증</span><span class="st" role="button" tabindex="0">OUT</span><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></span>
+          </div>
+          <button class="addbtn" id="addScope">+ 범위 항목 추가</button>
+          <p class="edithint">칩 라벨은 <b>직접 편집</b> 가능 · <b>IN/OUT/HOLD</b> 배지를 눌러 상태 순환 · ✕로 삭제</p>
+        </div>
+      </section>
+
+      <!-- 03 티켓 분할 -->
+      <section class="panel" data-panel="split" id="p-split">
+        <div class="panel-hd"><span class="num">03</span><h2>티켓 분할</h2><span class="meta">PR 단위로 자유롭게</span></div>
+        <div class="panel-bd">
+          <div class="cards" id="cards">
+            <div class="tcard">
+              <div class="tcard-top">
+                <h3 class="t-title edit" contenteditable="true">#42a · OAuth 인프라 + 구글</h3>
+                <span class="x" role="button" tabindex="0" aria-label="티켓 삭제">✕</span>
+              </div>
+              <span class="t-size edit" contenteditable="true">medium · ~2일</span>
+              <ul class="t-items">
+                <li class="t-item"><span class="it edit" contenteditable="true">콜백 라우트·세션 토큰</span><span class="li-x" role="button" tabindex="0">✕</span></li>
+                <li class="t-item"><span class="it edit" contenteditable="true">구글 provider</span><span class="li-x" role="button" tabindex="0">✕</span></li>
+                <li class="t-item"><span class="it edit" contenteditable="true">로그인 화면 버튼</span><span class="li-x" role="button" tabindex="0">✕</span></li>
+              </ul>
+              <button class="addbtn mini add-item" type="button">+ 항목</button>
+            </div>
+            <div class="tcard">
+              <div class="tcard-top">
+                <h3 class="t-title edit" contenteditable="true">#42b · 깃허브 provider</h3>
+                <span class="x" role="button" tabindex="0" aria-label="티켓 삭제">✕</span>
+              </div>
+              <span class="t-size edit" contenteditable="true">small · ~1일</span>
+              <ul class="t-items">
+                <li class="t-item"><span class="it edit" contenteditable="true">깃허브 provider</span><span class="li-x" role="button" tabindex="0">✕</span></li>
+                <li class="t-item"><span class="it edit" contenteditable="true">#42a 인프라 재사용</span><span class="li-x" role="button" tabindex="0">✕</span></li>
+              </ul>
+              <button class="addbtn mini add-item" type="button">+ 항목</button>
+            </div>
+          </div>
+          <button class="addbtn" id="addTicket" type="button">+ 티켓 추가</button>
+          <p class="edithint">helm은 인프라와 provider를 분리해 2건으로 제안했습니다 — 그러나 <b>전부 당신의 것</b>입니다. 제목·규모·세부 항목을 직접 고치고, ✕로 티켓·항목을 빼고, 필요하면 더 쪼개거나 합치세요.</p>
+        </div>
+      </section>
+
+      <!-- 04 인수 기준 -->
+      <section class="panel" data-panel="ac" id="p-ac">
+        <div class="panel-hd"><span class="num">04</span><h2>인수 기준</h2>
+          <span class="meta" data-meta="ac">검증 가능하게</span></div>
+        <div class="panel-bd">
+          <div id="aclist">
+            <div class="ac" data-id="a1" data-orig="구글 로그인 시 세션이 생성되고 메인으로 리다이렉트된다">
+              <input type="checkbox" checked>
+              <span class="txt edit" contenteditable="true">구글 로그인 시 세션이 생성되고 메인으로 리다이렉트된다</span>
+              <button class="flag" type="button">⚑ 모호</button><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></div>
+            <div class="ac" data-id="a2" data-orig="깃허브 로그인이 동일하게 동작한다">
+              <input type="checkbox" checked>
+              <span class="txt edit" contenteditable="true">깃허브 로그인이 동일하게 동작한다</span>
+              <button class="flag" type="button">⚑ 모호</button><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></div>
+            <div class="ac" data-id="a3" data-orig="기존 이메일 로그인이 회귀 없이 동작한다 (회귀 테스트 포함)">
+              <input type="checkbox" checked>
+              <span class="txt edit" contenteditable="true">기존 이메일 로그인이 회귀 없이 동작한다 (회귀 테스트 포함)</span>
+              <button class="flag" type="button">⚑ 모호</button><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></div>
+            <div class="ac" data-id="a4" data-orig="로그인 UX가 자연스럽다">
+              <input type="checkbox" checked>
+              <span class="txt edit" contenteditable="true">로그인 UX가 "자연스럽다"</span>
+              <button class="flag on" type="button">⚑ 모호</button><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></div>
+          </div>
+          <button class="addbtn" id="addAC" style="margin-top:10px">+ 인수 기준 추가</button>
+          <p class="edithint"><b>⚑ 모호</b>는 helm이 "검증 기준이 흐릿하다"고 본 항목입니다. 문구를 <b>직접 구체적으로 고치고</b> ⚑를 해제하거나, ✕로 빼거나, 그대로 두셔도 됩니다 — 결정은 당신 몫입니다.</p>
+        </div>
+      </section>
+
+      <!-- 05 우선순위 -->
+      <section class="panel" data-panel="prio">
+        <div class="panel-hd"><span class="num">05</span><h2>우선순위 &amp; 의존성</h2><span class="meta">백로그 위치</span></div>
+        <div class="panel-bd">
+          <div class="prio">
+            <span style="font-size:12px;color:var(--mut)">low</span>
+            <input type="range" id="prio" min="0" max="3" step="1" value="2">
+            <span style="font-size:12px;color:var(--mut)">critical</span>
+            <span class="prio-val" id="prioVal">high</span>
+          </div>
+          <svg class="depgraph" width="100%" height="56" viewBox="0 0 320 56" role="img" aria-label="#42a 다음에 #42b">
+            <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#6e6a61"/></marker></defs>
+            <line x1="108" y1="28" x2="196" y2="28" stroke="#6e6a61" stroke-width="1.5" marker-end="url(#ar)"/>
+            <rect x="14" y="12" width="94" height="32" rx="7" fill="#eaeefb" stroke="#1d4ed8"/>
+            <text x="61" y="32" font-size="12" font-family="ui-monospace,monospace" fill="#1d4ed8" text-anchor="middle">#42a</text>
+            <rect x="200" y="12" width="94" height="32" rx="7" fill="#fbfaf6" stroke="#e7e3d8"/>
+            <text x="247" y="32" font-size="12" font-family="ui-monospace,monospace" fill="#6e6a61" text-anchor="middle">#42b</text>
+          </svg>
+          <div class="depedit">
+            <span class="k">의존성</span>
+            <span class="v edit" id="depText" contenteditable="true">선행 차단 티켓 없음 · #42b는 #42a 완료 후 착수</span>
+          </div>
+          <p class="edithint">의존 관계는 자유롭게 적으세요 — 위 그래프는 참고용이고, Phase 3에서 의존선을 직접 연결하게 됩니다.</p>
+        </div>
+      </section>
+
+      <!-- 06 제약 -->
+      <section class="panel" data-panel="con" id="p-con">
+        <div class="panel-hd"><span class="num">06</span><h2>제약 &amp; 엣지케이스</h2><span class="meta">helm 추정 · 자유 편집</span></div>
+        <div class="panel-bd">
+          <div id="conlist">
+            <div class="con"><span class="k edit" contenteditable="true">기술</span><span class="v edit" contenteditable="true">OAuth client secret은 환경변수로만 — 저장소 커밋 금지</span><span class="x" role="button" tabindex="0">✕</span></div>
+            <div class="con"><span class="k edit" contenteditable="true">엣지</span><span class="v edit" contenteditable="true">같은 이메일로 이미 가입된 계정에 소셜 로그인 시 충돌 → "계정 연결" 범위 결정에 종속</span><span class="x" role="button" tabindex="0">✕</span></div>
+            <div class="con"><span class="k edit" contenteditable="true">호환</span><span class="v edit" contenteditable="true">기존 세션 쿠키 포맷 유지 — 진행 중 사용자 세션 무효화 금지</span><span class="x" role="button" tabindex="0">✕</span></div>
+          </div>
+          <button class="addbtn" id="addCon" type="button" style="margin-top:9px">+ 제약 추가</button>
+          <p class="edithint">분류 라벨과 내용 모두 편집 가능 · helm이 놓친 제약은 직접 추가하세요.</p>
+        </div>
+      </section>
+
+      <!-- 07 자유 메모 -->
+      <section class="panel" data-panel="note">
+        <div class="panel-hd"><span class="num">07</span><h2>helm에게 — 자유 메모</h2><span class="meta">선택</span></div>
+        <div class="panel-bd">
+          <p style="font-size:13px;color:var(--mut)">패널에 안 들어가는 어떤 말이든 — 우려, 맥락, 바꾸고 싶은 방향. 그대로 토큰에 실려 helm에게 전달됩니다.</p>
+          <textarea class="free" id="freeNote" placeholder="예: 2FA는 이번엔 빼지만 다음 분기엔 꼭 필요해요. 깃허브 OAuth는 엔터프라이즈 계정도 고려해줘요."></textarea>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ════ RIGHT ════ -->
+    <div class="right">
+      <div class="summary">
+        <div class="hd">이 계획 한눈에</div>
+        <div class="stats">
+          <div class="stat"><div class="v" id="stTickets">2</div><div class="l">티켓 (PR)</div></div>
+          <div class="stat"><div class="v" id="stDays">~3일</div><div class="l">예상 작업량</div></div>
+          <div class="stat"><div class="v" id="stScope">3</div><div class="l">In-scope 항목</div></div>
+          <div class="stat"><div class="v adv" id="stAdv">3</div><div class="l">helm 확인 권장</div></div>
+        </div>
+
+        <div class="block delta">
+          <div class="lbl">helm 제안 → 내 결정</div>
+          <ul id="deltaList"><li class="none">아직 helm 제안과 동일합니다</li></ul>
+        </div>
+
+        <div class="block advis">
+          <div class="lbl">helm이 확인을 권하는 항목</div>
+          <ul id="advisList"></ul>
+          <p class="hint" id="advisHint"></p>
+        </div>
+
+        <details class="record">
+          <summary><span class="tw">▸</span> 결정 레코드 (이게 진실원천입니다)
+            <span class="path">.ct2/decisions/</span></summary>
+          <pre class="json" id="json"></pre>
+        </details>
+
+        <div class="commit">
+          <button class="go" id="commitBtn">📋 결정 확정 → helm으로 복사</button>
+          <div class="gatemsg" id="gateMsg"></div>
+          <div class="donebox" id="doneBox">
+            <textarea id="token" readonly></textarea>
+            <span class="copied" id="copiedMsg">✓ 클립보드에 복사됨</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <footer class="note">
+    CT2 Helm Canvas 데모 · 자기완결 HTML(외부 의존성 0) · 결정 레코드 <code>dec-0007</code>의 provider format(html) 렌더<br>
+    계획서: docs/ct2-helm-canvas-plan-2026-05.md — copy는 막지 않습니다(P4). 모든 텍스트는 편집 가능합니다(P5).
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+/* helm 원안 — 변경 delta는 이 baseline 대비로 계산 */
+var BASELINE = {
+  scope:{ google:"in", github:"in", "keep-email":"in", linking:"hold", kakao:"out", "2fa":"out" },
+  priority:"high"
+};
+var PRIO=["low","medium","high","critical"];
+var SCOPE_CYCLE={ in:"out", out:"hold", hold:"in" };
+var ORIG_AC=["a1","a2","a3","a4"];
+var STKEY="helm-canvas-dec-0007";
+var acSeq=0;
+
+var $=function(s,r){return (r||document).querySelector(s)};
+var $$=function(s,r){return [].slice.call((r||document).querySelectorAll(s))};
+var txt=function(el){return (el.textContent||"").trim()};
+
+/* ── DOM → 상태 ── */
+function read(){
+  var mr=$('.pick[aria-pressed="true"]');
+  return {
+    misread: mr?mr.dataset.misread:null,
+    misreadNote: $('#misreadNote').value.trim(),
+    scope: $$('#scope .chip').map(function(c){
+      return { key:c.dataset.key||"", label:txt($('.lbl',c)), state:c.dataset.s }; }),
+    tickets: $$('#cards .tcard').map(function(c){
+      return { title:txt($('.t-title',c)), size:txt($('.t-size',c)),
+               items:$$('.t-item .it',c).map(txt).filter(Boolean) }; }),
+    ac: $$('#aclist .ac').map(function(a){
+      return { id:a.dataset.id, orig:a.dataset.orig||null,
+               text:txt($('.txt',a)), accepted:$('input',a).checked,
+               flagged:$('.flag',a).classList.contains('on') }; }),
+    priority: PRIO[+$('#prio').value],
+    dependency: txt($('#depText')),
+    constraints: $$('#conlist .con').map(function(c){
+      return { label:txt($('.k',c)), text:txt($('.v',c)) }; }),
+    note: $('#freeNote').value.trim()
+  };
+}
+
+/* 초기 DOM = helm 원안. 티켓/제약/의존성 baseline을 캡처해 delta 비교에 사용 */
+(function(){
+  var b=read();
+  BASELINE.ticketsSig=JSON.stringify(b.tickets);
+  BASELINE.conSig=JSON.stringify(b.constraints);
+  BASELINE.dependency=b.dependency;
+})();
+
+/* ── helm이 확인을 권하는 항목 (advisory — 막지 않음) ── */
+function advisory(s){
+  var a=[];
+  if(s.misread===null)
+    a.push({ t:"helm의 해석이 맞는지 아직 확인 안 됨", jump:"#p-interpret" });
+  if(s.misread==="wrong" && !s.misreadNote)
+    a.push({ t:"고칠 부분을 골랐지만 내용이 비어 있음", jump:"#p-interpret" });
+  s.scope.filter(function(x){return x.state==="hold"}).forEach(function(x){
+    a.push({ t:"범위 '"+x.label+"' 가 보류 상태 (IN/OUT 미결)", jump:"#p-scope" }); });
+  s.ac.filter(function(x){return x.accepted&&x.flagged}).forEach(function(x){
+    a.push({ t:"인수 기준 '"+x.text.slice(0,20)+"…' 가 ⚑ 모호 표시됨", jump:"#p-ac" }); });
+  return a;
+}
+
+/* ── helm 제안 대비 변경 ── */
+function delta(s){
+  var d=[];
+  if(s.misread==="wrong") d.push({f:"해석", t:"helm 해석을 수정"+(s.misreadNote?"":" (내용 비어 있음)")});
+  s.scope.forEach(function(x){
+    var base=BASELINE.scope[x.key];
+    if(base&&base!==x.state){
+      var nm={in:"포함",out:"제외",hold:"보류"};
+      d.push({f:"범위", t:"'"+x.label+"' "+nm[base]+"→"+nm[x.state]});
+    } else if(!x.key){
+      d.push({f:"범위", t:"'"+(x.label||"(빈 항목)")+"' 추가"});
+    }
+  });
+  if(s.priority!==BASELINE.priority) d.push({f:"우선순위", t:BASELINE.priority+" → "+s.priority});
+  var seen={};
+  s.ac.forEach(function(x){
+    seen[x.id]=1;
+    if(!x.orig){ d.push({f:"인수기준", t:"'"+(x.text.slice(0,20)||"(빈 항목)")+"…' 추가"}); return; }
+    if(!x.accepted){ d.push({f:"인수기준", t:"'"+x.text.slice(0,20)+"…' 제외"}); return; }
+    if(x.text!==x.orig) d.push({f:"인수기준", t:"'"+x.orig.slice(0,18)+"…' 문구 수정"});
+  });
+  ORIG_AC.forEach(function(id){ if(!seen[id]) d.push({f:"인수기준", t:id+" 항목 삭제"}); });
+  if(JSON.stringify(s.tickets)!==BASELINE.ticketsSig)
+    d.push({f:"티켓", t:"분할안 수정 (총 "+s.tickets.length+"건)"});
+  if(JSON.stringify(s.constraints)!==BASELINE.conSig)
+    d.push({f:"제약", t:"제약 목록 수정 (총 "+s.constraints.length+"건)"});
+  if(s.dependency!==BASELINE.dependency)
+    d.push({f:"의존성", t:"의존성 기술 수정"});
+  if(s.note) d.push({f:"메모", t:"자유 메모 작성"});
+  return d;
+}
+
+/* ── 결정 레코드 (= .ct2/decisions/answered/ 페이로드) ── */
+function recordObj(s){
+  var adv=advisory(s);
+  return {
+    kind:"ct2-decision-answer", decision:"dec-0007", ticket:"42-oauth-login",
+    nonce:"demo-7f3a91", round:0,
+    answer:{
+      interpretation: s.misread==="ok" ? "confirmed"
+                    : s.misread==="wrong" ? "needs-fix" : "unconfirmed",
+      interpretation_fix: s.misread==="wrong" ? (s.misreadNote||null) : null,
+      scope: s.scope.reduce(function(o,x){ if(x.label) o[x.label]=x.state; return o },{}),
+      tickets: s.tickets,
+      acceptance_criteria: s.ac.filter(function(a){return a.accepted&&a.text})
+        .map(function(a){return {text:a.text, verifiable:!a.flagged}}),
+      priority: s.priority,
+      dependency: s.dependency||null,
+      constraints: s.constraints.filter(function(c){return c.label||c.text}),
+      note: s.note||null
+    },
+    overrides: delta(s).map(function(x){return x.f+": "+x.t}),
+    open_items: adv.map(function(x){return x.t}),   /* 정직하게: 미해결을 숨기지 않는다 */
+    answered_at:"<확정 시각>"
+  };
+}
+function colorJSON(obj){
+  return JSON.stringify(obj,null,2)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
+    .replace(/"([^"]+)":/g,'"<span class="k">$1</span>":')
+    .replace(/: "([^"]*)"/g,': "<span class="s">$1</span>"')
+    .replace(/: (true|false|null)/g,': <span class="b">$1</span>')
+    .replace(/: (-?\d+)/g,': <span class="n">$1</span>');
+}
+
+/* ── 렌더 ── */
+var lastJSON="", committed=false;
+function render(){
+  var s=read(), adv=advisory(s), d=delta(s);
+
+  /* 패널 메타 */
+  $('[data-meta="interpret"]').innerHTML = s.misread===null ? "확인 권장"
+    : s.misread==="ok" ? '<span class="resolved-tick">✓ 정확</span>'
+    : '<span class="open-tick">✎ 수정 요청</span>';
+  var holds=s.scope.filter(function(x){return x.state==="hold"}).length;
+  $('[data-meta="scope"]').innerHTML = holds
+    ? '<span class="open-tick">보류 '+holds+'건</span>' : '<span class="resolved-tick">✓ 모두 결정</span>';
+  var fl=s.ac.filter(function(x){return x.accepted&&x.flagged}).length;
+  $('[data-meta="ac"]').innerHTML = fl
+    ? '<span class="open-tick">⚑ '+fl+'건</span>' : '<span class="resolved-tick">✓ 모두 명확</span>';
+
+  /* 통계 */
+  var inN=s.scope.filter(function(x){return x.state==="in"}).length;
+  $('#stTickets').textContent=s.tickets.length;
+  $('#stDays').textContent= inN>=5?"~4일":"~3일";
+  $('#stScope').textContent=inN;
+  var sa=$('#stAdv'); sa.textContent=adv.length;
+  sa.className="v "+(adv.length?"adv":"adv0");
+
+  /* delta */
+  $('#deltaList').innerHTML = d.length
+    ? d.map(function(x){return '<li><span class="f">'+x.f+'</span><span>'+esc(x.t)+'</span></li>'}).join("")
+    : '<li class="none">아직 helm 제안과 동일합니다</li>';
+
+  /* advisory — 막지 않고 안내만 */
+  var al=$('#advisList'), ah=$('#advisHint');
+  if(adv.length){
+    al.innerHTML = adv.map(function(x){
+      return '<li data-jump="'+x.jump+'"><span class="ic">⚑</span><span>'+esc(x.t)
+        +'</span><span class="jump">패널 보기 ›</span></li>'; }).join("");
+    ah.textContent="이 항목들은 복사를 막지 않습니다. 그대로 두면 토큰의 open_items 에 실려 helm이 이어서 확인합니다.";
+  } else {
+    al.innerHTML='<li class="none">helm이 확인을 권하는 항목이 없습니다 ✓</li>';
+    ah.textContent="";
+  }
+
+  /* JSON 미러 */
+  var pre=$('#json'), nj=JSON.stringify(recordObj(s));
+  pre.innerHTML=colorJSON(recordObj(s));
+  if(nj!==lastJSON && lastJSON!==""){ pre.classList.add('flash');
+    setTimeout(function(){pre.classList.remove('flash')},420); }
+  lastJSON=nj;
+
+  /* 확정 — 절대 막지 않는다 */
+  var gm=$('#gateMsg');
+  if(committed){
+    gm.innerHTML="";
+  } else if(adv.length){
+    gm.innerHTML="복사하면 <b>"+adv.length+"건의 확인 권장 항목</b>도 함께 helm에 전달됩니다";
+  } else {
+    gm.innerHTML="모든 항목이 정리되었습니다 — 깔끔하게 전달됩니다 ✓";
+  }
+
+  try{ localStorage.setItem(STKEY,nj); }catch(e){}
+}
+function esc(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
+
+/* ── 이벤트 ── */
+$('.askrow').addEventListener('click',function(e){
+  var b=e.target.closest('.pick'); if(!b) return;
+  var on=b.getAttribute('aria-pressed')==="true";
+  $$('.pick').forEach(function(p){p.setAttribute('aria-pressed','false')});
+  b.setAttribute('aria-pressed', on?"false":"true");
+  $('#misreadNote').style.display =
+    (b.dataset.misread==="wrong" && !on) ? "block" : "none";
+  committed=false; render();
+});
+$('#misreadNote').addEventListener('input',function(){committed=false;render()});
+$('#freeNote').addEventListener('input',function(){committed=false;render()});
+
+/* 범위: 상태 배지 / 삭제 / 라벨 편집 */
+$('#scope').addEventListener('click',function(e){
+  var chip=e.target.closest('.chip'); if(!chip) return;
+  if(e.target.classList.contains('st')){
+    chip.dataset.s=SCOPE_CYCLE[chip.dataset.s];
+    e.target.textContent=chip.dataset.s.toUpperCase();
+    committed=false; render();
+  } else if(e.target.classList.contains('x')){
+    chip.remove(); committed=false; render();
+  }
+});
+$('#addScope').addEventListener('click',function(){
+  var c=document.createElement('span');
+  c.className='chip'; c.dataset.s='in';
+  c.innerHTML='<span class="dot"></span><span class="lbl edit" contenteditable="true" data-ph="새 범위 항목…"></span>'
+    +'<span class="st" role="button" tabindex="0">IN</span>'
+    +'<span class="x" role="button" tabindex="0" aria-label="삭제">✕</span>';
+  $('#scope').appendChild(c);
+  $('.lbl',c).focus();
+  committed=false; render();
+});
+
+/* AC: 체크 / ⚑ / 삭제 / 텍스트 편집 */
+var aclist=$('#aclist');
+aclist.addEventListener('click',function(e){
+  var row=e.target.closest('.ac'); if(!row) return;
+  if(e.target.classList.contains('flag')){
+    e.target.classList.toggle('on'); committed=false; render();
+  } else if(e.target.classList.contains('x')){
+    row.remove(); committed=false; render();
+  }
+});
+aclist.addEventListener('change',function(){committed=false;render()});
+$('#addAC').addEventListener('click',function(){
+  var row=document.createElement('div');
+  row.className='ac'; row.dataset.id='new'+(++acSeq);
+  row.innerHTML='<input type="checkbox" checked>'
+    +'<span class="txt edit" contenteditable="true" data-ph="새 인수 기준 — 검증 가능하게 적으세요…"></span>'
+    +'<button class="flag" type="button">⚑ 모호</button>'
+    +'<span class="x" role="button" tabindex="0" aria-label="삭제">✕</span>';
+  aclist.appendChild(row);
+  $('.txt',row).focus();
+  committed=false; render();
+});
+
+/* 모든 contenteditable(.edit) 편집 — 한 handler로 — 범위·AC·티켓·제약·의존성 전부 */
+document.addEventListener('input',function(e){
+  if(e.target.classList && e.target.classList.contains('edit')){
+    committed=false; render();
+  }
+});
+
+/* 티켓: 카드 삭제 / 항목 삭제 / 항목 추가 */
+$('#cards').addEventListener('click',function(e){
+  var card=e.target.closest('.tcard'); if(!card) return;
+  if(e.target.classList.contains('x')){
+    card.remove(); committed=false; render();
+  } else if(e.target.classList.contains('li-x')){
+    e.target.closest('.t-item').remove(); committed=false; render();
+  } else if(e.target.classList.contains('add-item')){
+    var li=document.createElement('li');
+    li.className='t-item';
+    li.innerHTML='<span class="it edit" contenteditable="true" data-ph="세부 항목…"></span>'
+      +'<span class="li-x" role="button" tabindex="0">✕</span>';
+    $('.t-items',card).appendChild(li);
+    $('.it',li).focus();
+    committed=false; render();
+  }
+});
+$('#addTicket').addEventListener('click',function(){
+  var c=document.createElement('div');
+  c.className='tcard';
+  c.innerHTML='<div class="tcard-top">'
+    +'<h3 class="t-title edit" contenteditable="true" data-ph="새 티켓 제목…"></h3>'
+    +'<span class="x" role="button" tabindex="0" aria-label="티켓 삭제">✕</span></div>'
+    +'<span class="t-size edit" contenteditable="true" data-ph="규모·기간 (예: small · ~1일)"></span>'
+    +'<ul class="t-items"></ul>'
+    +'<button class="addbtn mini add-item" type="button">+ 항목</button>';
+  $('#cards').appendChild(c);
+  $('.t-title',c).focus();
+  committed=false; render();
+});
+
+/* 제약: 줄 삭제 / 줄 추가 */
+$('#conlist').addEventListener('click',function(e){
+  if(e.target.classList.contains('x')){
+    e.target.closest('.con').remove(); committed=false; render();
+  }
+});
+$('#addCon').addEventListener('click',function(){
+  var row=document.createElement('div');
+  row.className='con';
+  row.innerHTML='<span class="k edit" contenteditable="true">기타</span>'
+    +'<span class="v edit" contenteditable="true" data-ph="제약·엣지케이스 내용…"></span>'
+    +'<span class="x" role="button" tabindex="0">✕</span>';
+  $('#conlist').appendChild(row);
+  $('.v',row).focus();
+  committed=false; render();
+});
+
+var prio=$('#prio');
+prio.addEventListener('input',function(){
+  $('#prioVal').textContent=PRIO[+prio.value]; committed=false; render(); });
+
+/* advisory 클릭 → 해당 패널로 스크롤 */
+$('#advisList').addEventListener('click',function(e){
+  var li=e.target.closest('li[data-jump]'); if(!li) return;
+  var el=$(li.dataset.jump);
+  if(el){ el.scrollIntoView({behavior:'smooth',block:'center'});
+    el.style.transition='box-shadow .3s'; el.style.boxShadow='0 0 0 2px var(--accent)';
+    setTimeout(function(){el.style.boxShadow=''},900); }
+});
+
+/* 확정 — 언제나 동작 */
+$('#commitBtn').addEventListener('click',function(){
+  var s=read(), adv=advisory(s);
+  var rec=recordObj(s); rec.answered_at=new Date().toISOString();
+  var token="CT2-DECISION "+JSON.stringify(rec);
+  $('#token').value=token;
+  $('#doneBox').style.display="block";
+  $('#copiedMsg').innerHTML = (adv.length
+    ? "✓ 복사됨 — <code>open_items</code> "+adv.length+"건 포함. "
+    : "✓ 복사됨. ")
+    + "helm 대화창에 붙여넣고 <b>\"md 티켓으로 만들어줘\"</b>라고 하세요 (S4).";
+  try{ navigator.clipboard.writeText(token); }catch(e){ $('#token').select(); }
+  committed=true;
+  this.textContent="✓ 복사됨 — 다시 복사하려면 클릭";
+
+  /* 워크플로 진행: S3 완료 → S4로 (캔버스도 open/ → answered/ 이동) */
+  var s3=$('#flow .step[data-step="3"]'), s4=$('#flow .step[data-step="4"]');
+  s3.className="step done"; $('.s',s3).textContent="S3 ✓";
+  s4.className="step now";  $('.s',s4).textContent="S4 ●";
+  $('#cstatePath').innerHTML=".ct2/plans/canvas/<b>answered</b>/42-oauth-login-r0.canvas.html";
+  $('#cstateNote').innerHTML="— helm이 회수 완료 · seal되면 <code>sealed/</code> 로 이동";
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

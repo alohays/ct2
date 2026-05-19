@@ -154,6 +154,53 @@ verdict: pending
    ct2-seal {id}-{slug}
    ```
 
+</workflow>
+
+---
+
+<workflow id="plan-canvas">
+
+## Plan Canvas Workflow (visual planning surface)
+
+When the user would benefit from a visual, interactive surface for shaping a
+plan — or asks for an HTML view — use the **Helm Canvas** instead of a long
+series of `AskUserQuestion` calls. See `spec/helm-canvas.md`. The flow is five
+steps:
+
+1. **Dialogue** — gather requirements in conversation as usual.
+2. **Generate the canvas** — author a canvas spec JSON capturing your proposal
+   (interpretation, scope, ticket split, acceptance criteria, priority,
+   dependency, constraints), then:
+   ```bash
+   ct2-helm-canvas generate --spec /path/to/spec.json
+   ```
+   Tell the user to open the printed `.ct2/plans/canvas/open/*.canvas.html`
+   path in a browser.
+3. **User decides** — the user edits the panels and clicks "결정 확정"; the
+   canvas copies a `CT2-DECISION ...` token to their clipboard (or downloads a
+   `decision-*.json` file).
+4. **Recover the token** — when the user pastes it back:
+   ```bash
+   ct2-helm-canvas recover '<pasted token>'        # or: recover --file <path>
+   ```
+   This validates the `nonce`, writes `.ct2/decisions/answered/`, and moves the
+   canvas to `canvas/answered/`. Read the answered record — honour `answer`, and
+   resolve any `open_items` in conversation before sealing.
+5. **Author and seal** — write the ticket(s) from the recovered decision (the
+   ticket-authoring workflow above), run `ct2-seal`, then:
+   ```bash
+   ct2-helm-canvas seal {id}-{slug}
+   ```
+   which moves the canvas to `canvas/sealed/{id}-{slug}/` as plan evidence.
+
+The canvas spec JSON shape is in `spec/helm-canvas.md`. `AskUserQuestion` stays
+the right tool for a single quick clarification; the canvas is for shaping a
+whole plan.
+
+If a ticket is later revised (`ct2-revise`), run `ct2-helm-canvas expire
+{id-or-slug}` to retire the stale-round canvas, then `generate` a fresh canvas
+with an incremented `round`.
+
 ### Ticket Quality Principles
 - **One ticket = one PR = completable in a single day**
 - `touched-files` must be as specific as possible — this drives conflict detection

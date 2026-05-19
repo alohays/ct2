@@ -66,6 +66,11 @@ This directory is excluded from git via `.git/info/exclude` (never via `.gitigno
 │   ├── expired/
 │   └── audit/
 ├── plans/                             # Forge plan evidence before execution
+│   └── canvas/                        # Helm planning canvases (spec/helm-canvas.md)
+│       ├── open/                      # generated, awaiting the user's decision
+│       ├── answered/                  # decision token recovered
+│       ├── sealed/                    # {ticket}/ — plan evidence after ct2-seal
+│       └── expired/                   # superseded or abandoned canvases
 ├── watchers/                          # Notify-only watcher definitions
 ├── postmortems/                       # Kill criteria/postmortem records
 ├── evals/                             # Role eval fixtures and results

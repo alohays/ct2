@@ -43,7 +43,8 @@ for dir in \
   reviews reviews/.archive worktrees logs \
   runtime runtime/artifacts runtime/provider-hooks telemetry evidence evidence/commands evidence/artifacts evidence/screenshots evidence/verifiers evidence/hooks \
   decisions/pending decisions/answered decisions/expired decisions/audit \
-  plans watchers postmortems \
+  plans plans/canvas/open plans/canvas/answered plans/canvas/sealed plans/canvas/expired \
+  watchers postmortems \
   evals/ct2-helm evals/ct2-forge evals/ct2-lens-cc evals/ct2-lens-cx
 do
   mkdir -p "${CT2_DIR}/${dir}"

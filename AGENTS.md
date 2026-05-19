@@ -18,6 +18,7 @@ Development is spec-first: specifications are authoritative, implementations fol
 bash install.sh               # Install: adds to PATH, symlinks skills
 ct2-init [dir]                 # Initialize .ct2/ in a project directory
 ct2-seal {ticket-id}           # Validate ticket, move draft -> backlog
+ct2-helm-canvas {sub} ...      # Generate / recover / seal a helm planning canvas
 ct2-revise {ticket-id}         # Archive past sidecars, reset escalated/rejected ticket -> draft
 ct2-status [dir]               # Display kanban board + agent state
 ct2-lens-cc [dir]              # Dispatch lens-cc review through an agent adapter
@@ -45,6 +46,7 @@ Manual verification: `ct2-init` in a scratch directory, author a ticket, `ct2-se
 | Dual-review + inbox + reconciler | `spec/review-protocol.md` |
 | `.ct2/` directory layout | `spec/directory-structure.md` |
 | Git branch/commit/PR lifecycle | `spec/git-workflow.md` |
+| Helm planning canvas (HTML provider format) | `spec/helm-canvas.md` |
 | Claude reviewer mandate | `config/ct2-lens-cc-role.md` |
 | Codex reviewer mandate | `config/ct2-lens-cx-role.md` |
 
