@@ -682,7 +682,10 @@ $('#commitBtn').addEventListener('click',function(){
   render();
 });
 $('#dlBtn').addEventListener('click',function(){
-  var blob=new Blob([buildToken()],{type:"application/json"});
+  // download a bare JSON object so decision-*.json is valid JSON;
+  // ct2-helm-canvas recover --file (parse_token) accepts a bare object.
+  var rec=recordObj(read()); rec.answered_at=new Date().toISOString();
+  var blob=new Blob([JSON.stringify(rec,null,2)],{type:"application/json"});
   var a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
   a.download="decision-"+(C.decision||"canvas")+".json";
