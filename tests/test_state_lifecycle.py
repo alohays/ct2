@@ -219,6 +219,123 @@ class StateLifecycleTest(unittest.TestCase):
         self.assertEqual(ack.returncode, 0, ack.stderr)
         self.assertTrue((inbox / "done" / msg.name).exists())
 
+    def test_ct2_review_enter_stamps_review_timer(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-progress" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-progress", sealed="2026-05-12T00:00:00Z")
+        (ct2 / ".meta" / "001.started").write_text("2026-05-12T00:00:00Z\n", encoding="utf-8")
+
+        enter = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-enter", "001", project], cwd=REPO_ROOT)
+        self.assertEqual(enter.returncode, 0, enter.stderr)
+
+        reviewed = ct2 / "in-review" / "001-seal-smoke.md"
+        self.assertTrue(reviewed.exists())
+        self.assertFalse(ticket.exists())
+        self.assertIn("status: in-review", reviewed.read_text(encoding="utf-8"))
+        self.assertFalse((ct2 / ".meta" / "001.started").exists())
+        self.assertRegex((ct2 / ".meta" / "001.in-review").read_text(encoding="utf-8"), r"20\d\d-\d\d-\d\dT")
+
+    def test_ct2_review_watchdog_escalates_overdue_missing_sidecar(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-review" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-review", sealed="2026-05-12T00:00:00Z")
+        (ct2 / ".meta" / "001.in-review").write_text("2020-01-01T00:00:00Z\n", encoding="utf-8")
+
+        watchdog = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-watchdog", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(watchdog.returncode, 0, watchdog.stderr)
+
+        escalated = ct2 / "escalated" / "001-seal-smoke.md"
+        self.assertTrue(escalated.exists())
+        text = escalated.read_text(encoding="utf-8")
+        self.assertIn("status: escalated", text)
+        self.assertIn("verdict: escalated", text)
+        self.assertFalse(ticket.exists())
+        self.assertEqual(1, len(list((ct2 / "inbox" / "ct2-helm").glob("msg-*.md"))))
+
+    def test_ct2_review_watchdog_honors_nested_max_review_duration_min(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        cfg = ct2 / "config" / "harness.yaml"
+        cfg.write_text(
+            "circuit_breaker:\n"
+            "  max_review_rounds: 3\n"
+            "  max_review_duration_min: 1\n"
+            "  max_ticket_duration_min: 120\n",
+            encoding="utf-8",
+        )
+        ticket = ct2 / "in-review" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-review", sealed="2026-05-12T00:00:00Z")
+        stamp = ct2 / ".meta" / "001.in-review"
+        from datetime import datetime, timedelta, timezone
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        stamp.write_text(recent + "\n", encoding="utf-8")
+
+        watchdog = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-watchdog", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(watchdog.returncode, 0, watchdog.stderr)
+        self.assertTrue((ct2 / "escalated" / "001-seal-smoke.md").exists())
+        self.assertIn('"max_review_duration_min": 1', watchdog.stdout)
+
+    def test_ct2_review_watchdog_ignores_unconfigured_default_when_under_limit(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        cfg = ct2 / "config" / "harness.yaml"
+        cfg.write_text(
+            "circuit_breaker:\n"
+            "  max_review_duration_min: 1000\n",
+            encoding="utf-8",
+        )
+        ticket = ct2 / "in-review" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-review", sealed="2026-05-12T00:00:00Z")
+        stamp = ct2 / ".meta" / "001.in-review"
+        from datetime import datetime, timedelta, timezone
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        stamp.write_text(recent + "\n", encoding="utf-8")
+
+        watchdog = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-watchdog", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(watchdog.returncode, 0, watchdog.stderr)
+        self.assertFalse((ct2 / "escalated" / "001-seal-smoke.md").exists())
+        self.assertTrue(ticket.exists())
+
+    def test_ct2_status_reports_overdue_review_wait(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-review" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-review", sealed="2026-05-12T00:00:00Z")
+        (ct2 / ".meta" / "001.in-review").write_text("2020-01-01T00:00:00Z\n", encoding="utf-8")
+
+        status = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-status", project], cwd=REPO_ROOT)
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertIn("overdue reviews:     1", status.stdout)
+
+    def test_ct2_status_reports_unstamped_review_wait(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-review" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-review", sealed="2026-05-12T00:00:00Z")
+
+        status = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-status", project], cwd=REPO_ROOT)
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertIn("unstamped reviews:   1", status.stdout)
+
+    def test_ct2_sidecar_publish_fails_loudly_on_collision(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        tmp = ct2 / ".tmp" / "review.tmp"
+        tmp.write_text("---\nverdict: approved\n---\n", encoding="utf-8")
+
+        publish = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-sidecar-publish", tmp, "001-cc-r0.md", "--project-dir", project], cwd=REPO_ROOT)
+        self.assertEqual(publish.returncode, 0, publish.stderr)
+        self.assertTrue((ct2 / "reviews" / "001-cc-r0.md").exists())
+        self.assertFalse(tmp.exists())
+
+        tmp2 = ct2 / ".tmp" / "review-again.tmp"
+        tmp2.write_text("---\nverdict: rejected\n---\n", encoding="utf-8")
+        duplicate = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-sidecar-publish", tmp2, "001-cc-r0.md", "--project-dir", project], cwd=REPO_ROOT)
+        self.assertEqual(duplicate.returncode, 2)
+        self.assertTrue(tmp2.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

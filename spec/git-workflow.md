@@ -61,7 +61,7 @@ Strategy is read from `.ct2/config/harness.yaml` key `git_strategy`.
 | `backlog → in-progress` (`ct2-pickup`) | forge  | `ct2-git-start`: checkout existing branch or create from base |
 | `rejected → in-progress` (`ct2-pickup`) | forge | `ct2-git-start`: checkout existing branch (commits preserved) |
 | in-progress work                   | forge      | `git add/commit [push]` per AC + logical unit                  |
-| `in-progress → in-review`          | forge      | `ct2-git-submit`: push, open or update PR, write `pr:` field   |
+| `in-progress → in-review`          | forge      | `ct2-git-submit`: push, open or update PR, write `pr:` field; `ct2-review-enter` stamps review entry |
 | `in-review → done`                 | reconciler | `ct2-git-finalize approved`: squash-merge if `auto_merge` else leave PR open |
 | `in-review → rejected`             | reconciler | `ct2-git-finalize rejected`: no-op (PR stays open for rework)  |
 | `in-review → escalated`            | reconciler | `ct2-git-finalize escalated`: comment on PR, PR stays open     |

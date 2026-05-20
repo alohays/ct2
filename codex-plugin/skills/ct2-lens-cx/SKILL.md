@@ -151,11 +151,11 @@ Atomic write pattern:
 ```bash
 tmp=$(mktemp ".ct2/.tmp/cx-review-XXXXXX")
 # write the complete review to "$tmp"
-mv -n "$tmp" ".ct2/reviews/${ticket_id}-cx-r${round}.md"
+ct2-sidecar-publish "$tmp" "${ticket_id}-cx-r${round}.md"
 ```
 
-If `mv -n` leaves the temp file in place, another Codex reviewer wrote the
-sidecar first. Remove the temp file and skip reconciliation for that ticket.
+If `ct2-sidecar-publish` exits non-zero, report the immutable-collision error
+and do not run reconciliation for that ticket.
 
 ### Step 5: Reconcile
 

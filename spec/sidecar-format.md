@@ -64,6 +64,10 @@ Sidecars are immutable after creation. A re-review writes a new sidecar for a
 new review round. Hooks and reviews must reject attempts to edit or overwrite an
 existing sidecar.
 
+Reviewers publish completed temp files with `ct2-sidecar-publish`. If the
+destination sidecar already exists, the helper exits non-zero and leaves the temp
+file in place for inspection instead of silently no-oping.
+
 ## Independence
 
 A reviewer must not read the matching partner sidecar before writing its own

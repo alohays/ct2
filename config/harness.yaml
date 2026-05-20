@@ -5,6 +5,7 @@
 circuit_breaker:
   max_review_rounds: 3          # Force escalation beyond this many rejection rounds
   max_ticket_duration_min: 120  # Maximum processing time for a single ticket (minutes)
+  max_review_duration_min: 240  # Maximum wait in in-review before helm escalation
   max_concurrent_worktrees: 1   # Maximum simultaneous git worktrees (serial by default)
 
 forge:

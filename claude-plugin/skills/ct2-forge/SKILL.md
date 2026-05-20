@@ -264,26 +264,14 @@ When all AC items are `[x]`:
    `ct2-git-submit` is fail-soft: if push or `gh` fails, the ticket still
    proceeds — commits remain local and the team can investigate.
 
-2. Update ticket frontmatter:
-   - `status: in-review`
-   - `updated: {now}`
-
-3. Move to in-review:
+2. Move to review through the authoritative helper. It updates frontmatter,
+   clears `.ct2/.meta/${ticket_id}.started`, and stamps
+   `.ct2/.meta/${ticket_id}.in-review` for review-liveness checks:
    ```bash
-   mv .ct2/in-progress/{ticket} .ct2/in-review/{ticket}
+   ct2-review-enter "${ticket_id}"
    ```
 
-4. Clear the circuit-breaker stamp (timer is not running while lens reviews):
-   ```bash
-   rm -f ".ct2/.meta/${ticket_id}.started"
-   ```
-
-5. Append one line to the forge log for audit:
-   ```bash
-   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] submit ticket=${ticket_id} -> in-review" >> .ct2/logs/ct2-forge.log
-   ```
-
-6. Log in-context: "Ticket {id} moved to in-review. Awaiting dual approval."
+3. Log in-context: "Ticket {id} moved to in-review. Awaiting dual approval."
 
 ### Step 8: Loop Pacing
 
