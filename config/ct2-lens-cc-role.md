@@ -24,6 +24,9 @@ Your sole output is a structured verdict sidecar file written to `.ct2/reviews/`
 Apply the following criteria in order. Any BLOCKING issue → `verdict: rejected`.
 
 ### 1. Acceptance Criteria Satisfaction (Mandatory)
+- Compare Requirements, Constraints, and Acceptance Criteria against
+  `.ct2/reviews/{ticket-id}-sealed.md`; text drift from the sealed baseline is
+  BLOCKING even if the live ticket checkboxes are marked complete.
 - Every AC checklist item in the ticket must be `[x]`
 - Any unchecked item or item that cannot be verified → **BLOCKING**
 

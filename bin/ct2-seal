@@ -10,6 +10,7 @@
 set -euo pipefail
 
 CT2_DIR="${PWD}/.ct2"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Locate .ct2/ ──────────────────────────────────────────────────────────────
 if [[ ! -d "$CT2_DIR" ]]; then
@@ -57,7 +58,19 @@ if [[ -z "$TICKET_PATH" ]]; then
 fi
 
 TICKET_FILE=$(basename "$TICKET_PATH")
+TICKET_ID=$(echo "${TICKET_FILE%.md}" | grep -oE '^[0-9]+')
+SNAPSHOT_DEST="${CT2_DIR}/reviews/${TICKET_ID}-sealed.md"
 echo "ct2-seal: sealing ${TICKET_FILE}"
+
+if [[ -z "$TICKET_ID" ]]; then
+  echo "ct2-seal: error — cannot extract numeric ticket id from '${TICKET_FILE}'" >&2
+  exit 1
+fi
+
+if [[ -e "$SNAPSHOT_DEST" ]]; then
+  echo "ct2-seal: error — sealed baseline already exists: .ct2/reviews/${TICKET_ID}-sealed.md" >&2
+  exit 1
+fi
 
 # ── Validate required fields (Python for YAML parsing) ───────────────────────
 python3 - "$TICKET_PATH" <<'PYEOF'
@@ -112,9 +125,11 @@ fi
 SEALED_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 DEST="${CT2_DIR}/backlog/${TICKET_FILE}"
 TMP_UPDATED=$(mktemp "${CT2_DIR}/.tmp/seal-XXXXXX")
+TMP_SNAPSHOT=$(mktemp "${CT2_DIR}/.tmp/sealed-baseline-XXXXXX.md")
 
 cleanup_tmp() {
   [[ -n "${TMP_UPDATED:-}" && -f "$TMP_UPDATED" ]] && rm -f "$TMP_UPDATED"
+  [[ -n "${TMP_SNAPSHOT:-}" && -f "$TMP_SNAPSHOT" ]] && rm -f "$TMP_SNAPSHOT"
 }
 trap cleanup_tmp EXIT
 
@@ -144,16 +159,26 @@ fm = re.sub(r'^(updated:\s*).*$', rf'\g<1>{updated_ts}', fm, count=1, flags=re.M
 open(dest_path, 'w').write(prefix + fm + rest)
 PYEOF
 
+python3 "${SCRIPT_DIR}/ct2-sealed-baseline" write "$TICKET_PATH" "$TMP_SNAPSHOT"
+
+mv -n "$TMP_SNAPSHOT" "$SNAPSHOT_DEST" 2>/dev/null
+if [[ -f "$TMP_SNAPSHOT" ]]; then
+  echo "ct2-seal: error — sealed baseline collision for ${TICKET_ID}" >&2
+  exit 1
+fi
+
 # Atomic no-clobber install to backlog — verify tmp gone to confirm success
 # because macOS mv -n returns 0 even when the move is suppressed.
 mv -n "$TMP_UPDATED" "$DEST" 2>/dev/null
 if [[ -f "$TMP_UPDATED" ]]; then
+  rm -f "$SNAPSHOT_DEST"
   echo "ct2-seal: error — ${TICKET_FILE} already exists in backlog/. It was already sealed." >&2
   echo "  Run 'ct2-status' to check its current state." >&2
   exit 1
 fi
 
 TMP_UPDATED=""
+TMP_SNAPSHOT=""
 rm -f "$TICKET_PATH"
 trap - EXIT
 

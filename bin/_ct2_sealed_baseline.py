@@ -1,0 +1,109 @@
+"""Helpers for immutable sealed ticket baselines."""
+
+from __future__ import annotations
+
+import hashlib
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+
+from _ct2_vao import read_frontmatter, ticket_id_from_name
+
+
+SECTION_TITLES = ("Requirements", "Constraints", "Acceptance Criteria")
+HASH_KEYS = {
+    "Requirements": "requirements-sha256",
+    "Constraints": "constraints-sha256",
+    "Acceptance Criteria": "acceptance-criteria-sha256",
+}
+
+
+def now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def normalize_section(text: str) -> str:
+    lines = []
+    for line in text.strip().splitlines():
+        normalized = re.sub(r"^(\s*-\s*)\[[ xX]\]", r"\1[ ]", line.rstrip())
+        lines.append(normalized)
+    return "\n".join(lines).strip() + "\n"
+
+
+def section_hash(text: str) -> str:
+    return hashlib.sha256(normalize_section(text).encode("utf-8")).hexdigest()
+
+
+def extract_sections(text: str) -> dict[str, str]:
+    matches = list(re.finditer(r"^##\s+(.+?)\s*$", text, flags=re.MULTILINE))
+    sections: dict[str, str] = {}
+    for index, match in enumerate(matches):
+        title = match.group(1).strip()
+        if title not in SECTION_TITLES:
+            continue
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        sections[title] = text[start:end].strip("\n")
+    return sections
+
+
+def ticket_hashes(ticket_path: Path) -> dict[str, str]:
+    sections = extract_sections(ticket_path.read_text(encoding="utf-8"))
+    return {HASH_KEYS[title]: section_hash(sections.get(title, "")) for title in SECTION_TITLES}
+
+
+def sealed_snapshot_name(ticket_path: Path) -> str:
+    return f"{ticket_id_from_name(ticket_path)}-sealed.md"
+
+
+def write_snapshot(ticket_path: Path, dest: Path) -> None:
+    text = ticket_path.read_text(encoding="utf-8")
+    sections = extract_sections(text)
+    hashes = {HASH_KEYS[title]: section_hash(sections.get(title, "")) for title in SECTION_TITLES}
+    fm = read_frontmatter(ticket_path)
+    ticket_stem = ticket_path.stem
+    body = [
+        "---",
+        f"ticket: {ticket_stem}",
+        f"timestamp: {now()}",
+        f"source-sealed: {fm.get('sealed', 'pending')}",
+    ]
+    for key, value in hashes.items():
+        body.append(f"{key}: {value}")
+    body.append("---\n")
+    for title in SECTION_TITLES:
+        body.append(f"## {title}\n")
+        body.append((sections.get(title, "")).strip() + "\n")
+    dest.write_text("\n".join(body), encoding="utf-8")
+
+
+def snapshot_hashes(snapshot_path: Path) -> dict[str, str]:
+    fm = read_frontmatter(snapshot_path)
+    return {key: str(fm.get(key, "")) for key in HASH_KEYS.values()}
+
+
+def compare_ticket_to_snapshot(ticket_path: Path, snapshot_path: Path) -> tuple[bool, dict[str, object]]:
+    if not snapshot_path.exists():
+        return False, {"snapshot": str(snapshot_path), "missing": True}
+    live = ticket_hashes(ticket_path)
+    sealed = snapshot_hashes(snapshot_path)
+    mismatches = [key for key in HASH_KEYS.values() if live.get(key) != sealed.get(key)]
+    return not mismatches, {"snapshot": str(snapshot_path), "mismatches": mismatches, "live": live, "sealed": sealed}
+
+
+def baseline_status(ticket_path: Path, snapshot_path: Path) -> tuple[str, dict[str, object]]:
+    """Classify a ticket vs its sealed baseline.
+
+    Returns one of:
+      - "ok":      baseline exists and live ticket matches.
+      - "missing": baseline file does not exist (legacy ticket, needs backfill).
+      - "drift":   baseline exists but live ticket section hashes diverge.
+    """
+    if not snapshot_path.exists():
+        return "missing", {"snapshot": str(snapshot_path), "missing": True}
+    live = ticket_hashes(ticket_path)
+    sealed = snapshot_hashes(snapshot_path)
+    mismatches = [key for key in HASH_KEYS.values() if live.get(key) != sealed.get(key)]
+    if mismatches:
+        return "drift", {"snapshot": str(snapshot_path), "mismatches": mismatches, "live": live, "sealed": sealed}
+    return "ok", {"snapshot": str(snapshot_path)}

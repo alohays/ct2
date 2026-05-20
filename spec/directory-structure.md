@@ -27,6 +27,7 @@ This directory is excluded from git via `.git/info/exclude` (never via `.gitigno
 ├── reviews/                           # Reviewer verdict sidecar files (immutable, authoritative)
 │   ├── {ticket-id}-cc-r{n}.md        # Claude reviewer verdict sidecar (round n)
 │   ├── {ticket-id}-cx-r{n}.md        # Codex reviewer verdict sidecar (round n)
+│   ├── {ticket-id}-sealed.md         # Immutable sealed Requirements/Constraints/AC baseline
 │   └── .archive/                     # Populated lazily by ct2-revise on escalation/rejected rework
 │       └── {YYYYMMDDTHHMMSSZ}-{id}/  # One folder per revise operation; holds archived sidecars
 ├── inbox/                             # Asynchronous message channels between roles

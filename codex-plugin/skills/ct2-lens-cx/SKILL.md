@@ -103,7 +103,10 @@ For each `.ct2/in-review/*.md` ticket:
 For each ticket needing review:
 
 1. Read the ticket content, including frontmatter, Requirements, Constraints,
-   Context, and Acceptance Criteria.
+   Context, and Acceptance Criteria. Also read
+   `.ct2/reviews/{ticket_id}-sealed.md` as the immutable
+   Requirements/Constraints/Acceptance Criteria baseline; checkbox completion may
+   differ, but governed text drift is BLOCKING.
 2. Read `.ct2/config/ct2-lens-cx-role.md`.
 3. Inspect implementation evidence:
    - `git status --short`

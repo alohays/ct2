@@ -10,11 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from _ct2_vao import STATE_DIRS, ensure_ct2, now, read_frontmatter, read_jsonl, ticket_id_from_name
+from _ct2_sealed_baseline import compare_ticket_to_snapshot, sealed_snapshot_name
 
 
 PLAN_STATES = {"in-progress", "in-review", "done"}
 AC_STATES = {"in-review", "done"}
 DONE_STATES = {"done"}
+SEALED_BASELINE_STATES = {"backlog", "in-progress", "in-review", "rejected", "escalated", "done"}
 EVIDENCE_KINDS = {"command", "artifact", "verifier", "hook-event"}
 NULLISH = {"", "null", "none"}
 REQUIRED_SIDECAR_SECTIONS = (
@@ -213,6 +215,10 @@ def audit_ticket(ct2_dir: Path, state: str, path: Path) -> dict[str, Any]:
         check("required_frontmatter", not missing, {"required": list(required), "missing": missing}),
         check("id_matches_filename", str(fm.get("id", "")) == ticket_id, {"frontmatter": fm.get("id"), "filename": ticket_id}),
     ]
+
+    if state in SEALED_BASELINE_STATES:
+        baseline_ok, baseline_evidence = compare_ticket_to_snapshot(path, ct2_dir / "reviews" / sealed_snapshot_name(path))
+        checks.append(check("sealed_baseline", baseline_ok, baseline_evidence))
 
     plan_required = state in PLAN_STATES and not has_plan_exempt(path)
     plan_ok = not plan_required or plan_exists(ct2_dir, ticket_id, round_num)

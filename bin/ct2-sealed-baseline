@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Write or check immutable CT2 sealed ticket baselines."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from _ct2_sealed_baseline import (
+    compare_ticket_to_snapshot,
+    sealed_snapshot_name,
+    write_snapshot,
+)
+
+
+SEALED_BASELINE_STATES = ("backlog", "in-progress", "in-review", "rejected", "escalated", "done")
+
+
+def cmd_write(args: argparse.Namespace) -> int:
+    write_snapshot(Path(args.ticket), Path(args.output))
+    return 0
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    ok, evidence = compare_ticket_to_snapshot(Path(args.ticket), Path(args.snapshot))
+    if args.json:
+        print(json.dumps({"ok": ok, "evidence": evidence}, indent=2, sort_keys=True))
+    elif not ok:
+        print(f"ct2-sealed-baseline: mismatch: {evidence}", file=sys.stderr)
+    return 0 if ok else 1
+
+
+def cmd_backfill(args: argparse.Namespace) -> int:
+    project = Path(args.project_dir).resolve()
+    ct2_dir = project / ".ct2"
+    if not ct2_dir.exists():
+        print(f"ct2-sealed-baseline: no .ct2 in {project}", file=sys.stderr)
+        return 2
+    reviews_dir = ct2_dir / "reviews"
+    reviews_dir.mkdir(parents=True, exist_ok=True)
+    created: list[str] = []
+    skipped: list[str] = []
+    for state in SEALED_BASELINE_STATES:
+        for ticket in sorted((ct2_dir / state).glob("*.md")):
+            snapshot = reviews_dir / sealed_snapshot_name(ticket)
+            if snapshot.exists():
+                skipped.append(snapshot.name)
+                continue
+            write_snapshot(ticket, snapshot)
+            created.append(snapshot.name)
+    report = {"project": str(project), "created": created, "skipped": skipped}
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        for name in created:
+            print(f"backfilled {name}")
+        for name in skipped:
+            print(f"skipped (exists) {name}")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Manage CT2 sealed ticket baselines")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    write = sub.add_parser("write")
+    write.add_argument("ticket")
+    write.add_argument("output")
+    write.set_defaults(func=cmd_write)
+
+    check = sub.add_parser("check")
+    check.add_argument("ticket")
+    check.add_argument("snapshot")
+    check.add_argument("--json", action="store_true")
+    check.set_defaults(func=cmd_check)
+
+    backfill = sub.add_parser(
+        "backfill",
+        help="Write sealed baselines for legacy tickets missing snapshots (one-time migration)",
+    )
+    backfill.add_argument("project_dir", nargs="?", default=".")
+    backfill.add_argument("--json", action="store_true")
+    backfill.set_defaults(func=cmd_backfill)
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -141,3 +141,7 @@ loop can claim a message on macOS and Linux.
 5. **Test coverage** — sufficient coverage for the change; tests are correct and meaningful
 6. **Security** — OWASP Top 10; secrets not hardcoded; input validated at boundaries
 7. **Scope creep** — implementation does not exceed ticket scope; over-engineering flagged
+
+Reviewers must use `.ct2/reviews/{ticket-id}-sealed.md` as the immutable baseline
+for Requirements, Constraints, and Acceptance Criteria. The live ticket may show
+AC checkboxes as completed, but the governed text must match the sealed baseline.

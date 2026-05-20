@@ -191,6 +191,7 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-review-watchdog [dir]` | Escalate tickets whose reviewer sidecars exceed `max_review_duration_min` |
 | `ct2-sidecar-publish <tmp> <dest>` | Publish a review sidecar and fail loudly on immutable-path collision |
 | `ct2-duration-check [dir]` | Apply the in-progress duration breaker and escalate repeated bounces |
+| `ct2-sealed-baseline ...` | Internal. Write/check immutable sealed requirements and AC snapshots |
 | `ct2-revise <ticket>` | Archive past sidecars and return an escalated/rejected ticket to `draft/` |
 | `ct2-helm-canvas <sub> ...` | Generate, recover, seal, or expire a helm planning canvas (`spec/helm-canvas.md`) |
 | `ct2-status [dir]` | Display Kanban board, filesystem workflow summary, and inbox |
