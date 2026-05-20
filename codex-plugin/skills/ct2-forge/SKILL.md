@@ -30,18 +30,20 @@ not write review sidecars, and do not approve your own work.
    priority and sealed timestamp.
 3. Run `ct2-pickup` to move exactly one ticket to `.ct2/in-progress/` under
    the lifecycle lock, then run `ct2-git-start`.
-4. Read the whole ticket. If the ticket is ambiguous in a way requiring user
+4. Run `ct2-duration-check` each loop before continuing work on an
+   `in-progress/` ticket; obey backlog/escalated moves produced by the helper.
+5. Read the whole ticket. If the ticket is ambiguous in a way requiring user
    judgment, send a `blocked` message to `ct2-helm`; do not invent scope.
-5. Before source edits, write plan evidence to `.ct2/plans/{id}-r{round}.md`
+6. Before source edits, write plan evidence to `.ct2/plans/{id}-r{round}.md`
    unless the ticket explicitly contains a `plan-exempt` reason.
-6. Implement only the ticket's `touched-files` scope unless a necessary
+7. Implement only the ticket's `touched-files` scope unless a necessary
    transitive change is documented in `## Forge Notes`.
-7. Run real verification for every AC. Mark AC checkboxes only after evidence.
-8. Commit as specified by `spec/git-workflow.md`, then run `ct2-git-submit`.
-9. Run `ct2-review-enter {ticket}` to move the ticket to `.ct2/in-review/`,
-   clear the started stamp, stamp `.ct2/.meta/{id}.in-review`, and wait for both
-   reviewers plus reconciliation.
-10. For `/goal` use, keep working until every in-scope ticket reaches `done/`,
+8. Run real verification for every AC. Mark AC checkboxes only after evidence.
+9. Commit as specified by `spec/git-workflow.md`, then run `ct2-git-submit`.
+10. Run `ct2-review-enter {ticket}` to move the ticket to `.ct2/in-review/`,
+    clear the started stamp, stamp `.ct2/.meta/{id}.in-review`, and wait for both
+    reviewers plus reconciliation.
+11. For `/goal` use, keep working until every in-scope ticket reaches `done/`,
     `escalated/`, or an explicit blocked/budget-limited outcome with evidence.
 
 ## Goal Wait States

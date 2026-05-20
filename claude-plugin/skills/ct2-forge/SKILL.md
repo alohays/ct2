@@ -91,37 +91,15 @@ mutates on every Edit/AC-check and is preserved across `mv` — both make ticket
 mtime an unreliable stopwatch). Pickup time is recorded as a dedicated stamp
 file in `.ct2/.meta/` at the end of Step 5.
 
-For any ticket in `.ct2/in-progress/`:
+Run the duration breaker helper once per iteration:
 ```bash
-for ticket in .ct2/in-progress/*.md; do
-  [ -f "$ticket" ] || continue
-  stem=$(basename "$ticket" .md)
-  ticket_id=$(echo "$stem" | grep -oE '^[0-9]+')
-  started_stamp=".ct2/.meta/${ticket_id}.started"
-
-  # If the stamp is missing (e.g. session restart after a crash), lay it down now.
-  # This biases toward under-counting elapsed time rather than over-counting —
-  # preferable to spuriously tripping the breaker on ticket mtime.
-  if [ ! -f "$started_stamp" ]; then
-    date -u > "$started_stamp"
-    continue
-  fi
-
-  start_time=$(stat -f %m "$started_stamp" 2>/dev/null || stat -c %Y "$started_stamp")
-  elapsed_min=$(( ($(date +%s) - start_time) / 60 ))
-  if (( elapsed_min > MAX_TICKET_DURATION_MIN )); then
-    # Return to backlog
-    mv "$ticket" ".ct2/backlog/$(basename "$ticket")"
-    python3 -c "
-import re, sys
-c = open(sys.argv[1]).read()
-c = re.sub(r'^(status:\s*).*\$', r'\g<1>backlog', c, flags=re.MULTILINE)
-open(sys.argv[1], 'w').write(c)" ".ct2/backlog/$(basename "$ticket")"
-    rm -f "$started_stamp"
-    echo "Circuit breaker: ticket returned to backlog (duration exceeded)"
-  fi
-done
+ct2-duration-check .
 ```
+
+`ct2-duration-check` lays down a missing `.started` stamp, returns an overdue
+ticket to `backlog/` while incrementing `duration-bounce-count` and
+`total-attempts`, and moves the ticket to `escalated/` once the next bounce
+reaches `max_duration_bounces` or lifetime attempts reach `max_total_attempts`.
 
 ### Step 4: Check for Rejected Tickets
 Run `ct2-pickup --source rejected .`. The helper holds the lifecycle lock,

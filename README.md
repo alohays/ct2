@@ -190,6 +190,7 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-review-enter <ticket>` | Move a completed ticket into `in-review/` and stamp review entry time |
 | `ct2-review-watchdog [dir]` | Escalate tickets whose reviewer sidecars exceed `max_review_duration_min` |
 | `ct2-sidecar-publish <tmp> <dest>` | Publish a review sidecar and fail loudly on immutable-path collision |
+| `ct2-duration-check [dir]` | Apply the in-progress duration breaker and escalate repeated bounces |
 | `ct2-revise <ticket>` | Archive past sidecars and return an escalated/rejected ticket to `draft/` |
 | `ct2-helm-canvas <sub> ...` | Generate, recover, seal, or expire a helm planning canvas (`spec/helm-canvas.md`) |
 | `ct2-status [dir]` | Display Kanban board, filesystem workflow summary, and inbox |
@@ -262,7 +263,10 @@ Codex metadata output, and plugin/skill contract shape.
   intervention via `ct2-revise`, which archives past review sidecars and
   returns the ticket to `draft/` for rework.
 - **Duration circuit breaker**: if forge holds a ticket longer than
-  `max_ticket_duration_min`, it is bounced back to `backlog/` automatically.
+  `max_ticket_duration_min`, `ct2-duration-check` increments
+  `duration-bounce-count` and returns it to `backlog/`. Once the next bounce
+  reaches `max_duration_bounces` or lifetime attempts reach
+  `max_total_attempts`, the ticket moves to `escalated/` instead.
   Timer is driven by `.ct2/.meta/{id}.started`, not the ticket file's mtime.
 - **Review SLA circuit breaker**: if a ticket waits in `in-review/` longer than
   `max_review_duration_min` with a missing sidecar, `ct2-review-watchdog`
