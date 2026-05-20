@@ -89,3 +89,21 @@ def compare_ticket_to_snapshot(ticket_path: Path, snapshot_path: Path) -> tuple[
     sealed = snapshot_hashes(snapshot_path)
     mismatches = [key for key in HASH_KEYS.values() if live.get(key) != sealed.get(key)]
     return not mismatches, {"snapshot": str(snapshot_path), "mismatches": mismatches, "live": live, "sealed": sealed}
+
+
+def baseline_status(ticket_path: Path, snapshot_path: Path) -> tuple[str, dict[str, object]]:
+    """Classify a ticket vs its sealed baseline.
+
+    Returns one of:
+      - "ok":      baseline exists and live ticket matches.
+      - "missing": baseline file does not exist (legacy ticket, needs backfill).
+      - "drift":   baseline exists but live ticket section hashes diverge.
+    """
+    if not snapshot_path.exists():
+        return "missing", {"snapshot": str(snapshot_path), "missing": True}
+    live = ticket_hashes(ticket_path)
+    sealed = snapshot_hashes(snapshot_path)
+    mismatches = [key for key in HASH_KEYS.values() if live.get(key) != sealed.get(key)]
+    if mismatches:
+        return "drift", {"snapshot": str(snapshot_path), "mismatches": mismatches, "live": live, "sealed": sealed}
+    return "ok", {"snapshot": str(snapshot_path)}

@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from _ct2_sealed_baseline import compare_ticket_to_snapshot, sealed_snapshot_name
+from _ct2_sealed_baseline import baseline_status, sealed_snapshot_name
 
 
 REQUIRED_SPECS = (
@@ -51,6 +51,10 @@ def check(ok: bool, name: str, evidence: str) -> dict:
     return {"ok": ok, "name": name, "evidence": evidence}
 
 
+def advisory(name: str, evidence: str) -> dict:
+    return {"ok": True, "name": name, "evidence": evidence, "advisory": True}
+
+
 def adapter_ok(path: Path) -> tuple[bool, str]:
     try:
         text = path.read_text(encoding="utf-8")
@@ -72,6 +76,11 @@ def main() -> int:
     parser.add_argument("--repo", default=Path(__file__).resolve().parents[1])
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--run-tests", action="store_true")
+    parser.add_argument(
+        "--strict-sealed-baseline",
+        action="store_true",
+        help="Fail if any governed ticket is missing its sealed baseline (default: advisory, drift still fatal)",
+    )
     args = parser.parse_args()
 
     repo = Path(args.repo).resolve()
@@ -102,8 +111,25 @@ def main() -> int:
         ct2_dir = project / ".ct2"
         for state in SEALED_BASELINE_STATES:
             for ticket in sorted((ct2_dir / state).glob("*.md")):
-                ok, evidence = compare_ticket_to_snapshot(ticket, ct2_dir / "reviews" / sealed_snapshot_name(ticket))
-                results.append(check(ok, f"sealed-baseline:{ticket.name}", json.dumps(evidence, sort_keys=True)))
+                snapshot = ct2_dir / "reviews" / sealed_snapshot_name(ticket)
+                status, evidence = baseline_status(ticket, snapshot)
+                name = f"sealed-baseline:{ticket.name}"
+                evidence_json = json.dumps(evidence, sort_keys=True)
+                if status == "ok":
+                    results.append(check(True, name, evidence_json))
+                elif status == "drift":
+                    results.append(check(False, name, evidence_json))
+                else:  # missing -- legacy ticket sealed before baseline snapshots existed
+                    if args.strict_sealed_baseline:
+                        results.append(check(False, name, evidence_json))
+                    else:
+                        results.append(
+                            advisory(
+                                name,
+                                evidence_json
+                                + " (run `ct2-sealed-baseline backfill` to migrate; pass --strict-sealed-baseline to fail)",
+                            )
+                        )
 
     if args.run_tests:
         proc = subprocess.run(
@@ -126,7 +152,12 @@ def main() -> int:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:
         for item in results:
-            prefix = "ok" if item["ok"] else "FAIL"
+            if item.get("advisory"):
+                prefix = "WARN"
+            elif item["ok"]:
+                prefix = "ok"
+            else:
+                prefix = "FAIL"
             print(f"{prefix:<4} {item['name']} - {item['evidence']}")
     return 0 if report["ok"] else 1
 

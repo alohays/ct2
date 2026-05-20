@@ -1,4 +1,5 @@
 import hashlib
+import json
 import subprocess
 import sys
 import tempfile
@@ -500,6 +501,80 @@ class StateLifecycleTest(unittest.TestCase):
         verify_drift = run_cmd([sys.executable, REPO_ROOT / "bin" / "ct2-verify", "--json", project], cwd=REPO_ROOT)
         self.assertEqual(verify_drift.returncode, 1)
         self.assertIn("sealed-baseline:001-seal-smoke.md", verify_drift.stdout)
+
+    def test_ct2_verify_treats_missing_legacy_baseline_as_advisory(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        legacy = ct2 / "done" / "900-legacy.md"
+        write_ticket(legacy, ticket_id="900", status="done", sealed="2024-01-01T00:00:00Z")
+
+        verify = run_cmd([sys.executable, REPO_ROOT / "bin" / "ct2-verify", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(verify.returncode, 0, verify.stdout + verify.stderr)
+        self.assertIn("sealed-baseline:900-legacy.md", verify.stdout)
+        report = json.loads(verify.stdout)
+        baseline_entry = next(c for c in report["checks"] if c["name"] == "sealed-baseline:900-legacy.md")
+        self.assertTrue(baseline_entry["ok"])
+        self.assertTrue(baseline_entry.get("advisory"))
+
+    def test_ct2_verify_strict_sealed_baseline_fails_missing(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        legacy = ct2 / "done" / "900-legacy.md"
+        write_ticket(legacy, ticket_id="900", status="done", sealed="2024-01-01T00:00:00Z")
+
+        verify = run_cmd(
+            [sys.executable, REPO_ROOT / "bin" / "ct2-verify", "--strict-sealed-baseline", "--json", project],
+            cwd=REPO_ROOT,
+        )
+        self.assertEqual(verify.returncode, 1, verify.stdout)
+        report = json.loads(verify.stdout)
+        baseline_entry = next(c for c in report["checks"] if c["name"] == "sealed-baseline:900-legacy.md")
+        self.assertFalse(baseline_entry["ok"])
+
+    def test_ct2_sealed_baseline_backfill_creates_missing_snapshots(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "done" / "900-legacy.md", ticket_id="900", status="done", sealed="2024-01-01T00:00:00Z")
+        write_ticket(ct2 / "done" / "901-legacy.md", ticket_id="901", status="done", sealed="2024-01-02T00:00:00Z")
+
+        backfill = run_cmd(
+            [sys.executable, REPO_ROOT / "bin" / "ct2-sealed-baseline", "backfill", "--json", project],
+            cwd=REPO_ROOT,
+        )
+        self.assertEqual(backfill.returncode, 0, backfill.stderr)
+        self.assertTrue((ct2 / "reviews" / "900-sealed.md").exists())
+        self.assertTrue((ct2 / "reviews" / "901-sealed.md").exists())
+
+        verify = run_cmd(
+            [sys.executable, REPO_ROOT / "bin" / "ct2-verify", "--strict-sealed-baseline", "--json", project],
+            cwd=REPO_ROOT,
+        )
+        self.assertEqual(verify.returncode, 0, verify.stdout)
+
+        rerun = run_cmd(
+            [sys.executable, REPO_ROOT / "bin" / "ct2-sealed-baseline", "backfill", "--json", project],
+            cwd=REPO_ROOT,
+        )
+        self.assertEqual(rerun.returncode, 0, rerun.stderr)
+        report = json.loads(rerun.stdout)
+        self.assertEqual([], report["created"])
+        self.assertIn("900-sealed.md", report["skipped"])
+
+    def test_ct2_verify_still_fails_on_drift_when_baseline_exists(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        draft = ct2 / "draft" / "001-seal-smoke.md"
+        backlog = ct2 / "backlog" / "001-seal-smoke.md"
+        write_ticket(draft)
+        seal = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-seal", "001"], cwd=project)
+        self.assertEqual(seal.returncode, 0, seal.stderr)
+
+        drift = backlog.read_text(encoding="utf-8").replace("Draft moves to backlog.", "Draft moves safely to backlog.")
+        backlog.write_text(drift, encoding="utf-8")
+
+        verify = run_cmd([sys.executable, REPO_ROOT / "bin" / "ct2-verify", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(verify.returncode, 1, verify.stdout)
+        self.assertIn("sealed-baseline:001-seal-smoke.md", verify.stdout)
 
     def test_ct2_revise_archives_sealed_baseline(self):
         project = self.make_project()
