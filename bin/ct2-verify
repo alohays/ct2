@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _ct2_sealed_baseline import compare_ticket_to_snapshot, sealed_snapshot_name
+
 
 REQUIRED_SPECS = (
     "PROTOCOL.md",
@@ -39,7 +41,9 @@ REQUIRED_BINS = (
     "ct2-review-watchdog",
     "ct2-sidecar-publish",
     "ct2-duration-check",
+    "ct2-sealed-baseline",
 )
+SEALED_BASELINE_STATES = ("backlog", "in-progress", "in-review", "rejected", "escalated", "done")
 REQUIRED_SECTIONS = ("## Invocation", "## Objective", "## Required CT2 Effects", "## Stop Condition")
 
 
@@ -95,6 +99,11 @@ def main() -> int:
                 ", ".join(path.name for path in in_progress) if in_progress else "0 tickets",
             )
         )
+        ct2_dir = project / ".ct2"
+        for state in SEALED_BASELINE_STATES:
+            for ticket in sorted((ct2_dir / state).glob("*.md")):
+                ok, evidence = compare_ticket_to_snapshot(ticket, ct2_dir / "reviews" / sealed_snapshot_name(ticket))
+                results.append(check(ok, f"sealed-baseline:{ticket.name}", json.dumps(evidence, sort_keys=True)))
 
     if args.run_tests:
         proc = subprocess.run(

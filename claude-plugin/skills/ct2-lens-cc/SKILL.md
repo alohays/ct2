@@ -96,7 +96,7 @@ done
 
 For each ticket needing review:
 
-**4a. Read the ticket** (`.ct2/in-review/{ticket}.md`) — full content including frontmatter, Requirements, Constraints, Acceptance Criteria.
+**4a. Read the ticket** (`.ct2/in-review/{ticket}.md`) — full content including frontmatter, Requirements, Constraints, Acceptance Criteria. Also read `.ct2/reviews/{ticket_id}-sealed.md` and treat it as the immutable Requirements/Constraints/Acceptance Criteria baseline; checkbox completion may differ, but governed text drift is BLOCKING.
 
 **4b. Examine the implementation** — read all files listed in `touched-files`, plus any related test files, configs, or documentation. Use Glob and Grep to find relevant code.
 

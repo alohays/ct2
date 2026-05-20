@@ -108,6 +108,10 @@ The current hard-coded pool size (10) is a bottleneck under production load.
 - **Constraints**: Hard limits forge must not violate. Violations are automatic rejection.
 - **Context**: Background explanation for forge. Not a requirement — informational only.
 - **Acceptance Criteria**: The authoritative completion checklist. All items must be checked before forge moves the ticket to `in-review/`. Reviewers verify these items.
+- At `ct2-seal`, Requirements, Constraints, and Acceptance Criteria are hashed
+  into `.ct2/reviews/{id}-sealed.md`. Later checkbox completion is allowed, but
+  text drift in these sections is a conformance failure unless helm revises and
+  reseals the ticket.
 
 ## Review Sidecar Format
 

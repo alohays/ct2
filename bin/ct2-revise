@@ -96,7 +96,7 @@ ARCHIVE_DIR="${CT2_DIR}/reviews/.archive/${TIMESTAMP}-${TICKET_ID}"
 mkdir -p "$ARCHIVE_DIR"
 
 ARCHIVED=0
-for sc in "${CT2_DIR}/reviews/${TICKET_ID}-cc-r"*.md "${CT2_DIR}/reviews/${TICKET_ID}-cx-r"*.md; do
+for sc in "${CT2_DIR}/reviews/${TICKET_ID}-sealed.md" "${CT2_DIR}/reviews/${TICKET_ID}-cc-r"*.md "${CT2_DIR}/reviews/${TICKET_ID}-cx-r"*.md; do
   [[ -f "$sc" ]] || continue
   mv "$sc" "${ARCHIVE_DIR}/$(basename "$sc")"
   ARCHIVED=$((ARCHIVED + 1))

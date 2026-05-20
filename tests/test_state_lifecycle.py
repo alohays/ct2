@@ -99,6 +99,7 @@ class StateLifecycleTest(unittest.TestCase):
         self.assertNotIn("updated: 2026-05-12T00:00:00Z", content)
         self.assertIn("status: quoted-body-value", content)
         self.assertIn("updated: quoted-body-value", content)
+        self.assertTrue((ct2 / "reviews" / "001-sealed.md").exists())
         self.assertEqual([], list((ct2 / ".tmp").iterdir()))
 
     def test_ct2_seal_collision_leaves_draft_and_tmp_clean(self):
@@ -479,6 +480,45 @@ class StateLifecycleTest(unittest.TestCase):
         self.assertIn("review-round: 0", text)
         self.assertIn("duration-bounce-count: 0", text)
         self.assertIn("total-attempts: 8", text)
+
+    def test_ct2_verify_rejects_sealed_acceptance_text_drift(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        draft = ct2 / "draft" / "001-seal-smoke.md"
+        backlog = ct2 / "backlog" / "001-seal-smoke.md"
+        write_ticket(draft)
+        seal = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-seal", "001"], cwd=project)
+        self.assertEqual(seal.returncode, 0, seal.stderr)
+
+        checkbox_only = backlog.read_text(encoding="utf-8").replace("- [ ] Draft moves to backlog.", "- [x] Draft moves to backlog.")
+        backlog.write_text(checkbox_only, encoding="utf-8")
+        verify_ok = run_cmd([sys.executable, REPO_ROOT / "bin" / "ct2-verify", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(verify_ok.returncode, 0, verify_ok.stdout + verify_ok.stderr)
+
+        drift = checkbox_only.replace("Draft moves to backlog.", "Draft moves safely to backlog.")
+        backlog.write_text(drift, encoding="utf-8")
+        verify_drift = run_cmd([sys.executable, REPO_ROOT / "bin" / "ct2-verify", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(verify_drift.returncode, 1)
+        self.assertIn("sealed-baseline:001-seal-smoke.md", verify_drift.stdout)
+
+    def test_ct2_revise_archives_sealed_baseline(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        draft = ct2 / "draft" / "001-seal-smoke.md"
+        backlog = ct2 / "backlog" / "001-seal-smoke.md"
+        escalated = ct2 / "escalated" / "001-seal-smoke.md"
+        write_ticket(draft)
+        seal = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-seal", "001"], cwd=project)
+        self.assertEqual(seal.returncode, 0, seal.stderr)
+        text = backlog.read_text(encoding="utf-8").replace("status: backlog", "status: escalated")
+        backlog.rename(escalated)
+        escalated.write_text(text, encoding="utf-8")
+
+        revise = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-revise", "001"], cwd=project)
+        self.assertEqual(revise.returncode, 0, revise.stderr)
+        self.assertFalse((ct2 / "reviews" / "001-sealed.md").exists())
+        archived = list((ct2 / "reviews" / ".archive").glob("*-001/001-sealed.md"))
+        self.assertEqual(1, len(archived))
 
 
 if __name__ == "__main__":

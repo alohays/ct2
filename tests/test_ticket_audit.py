@@ -8,6 +8,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
+sys.path.insert(0, str(REPO_ROOT / "bin"))
+from _ct2_sealed_baseline import sealed_snapshot_name, write_snapshot  # noqa: E402
 
 
 def run_cmd(args, cwd=None):
@@ -82,6 +84,10 @@ Regression fixture for ticket evidence auditing.
 """,
         encoding="utf-8",
     )
+    if include_id and status != "draft":
+        ct2_dir = path.parent.parent
+        snapshot = ct2_dir / "reviews" / sealed_snapshot_name(path)
+        write_snapshot(path, snapshot)
 
 
 def write_sidecar(path, ticket="001-audit-ticket", reviewer="ct2-lens-cx", verdict="approved", round_num=0):
@@ -300,6 +306,23 @@ class TicketAuditTest(unittest.TestCase):
                 report = json.loads(audit.stdout)
                 self.assertEqual(1, report["tickets_checked"])
                 self.assertEqual("002-audit-ticket.md", report["tickets"][0]["ticket"])
+
+    def test_ticket_audit_rejects_sealed_baseline_drift(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "backlog" / "001-audit-ticket.md"
+        write_ticket(ticket, status="backlog")
+        ticket.write_text(
+            ticket.read_text(encoding="utf-8").replace(
+                "Ticket audit reports concrete readiness checks.",
+                "Ticket audit reports altered readiness checks.",
+            ),
+            encoding="utf-8",
+        )
+
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", project])
+        self.assertEqual(audit.returncode, 1)
+        self.assertIn("sealed_baseline", audit.stdout)
 
 
 if __name__ == "__main__":
