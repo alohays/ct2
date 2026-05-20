@@ -254,6 +254,50 @@ class StateLifecycleTest(unittest.TestCase):
         self.assertFalse(ticket.exists())
         self.assertEqual(1, len(list((ct2 / "inbox" / "ct2-helm").glob("msg-*.md"))))
 
+    def test_ct2_review_watchdog_honors_nested_max_review_duration_min(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        cfg = ct2 / "config" / "harness.yaml"
+        cfg.write_text(
+            "circuit_breaker:\n"
+            "  max_review_rounds: 3\n"
+            "  max_review_duration_min: 1\n"
+            "  max_ticket_duration_min: 120\n",
+            encoding="utf-8",
+        )
+        ticket = ct2 / "in-review" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-review", sealed="2026-05-12T00:00:00Z")
+        stamp = ct2 / ".meta" / "001.in-review"
+        from datetime import datetime, timedelta, timezone
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        stamp.write_text(recent + "\n", encoding="utf-8")
+
+        watchdog = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-watchdog", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(watchdog.returncode, 0, watchdog.stderr)
+        self.assertTrue((ct2 / "escalated" / "001-seal-smoke.md").exists())
+        self.assertIn('"max_review_duration_min": 1', watchdog.stdout)
+
+    def test_ct2_review_watchdog_ignores_unconfigured_default_when_under_limit(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        cfg = ct2 / "config" / "harness.yaml"
+        cfg.write_text(
+            "circuit_breaker:\n"
+            "  max_review_duration_min: 1000\n",
+            encoding="utf-8",
+        )
+        ticket = ct2 / "in-review" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-review", sealed="2026-05-12T00:00:00Z")
+        stamp = ct2 / ".meta" / "001.in-review"
+        from datetime import datetime, timedelta, timezone
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        stamp.write_text(recent + "\n", encoding="utf-8")
+
+        watchdog = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-watchdog", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(watchdog.returncode, 0, watchdog.stderr)
+        self.assertFalse((ct2 / "escalated" / "001-seal-smoke.md").exists())
+        self.assertTrue(ticket.exists())
+
     def test_ct2_status_reports_overdue_review_wait(self):
         project = self.make_project()
         ct2 = project / ".ct2"
