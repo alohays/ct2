@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -45,6 +46,20 @@ REQUIRED_BINS = (
 )
 SEALED_BASELINE_STATES = ("backlog", "in-progress", "in-review", "rejected", "escalated", "done")
 REQUIRED_SECTIONS = ("## Invocation", "## Objective", "## Required CT2 Effects", "## Stop Condition")
+ROLE_DOC_GLOBS = (
+    "adapters/**/*.md",
+    "claude-plugin/skills/*/SKILL.md",
+    "codex-plugin/skills/*/SKILL.md",
+    "config/ct2-lens-*-role.md",
+)
+DONE_BYPASS_PATTERNS = (
+    re.compile(r"\bclose\s+the\s+ticket\b.*\bmove\s+to\s+`?done/?`?", re.IGNORECASE),
+    re.compile(r"\bmove\b.*\bto\s+`?done/?`?", re.IGNORECASE),
+    re.compile(r"\bplace\b.*\b(?:into|in)\s+`?done/?`?", re.IGNORECASE),
+    re.compile(r"\bmove\s+to\s+`?done/?`?\s+with\s+a\s+manual\s+override\b", re.IGNORECASE),
+    re.compile(r"\bbypass(?:es)?\s+the\s+dual-approval\s+invariant\b", re.IGNORECASE),
+    re.compile(r"\bmv\b[^\n]*\.ct2/(?:in-review|rejected|escalated)/[^\n]*\s+\.ct2/done/", re.IGNORECASE),
+)
 
 
 def check(ok: bool, name: str, evidence: str) -> dict:
@@ -68,6 +83,31 @@ def adapter_ok(path: Path) -> tuple[bool, str]:
     if len(text) > 3000:
         return False, "adapter exceeds 3000 character verifier cap"
     return True, f"{len(text)} chars"
+
+
+def role_docs_no_done_bypass(repo: Path) -> tuple[bool, str]:
+    offenders = []
+    paths = []
+    for pattern in ROLE_DOC_GLOBS:
+        paths.extend(repo.glob(pattern))
+    for path in sorted(set(paths)):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            offenders.append(f"{path.relative_to(repo)}: read failed: {exc}")
+            continue
+        for lineno, line in enumerate(lines, 1):
+            lowered = line.lower()
+            if any(marker in lowered for marker in ("do not", "never", "only through", "reconciler")):
+                continue
+            if any(regex.search(line) for regex in DONE_BYPASS_PATTERNS):
+                excerpt = line.strip()
+                if len(excerpt) > 140:
+                    excerpt = excerpt[:137] + "..."
+                offenders.append(f"{path.relative_to(repo)}:{lineno}: {excerpt}")
+    if offenders:
+        return False, "; ".join(offenders)
+    return True, "role docs reserve done/ for ct2-reconcile dual approval"
 
 
 def main() -> int:
@@ -96,6 +136,8 @@ def main() -> int:
     for rel in REQUIRED_ADAPTERS:
         ok, evidence = adapter_ok(repo / rel)
         results.append(check(ok, f"adapter:{rel}", evidence))
+    ok, evidence = role_docs_no_done_bypass(repo)
+    results.append(check(ok, "protocol:no-manual-done-bypass", evidence))
     if (project / ".ct2").exists():
         for rel in ("in-review", "reviews", ".tmp", ".meta", "inbox/ct2-helm"):
             path = project / ".ct2" / rel

@@ -1,4 +1,6 @@
 import json
+import importlib.machinery
+import importlib.util
 import subprocess
 import sys
 import tempfile
@@ -76,6 +78,34 @@ class ConformanceTest(unittest.TestCase):
         report = json.loads(proc.stdout)
         self.assertTrue(report["ok"])
         self.assertGreaterEqual(len(report["checks"]), 10)
+        check_names = {item["name"] for item in report["checks"]}
+        self.assertIn("protocol:no-manual-done-bypass", check_names)
+
+    def test_manual_done_bypass_checker_rejects_role_doc_override(self):
+        bin_path = str(REPO_ROOT / "bin")
+        loader = importlib.machinery.SourceFileLoader(
+            "ct2_verify_for_test",
+            str(REPO_ROOT / "bin" / "ct2-verify"),
+        )
+        spec = importlib.util.spec_from_loader(loader.name, loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.path.insert(0, bin_path)
+        self.addCleanup(lambda: sys.path.remove(bin_path) if bin_path in sys.path else None)
+        loader.exec_module(module)
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        repo = Path(tmp.name)
+        role_doc = repo / "claude-plugin" / "skills" / "ct2-helm" / "SKILL.md"
+        role_doc.parent.mkdir(parents=True)
+        role_doc.write_text(
+            "- **Close the ticket**: Move to `done/` with a manual override note.\n",
+            encoding="utf-8",
+        )
+
+        ok, evidence = module.role_docs_no_done_bypass(repo)
+        self.assertFalse(ok)
+        self.assertIn("ct2-helm/SKILL.md:1", evidence)
 
 
 if __name__ == "__main__":
