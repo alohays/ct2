@@ -19,6 +19,8 @@ DONE_STATES = {"done"}
 SEALED_BASELINE_STATES = {"backlog", "in-progress", "in-review", "rejected", "escalated", "done"}
 EVIDENCE_KINDS = {"command", "artifact", "verifier", "hook-event"}
 NULLISH = {"", "null", "none"}
+TICKET_SECTIONS = ("Requirements", "Constraints", "Context", "Acceptance Criteria")
+PLACEHOLDER_RE = re.compile(r"\b(tbd|todo|fixme|placeholder|unknown|decide later|n/a)\b", re.IGNORECASE)
 REQUIRED_SIDECAR_SECTIONS = (
     "## Summary",
     "## Acceptance Criteria Check",
@@ -110,17 +112,113 @@ def plan_exists(ct2_dir: Path, ticket_id: str, round_num: str) -> bool:
 
 
 def acceptance_section(path: Path) -> str:
-    text = path.read_text(encoding="utf-8", errors="ignore")
-    if "## Acceptance Criteria" not in text:
-        return ""
-    section = text.split("## Acceptance Criteria", 1)[1]
-    return re.split(r"\n##\s+", section, maxsplit=1)[0]
+    return body_section(path, "Acceptance Criteria")
 
 
 def acceptance_criteria_checked(path: Path) -> bool:
     section = acceptance_section(path)
     marks = re.findall(r"^-\s+\[([ xX])\]", section, flags=re.MULTILINE)
     return bool(marks) and all(mark.lower() == "x" for mark in marks)
+
+
+def body_section(path: Path, title: str) -> str:
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    match = re.search(rf"^##\s+{re.escape(title)}\s*$", text, flags=re.MULTILINE)
+    if not match:
+        return ""
+    section = text[match.end() :]
+    return re.split(r"\n##\s+", section, maxsplit=1)[0]
+
+
+def strip_html_comments(text: str) -> str:
+    return re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+
+
+def meaningful_text(text: str) -> str:
+    cleaned = strip_html_comments(text)
+    return "\n".join(line.strip() for line in cleaned.splitlines() if line.strip())
+
+
+def bullet_items(section: str) -> list[str]:
+    items = []
+    for line in strip_html_comments(section).splitlines():
+        match = re.match(r"^\s*-\s+(?:\[[ xX]\]\s*)?(.+?)\s*$", line)
+        if match:
+            items.append(match.group(1).strip())
+    return items
+
+
+def checkbox_items(section: str) -> list[tuple[str, str]]:
+    return [
+        (match.group(1), match.group(2).strip())
+        for match in re.finditer(r"^\s*-\s+\[([ xX])\]\s+(.+?)\s*$", strip_html_comments(section), flags=re.MULTILINE)
+    ]
+
+
+def useful_item(item: str) -> bool:
+    item = item.strip()
+    return len(item) >= 8 and not PLACEHOLDER_RE.search(item) and item not in {"-", "..."}
+
+
+def static_contradictions(requirements: str, constraints: str, acceptance: str) -> list[str]:
+    goals = f"{requirements}\n{acceptance}".lower()
+    limits = constraints.lower()
+    contradictions = []
+    if re.search(r"\b(no|without)\s+tests?\b|\bdo\s+not\s+add\s+tests?\b|\bmust\s+not\s+add\s+tests?\b", limits) and re.search(
+        r"\btests?\b", goals
+    ):
+        contradictions.append("constraints forbid tests but requirements or ACs require tests")
+    if re.search(r"\b(no|without)\s+docs?\b|\bdo\s+not\s+update\s+docs?\b", limits) and re.search(r"\bdocs?\b|documentation", goals):
+        contradictions.append("constraints forbid docs but requirements or ACs require docs")
+    if re.search(r"\b(no\s+new\s+external\s+dependencies|no\s+external\s+dependencies|stdlib[- ]only)\b", limits) and re.search(
+        r"\bpip\s+install\b|\badd\s+(?:an?\s+)?(?:external\s+)?dependenc", goals
+    ):
+        contradictions.append("constraints forbid external dependencies but requirements or ACs require one")
+    return contradictions
+
+
+def seal_gate_checks(path: Path, fm: dict[str, Any]) -> list[dict[str, Any]]:
+    sections = {title: body_section(path, title) for title in TICKET_SECTIONS}
+    missing_sections = [title for title, section in sections.items() if not meaningful_text(section)]
+    touched_files = fm.get("touched-files", [])
+    if not isinstance(touched_files, list):
+        touched_files = [str(touched_files)]
+    vague_touched_files = [item for item in touched_files if PLACEHOLDER_RE.search(str(item)) or str(item).strip() in {"", "-", ".", "*"}]
+
+    requirement_items = bullet_items(sections["Requirements"])
+    constraint_items = bullet_items(sections["Constraints"])
+    ac_items = checkbox_items(sections["Acceptance Criteria"])
+    weak_requirements = [item for item in requirement_items if not useful_item(item)]
+    weak_constraints = [item for item in constraint_items if not useful_item(item)]
+    weak_acs = [item for _mark, item in ac_items if not useful_item(item)]
+    checked_acs = [item for mark, item in ac_items if mark.lower() == "x"]
+    contradictions = static_contradictions(sections["Requirements"], sections["Constraints"], sections["Acceptance Criteria"])
+
+    return [
+        check("seal_gate_required_sections", not missing_sections, {"required": list(TICKET_SECTIONS), "missing": missing_sections}),
+        check("seal_gate_touched_files_specific", bool(touched_files) and not vague_touched_files, {"invalid": vague_touched_files}),
+        check(
+            "seal_gate_requirements_complete",
+            bool(requirement_items) and not weak_requirements,
+            {"items": requirement_items, "weak": weak_requirements},
+        ),
+        check(
+            "seal_gate_constraints_complete",
+            bool(constraint_items) and not weak_constraints,
+            {"items": constraint_items, "weak": weak_constraints},
+        ),
+        check(
+            "seal_gate_context_complete",
+            len(meaningful_text(sections["Context"])) >= 20 and not PLACEHOLDER_RE.search(meaningful_text(sections["Context"])),
+            {"chars": len(meaningful_text(sections["Context"]))},
+        ),
+        check(
+            "seal_gate_acceptance_criteria_verifiable",
+            bool(ac_items) and not weak_acs and not checked_acs,
+            {"items": [item for _mark, item in ac_items], "weak": weak_acs, "prechecked": checked_acs},
+        ),
+        check("seal_gate_no_static_contradictions", not contradictions, contradictions or "no simple contradictions detected"),
+    ]
 
 
 def sidecar_info(path: Path) -> dict[str, Any]:
@@ -203,7 +301,7 @@ def check(name: str, ok: bool, evidence: Any) -> dict[str, Any]:
     return {"name": name, "ok": ok, "evidence": evidence}
 
 
-def audit_ticket(ct2_dir: Path, state: str, path: Path) -> dict[str, Any]:
+def audit_ticket(ct2_dir: Path, state: str, path: Path, seal_gate: bool = False) -> dict[str, Any]:
     fm = read_frontmatter(path)
     ticket_id = ticket_id_from_name(path)
     ticket_stem = path.stem
@@ -215,6 +313,11 @@ def audit_ticket(ct2_dir: Path, state: str, path: Path) -> dict[str, Any]:
         check("required_frontmatter", not missing, {"required": list(required), "missing": missing}),
         check("id_matches_filename", str(fm.get("id", "")) == ticket_id, {"frontmatter": fm.get("id"), "filename": ticket_id}),
     ]
+
+    if seal_gate:
+        checks.append(check("seal_gate_state", state == "draft", {"directory": state, "expected": "draft"}))
+        if state == "draft":
+            checks.extend(seal_gate_checks(path, fm))
 
     if state in SEALED_BASELINE_STATES:
         baseline_ok, baseline_evidence = compare_ticket_to_snapshot(path, ct2_dir / "reviews" / sealed_snapshot_name(path))
@@ -262,11 +365,13 @@ def iter_ticket_paths(ct2_dir: Path, ticket: str | None = None) -> list[tuple[st
     return paths
 
 
-def audit(ct2_dir: Path, ticket: str | None = None) -> dict[str, Any]:
-    tickets = [audit_ticket(ct2_dir, state, path) for state, path in iter_ticket_paths(ct2_dir, ticket)]
+def audit(ct2_dir: Path, ticket: str | None = None, seal_gate: bool = False) -> dict[str, Any]:
+    tickets = [audit_ticket(ct2_dir, state, path, seal_gate=seal_gate) for state, path in iter_ticket_paths(ct2_dir, ticket)]
     errors = []
     if ticket is not None and not tickets:
         errors.append(f"ticket not found: {ticket}")
+    if seal_gate and ticket is None:
+        errors.append("--seal-gate requires --ticket")
     complete = not errors and all(item["ok"] for item in tickets)
     return {
         "schema_version": "1",
@@ -299,12 +404,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Audit CT2 ticket readiness and completion evidence")
     parser.add_argument("project_dir", nargs="?", default=".")
     parser.add_argument("--ticket", help="Ticket id, stem, or filename to audit")
+    parser.add_argument("--seal-gate", action="store_true", help="Require draft ticket quality checks used by ct2-seal")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
     project_dir = Path(args.project_dir).resolve()
     ct2_dir = ensure_ct2(project_dir)
-    report = audit(ct2_dir, args.ticket)
+    report = audit(ct2_dir, args.ticket, seal_gate=args.seal_gate)
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:

@@ -42,6 +42,7 @@ REQUIRED_BINS = (
     "ct2-sidecar-publish",
     "ct2-duration-check",
     "ct2-sealed-baseline",
+    "ct2-ticket-audit",
 )
 SEALED_BASELINE_STATES = ("backlog", "in-progress", "in-review", "rejected", "escalated", "done")
 REQUIRED_SECTIONS = ("## Invocation", "## Objective", "## Required CT2 Effects", "## Stop Condition")

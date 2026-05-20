@@ -307,6 +307,38 @@ class TicketAuditTest(unittest.TestCase):
                 self.assertEqual(1, report["tickets_checked"])
                 self.assertEqual("002-audit-ticket.md", report["tickets"][0]["ticket"])
 
+    def test_ticket_audit_seal_gate_accepts_valid_draft(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "draft" / "001-audit-ticket.md", status="draft", ac_checked=False, verdict="pending")
+
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--seal-gate", "--ticket", "001", project])
+        self.assertEqual(audit.returncode, 0, audit.stderr)
+        report = json.loads(audit.stdout)
+        self.assertTrue(report["complete"])
+        checks = {check["name"]: check["ok"] for check in report["tickets"][0]["checks"]}
+        self.assertTrue(checks["seal_gate_state"])
+        self.assertTrue(checks["seal_gate_required_sections"])
+        self.assertTrue(checks["seal_gate_acceptance_criteria_verifiable"])
+
+    def test_ticket_audit_seal_gate_rejects_unverifiable_draft(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "draft" / "001-audit-ticket.md"
+        write_ticket(ticket, status="draft", ac_checked=False, verdict="pending")
+        ticket.write_text(
+            ticket.read_text(encoding="utf-8").replace(
+                "Ticket audit reports concrete readiness checks.",
+                "TBD",
+            ),
+            encoding="utf-8",
+        )
+
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--seal-gate", "--ticket", "001", project])
+        self.assertEqual(audit.returncode, 1)
+        checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
+        self.assertFalse(checks["seal_gate_acceptance_criteria_verifiable"])
+
     def test_ticket_audit_rejects_sealed_baseline_drift(self):
         project = self.make_project()
         ct2 = project / ".ct2"
