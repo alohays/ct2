@@ -8,12 +8,14 @@ import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from _ct2_vao import atomic_write_text, ensure_ct2, now, read_frontmatter, ticket_id_from_name
 
 
 PRIORITY = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+LOCK_TTL_SECONDS = 600
 
 
 def read_text(path: Path) -> str:
@@ -29,6 +31,31 @@ def max_review_rounds(ct2_dir: Path) -> int:
     return int(match.group(1)) if match else 3
 
 
+def lock_is_live(lock: Path) -> bool:
+    try:
+        text = lock.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    match = re.search(r"^pid:\s*(\d+)", text, re.MULTILINE)
+    if not match:
+        return False
+    try:
+        pid = int(match.group(1))
+    except ValueError:
+        return False
+    try:
+        age = datetime.now(timezone.utc).timestamp() - lock.stat().st_mtime
+    except OSError:
+        return False
+    if age >= LOCK_TTL_SECONDS:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 def acquire_lifecycle_lock(ct2_dir: Path) -> Path:
     meta = ct2_dir / ".meta"
     meta.mkdir(parents=True, exist_ok=True)
@@ -36,7 +63,16 @@ def acquire_lifecycle_lock(ct2_dir: Path) -> Path:
     try:
         fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
     except FileExistsError as exc:
-        raise RuntimeError(f"lifecycle lock already held: {lock}") from exc
+        if lock_is_live(lock):
+            raise RuntimeError(f"lifecycle lock already held: {lock}") from exc
+        try:
+            lock.unlink()
+        except OSError as unlink_exc:
+            raise RuntimeError(f"lifecycle lock already held: {lock}") from unlink_exc
+        try:
+            fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        except FileExistsError as retry_exc:
+            raise RuntimeError(f"lifecycle lock already held: {lock}") from retry_exc
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(f"pid: {os.getpid()}\ntimestamp: {now()}\n")
     return lock

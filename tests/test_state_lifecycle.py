@@ -157,6 +157,40 @@ class StateLifecycleTest(unittest.TestCase):
         self.assertTrue((ct2 / "backlog" / "002-seal-smoke.md").exists())
         self.assertEqual(1, len(list((ct2 / "in-progress").glob("*.md"))))
 
+    def test_ct2_pickup_recovers_stale_lifecycle_lock(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "backlog" / "001-seal-smoke.md", status="backlog", sealed="2026-05-12T00:00:00Z")
+
+        meta = ct2 / ".meta"
+        meta.mkdir(parents=True, exist_ok=True)
+        stale_lock = meta / "lifecycle.lock"
+        stale_lock.write_text("pid: 999999\ntimestamp: 2026-05-12T00:00:00Z\n", encoding="utf-8")
+        old = 1700000000.0
+        import os as _os
+        _os.utime(stale_lock, (old, old))
+
+        result = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pickup", project], cwd=REPO_ROOT)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((ct2 / "in-progress" / "001-seal-smoke.md").exists())
+        self.assertFalse(stale_lock.exists())
+
+    def test_ct2_pickup_rejects_live_lifecycle_lock(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "backlog" / "001-seal-smoke.md", status="backlog", sealed="2026-05-12T00:00:00Z")
+
+        meta = ct2 / ".meta"
+        meta.mkdir(parents=True, exist_ok=True)
+        live_lock = meta / "lifecycle.lock"
+        import os as _os
+        live_lock.write_text(f"pid: {_os.getpid()}\ntimestamp: 2026-05-12T00:00:00Z\n", encoding="utf-8")
+
+        result = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pickup", project], cwd=REPO_ROOT)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("lifecycle lock already held", result.stderr)
+        self.assertTrue(live_lock.exists())
+
     def test_ct2_verify_rejects_multiple_in_progress_tickets(self):
         project = self.make_project()
         ct2 = project / ".ct2"
