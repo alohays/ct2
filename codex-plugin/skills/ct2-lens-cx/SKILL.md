@@ -76,17 +76,15 @@ Re-anchor identity:
 ### Step 2: Poll Inbox
 
 Scan `.ct2/inbox/ct2-lens-cx/` for messages directly in that directory, not in
-`processing/` or `done/`. Claim and acknowledge with atomic `mv -n`:
+`processing/` or `done/`. Claim and acknowledge with `ct2-inbox`:
 
 ```bash
 for msg in .ct2/inbox/ct2-lens-cx/*.md; do
   [ -f "$msg" ] || continue
   msgfile=$(basename "$msg")
-  mv -n "$msg" ".ct2/inbox/ct2-lens-cx/processing/${msgfile}" 2>/dev/null
-  if [ ! -f "$msg" ]; then
-    cat ".ct2/inbox/ct2-lens-cx/processing/${msgfile}"
-    mv -n ".ct2/inbox/ct2-lens-cx/processing/${msgfile}" \
-          ".ct2/inbox/ct2-lens-cx/done/${msgfile}" 2>/dev/null || true
+  if claimed=$(ct2-inbox claim ct2-lens-cx "$msgfile" 2>/dev/null); then
+    cat "$claimed"
+    ct2-inbox ack ct2-lens-cx "$msgfile"
   fi
 done
 ```

@@ -1,11 +1,13 @@
 import hashlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+PYTHON = sys.executable
 
 
 def run_cmd(args, cwd):
@@ -137,6 +139,51 @@ class StateLifecycleTest(unittest.TestCase):
                 self.assertNotEqual(seal.returncode, 0)
                 self.assertTrue(draft.exists())
                 self.assertFalse(backlog.exists())
+
+    def test_ct2_pickup_serializes_single_in_progress_slot(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "backlog" / "001-seal-smoke.md", status="backlog", sealed="2026-05-12T00:00:00Z")
+        write_ticket(ct2 / "backlog" / "002-seal-smoke.md", ticket_id="002", status="backlog", sealed="2026-05-12T00:01:00Z")
+
+        first = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pickup", project], cwd=REPO_ROOT)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertTrue((ct2 / "in-progress" / "001-seal-smoke.md").exists())
+        self.assertIn("status: in-progress", (ct2 / "in-progress" / "001-seal-smoke.md").read_text(encoding="utf-8"))
+        self.assertTrue((ct2 / ".meta" / "001.started").exists())
+
+        second = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pickup", project], cwd=REPO_ROOT)
+        self.assertEqual(second.returncode, 2)
+        self.assertTrue((ct2 / "backlog" / "002-seal-smoke.md").exists())
+        self.assertEqual(1, len(list((ct2 / "in-progress").glob("*.md"))))
+
+    def test_ct2_verify_rejects_multiple_in_progress_tickets(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "in-progress" / "001-seal-smoke.md", status="in-progress")
+        write_ticket(ct2 / "in-progress" / "002-seal-smoke.md", ticket_id="002", status="in-progress")
+
+        verify = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-verify", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(verify.returncode, 1)
+        self.assertIn("kanban:single-in-progress", verify.stdout)
+
+    def test_ct2_inbox_claim_is_single_consumer(self):
+        project = self.make_project()
+        inbox = project / ".ct2" / "inbox" / "ct2-forge"
+        msg = inbox / "msg-20260520T000000Z-1-deadbeef.md"
+        msg.write_text("---\nid: msg\n---\n\n## Body\nhello\n", encoding="utf-8")
+
+        claim = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-inbox", "claim", "ct2-forge", msg.name, "--project-dir", project], cwd=REPO_ROOT)
+        self.assertEqual(claim.returncode, 0, claim.stderr)
+        self.assertFalse(msg.exists())
+        self.assertTrue((inbox / "processing" / msg.name).exists())
+
+        duplicate = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-inbox", "claim", "ct2-forge", msg.name, "--project-dir", project], cwd=REPO_ROOT)
+        self.assertEqual(duplicate.returncode, 2)
+
+        ack = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-inbox", "ack", "ct2-forge", msg.name, "--project-dir", project], cwd=REPO_ROOT)
+        self.assertEqual(ack.returncode, 0, ack.stderr)
+        self.assertTrue((inbox / "done" / msg.name).exists())
 
 
 if __name__ == "__main__":

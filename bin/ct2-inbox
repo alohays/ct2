@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Atomic CT2 inbox claim and acknowledge helpers."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import sys
+from pathlib import Path
+
+from _ct2_vao import ensure_ct2, now
+
+
+def lock_name(role: str, msgfile: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", f"{role}-{msgfile}")
+    return f"inbox-{safe}.lock"
+
+
+def acquire_claim_lock(ct2_dir: Path, role: str, msgfile: str) -> Path:
+    meta = ct2_dir / ".meta"
+    meta.mkdir(parents=True, exist_ok=True)
+    lock = meta / lock_name(role, msgfile)
+    try:
+        fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError as exc:
+        raise RuntimeError(f"message is already being claimed: {msgfile}") from exc
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(f"pid: {os.getpid()}\ntimestamp: {now()}\n")
+    return lock
+
+
+def normalize_msgfile(raw: str) -> str:
+    name = Path(raw).name
+    if name in ("", ".", ".."):
+        raise RuntimeError(f"invalid message filename: {raw}")
+    return name
+
+
+def claim(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    msgfile = normalize_msgfile(args.msgfile)
+    lock = None
+    try:
+        lock = acquire_claim_lock(ct2_dir, args.role, msgfile)
+        src = ct2_dir / "inbox" / args.role / msgfile
+        dest_dir = ct2_dir / "inbox" / args.role / "processing"
+        dest = dest_dir / msgfile
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        if not src.exists():
+            print(f"ct2-inbox: no unclaimed message: {msgfile}", file=sys.stderr)
+            return 2
+        if dest.exists():
+            print(f"ct2-inbox: message already in processing: {msgfile}", file=sys.stderr)
+            return 2
+        os.rename(src, dest)
+        print(dest)
+        return 0
+    except RuntimeError as exc:
+        print(f"ct2-inbox: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        if lock is not None:
+            try:
+                lock.unlink()
+            except OSError:
+                pass
+
+
+def ack(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    msgfile = normalize_msgfile(args.msgfile)
+    src = ct2_dir / "inbox" / args.role / "processing" / msgfile
+    dest_dir = ct2_dir / "inbox" / args.role / "done"
+    dest = dest_dir / msgfile
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    if not src.exists():
+        print(f"ct2-inbox: no processing message: {msgfile}", file=sys.stderr)
+        return 2
+    if dest.exists():
+        print(f"ct2-inbox: message already acknowledged: {msgfile}", file=sys.stderr)
+        return 2
+    os.rename(src, dest)
+    print(dest)
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Claim or acknowledge CT2 inbox messages atomically")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    claim_parser = sub.add_parser("claim")
+    claim_parser.add_argument("role")
+    claim_parser.add_argument("msgfile")
+    claim_parser.add_argument("--project-dir", default=".")
+    claim_parser.set_defaults(func=claim)
+
+    ack_parser = sub.add_parser("ack")
+    ack_parser.add_argument("role")
+    ack_parser.add_argument("msgfile")
+    ack_parser.add_argument("--project-dir", default=".")
+    ack_parser.set_defaults(func=ack)
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

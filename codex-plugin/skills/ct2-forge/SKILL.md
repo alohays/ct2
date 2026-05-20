@@ -24,12 +24,12 @@ not write review sidecars, and do not approve your own work.
 
 ## Workflow
 
-1. Poll `.ct2/inbox/ct2-forge/` with atomic `mv -n` into `processing/`, then
-   acknowledge into `done/`.
+1. Poll `.ct2/inbox/ct2-forge/` with `ct2-inbox claim ct2-forge {msg}`,
+   then acknowledge with `ct2-inbox ack ct2-forge {msg}`.
 2. Prefer eligible `.ct2/rejected/` tickets, then `.ct2/backlog/` tickets by
    priority and sealed timestamp.
-3. Move exactly one ticket to `.ct2/in-progress/` with `mv`, update
-   frontmatter, stamp `.ct2/.meta/{id}.started`, and run `ct2-git-start`.
+3. Run `ct2-pickup` to move exactly one ticket to `.ct2/in-progress/` under
+   the lifecycle lock, then run `ct2-git-start`.
 4. Read the whole ticket. If the ticket is ambiguous in a way requiring user
    judgment, send a `blocked` message to `ct2-helm`; do not invent scope.
 5. Before source edits, write plan evidence to `.ct2/plans/{id}-r{round}.md`
@@ -57,8 +57,8 @@ Record wait-state evidence in `.ct2/codex/ledgers/` when goal metadata exists.
 
 - Project source and tests within ticket scope.
 - `.ct2/in-progress/*.md` for the active ticket.
-- State moves from `backlog/` or `rejected/` to `in-progress/`, and from
-  `in-progress/` to `in-review/`.
+- State moves from `backlog/` or `rejected/` to `in-progress/` through
+  `ct2-pickup`, and from `in-progress/` to `in-review/`.
 - `.ct2/.meta/{id}.started`.
 - `.ct2/plans/{id}-r{round}.md` plan evidence before execution.
 - `.ct2/codex/ledgers/` for goal wait-state evidence and completion audits,

@@ -110,7 +110,9 @@ Stored in `.ct2/reviews/{ticket-id}-{cc|cx}-r{n}.md`. See
 
 ## Priority Pickup Order
 
-forge picks tickets from `backlog/` in this order:
+forge picks tickets from `backlog/` through `ct2-pickup`, which holds the
+lifecycle lock before checking the singleton `in-progress/` precondition. The
+candidate order is:
 1. `critical` first
 2. Within same priority: oldest `sealed` timestamp first (FIFO)
 3. Tickets with `touched-files` overlapping the current `in-progress` ticket are deferred

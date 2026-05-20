@@ -52,11 +52,11 @@ git contract; the "Git action" column summarizes the coupling.
 | Transition                    | Trigger              | Actor         | Precondition                                                               | Git action |
 |-------------------------------|----------------------|---------------|----------------------------------------------------------------------------|------------|
 | `draft → backlog`             | `ct2-seal` runs      | ct2-helm      | `title`, `priority`, `touched-files`, `## Acceptance Criteria` all present | none       |
-| `backlog → in-progress`       | Automatic pickup     | ct2-forge     | `in-progress/` is empty; no `touched-files` overlap                        | `ct2-git-start` (create branch from base) |
+| `backlog → in-progress`       | `ct2-pickup`         | ct2-forge     | lifecycle lock held; `in-progress/` is empty                               | `ct2-git-start` (create branch from base) |
 | `in-progress → in-review`     | Work completion      | ct2-forge     | All AC checklist items checked `[x]`                                       | `ct2-git-submit` (push, open PR, record `pr:` URL) |
 | `in-review → done`            | `ct2-reconcile` verdict | reconciler | `cc sidecar = approved` AND `cx sidecar = approved`                        | `ct2-git-finalize approved` (squash-merge if `git_auto_merge_on_approval`) |
 | `in-review → rejected`        | `ct2-reconcile` verdict | reconciler | `cc sidecar = rejected` OR `cx sidecar = rejected`                         | `ct2-git-finalize rejected` (no-op — PR open) |
-| `rejected → in-progress`      | Automatic pickup     | ct2-forge     | `review-round < max_review_rounds`                                         | `ct2-git-start` (checkout existing branch; rework appends commits) |
+| `rejected → in-progress`      | `ct2-pickup`         | ct2-forge     | lifecycle lock held; `in-progress/` is empty; `review-round < max_review_rounds` | `ct2-git-start` (checkout existing branch; rework appends commits) |
 | `in-review → escalated`       | Circuit breaker      | reconciler    | `review-round + 1 ≥ max_review_rounds`; also sends escalation to helm inbox | `ct2-git-finalize escalated` (comment on PR) |
 | `in-progress → backlog`       | Duration CB bounce   | ct2-forge     | `now − .meta/{id}.started > max_ticket_duration_min`; stamp removed on bounce | none (branch preserved for resume) |
 | `escalated → draft`           | `ct2-revise` (manual)| human, via ct2-helm | Archives every `reviews/{id}-*.md` to `reviews/.archive/{ts}-{id}/`; resets frontmatter (`status=draft`, `review-round=0`, `verdict=pending`, `sealed=null`, `pr=null`, nested `review-status.lens-*.*` reset); drops stale `.meta/{id}.started` if present | `ct2-git-cleanup` (close PR, delete local + remote branch) |
@@ -80,7 +80,12 @@ State is represented by the **directory containing the ticket file**:
 | `escalated`   | `.ct2/escalated/{id}-{slug}.md`   |
 | `done`        | `.ct2/done/{id}-{slug}.md`        |
 
-All state transitions use `mv` (atomic on same-filesystem paths) to eliminate race conditions.
+All state transitions use `mv`/`rename(2)` on same-filesystem paths. Compound
+transitions with global preconditions, such as the singleton `in-progress/`
+slot, must be performed by an authoritative helper such as `ct2-pickup` while
+holding the lifecycle lock. Raw role-level check-then-`mv` pickup is
+non-conforming because the empty-slot check and the rename would otherwise be a
+TOCTOU sequence.
 
 ## Reconciler
 

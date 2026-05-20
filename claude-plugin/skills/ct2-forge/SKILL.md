@@ -72,13 +72,10 @@ Scan `.ct2/inbox/ct2-forge/` for messages not in `processing/` or `done/`:
 for msg in .ct2/inbox/ct2-forge/*.md; do
   [ -f "$msg" ] || continue
   msgfile=$(basename "$msg")
-  # Atomic claim
-  if mv -n "$msg" ".ct2/inbox/ct2-forge/processing/${msgfile}" 2>/dev/null; then
-    # Process message
+  if claimed=$(ct2-inbox claim ct2-forge "$msgfile" 2>/dev/null); then
+    # Process "$claimed"
     # ... (read and act on message content)
-    # Acknowledge
-    mv -n ".ct2/inbox/ct2-forge/processing/${msgfile}" \
-          ".ct2/inbox/ct2-forge/done/${msgfile}"
+    ct2-inbox ack ct2-forge "$msgfile"
   fi
 done
 ```
@@ -127,17 +124,14 @@ done
 ```
 
 ### Step 4: Check for Rejected Tickets
-Scan `.ct2/rejected/` for tickets with `review-round < max_review_rounds`:
+Run `ct2-pickup --source rejected .`. The helper holds the lifecycle lock,
+rechecks that `in-progress/` is empty under that lock, and increments
+`review-round` for rejected-ticket rework. Do not perform raw check-then-`mv`
+pickup from `rejected/`.
+
+If it picks a rejected ticket:
 - Read the rejection round number from frontmatter
-- If eligible for rework, pick up the highest-priority rejected ticket (same priority rules as backlog)
 - Read the review sidecar files for feedback (`.ct2/reviews/{id}-cc-r{n}.md`, `.ct2/reviews/{id}-cx-r{n}.md`)
-- Increment `review-round` in the ticket frontmatter
-- Move: `mv .ct2/rejected/{ticket} .ct2/in-progress/{ticket}`
-- Update `status: in-progress`
-- **Restart the circuit-breaker stamp** for the new round:
-  ```bash
-  date -u > ".ct2/.meta/${ticket_id}.started"
-  ```
 - **Resume the git branch** (checkout existing ticket branch — commits from
   previous rounds are preserved, rework commits will append):
   ```bash
@@ -146,7 +140,8 @@ Scan `.ct2/rejected/` for tickets with `review-round < max_review_rounds`:
 - **Proceed to Step 6** (rework based on reviewer feedback)
 
 ### Step 5: Pick from Backlog
-If `in-progress/` is empty and no eligible rejected tickets:
+If `ct2-pickup --source rejected .` did not choose a rejected ticket and
+`in-progress/` is empty:
 
 a. List `.ct2/backlog/*.md` sorted by priority then `sealed` timestamp:
    Priority order: `critical` > `high` > `medium` > `low`
@@ -162,9 +157,9 @@ b. For each candidate ticket (highest priority first), check `touched-files` ove
    ```
    Skip tickets with overlapping `touched-files`.
 
-c. Move the first non-overlapping ticket:
+c. Move the first eligible ticket through the authoritative helper:
    ```bash
-   mv .ct2/backlog/{ticket} .ct2/in-progress/{ticket}
+   ct2-pickup --source backlog .
    ```
 
 d. Update frontmatter:
@@ -194,6 +189,9 @@ g. **Prepare the git workspace** for this ticket (creates feat/{id}-{slug}
    and escalate — do not auto-stash another actor's work.
 
 h. If no eligible tickets in backlog and no rejected tickets: use a longer loop interval (idle).
+
+Raw role-level check-then-`mv` from backlog to `in-progress/` is
+non-conforming. The check and transition must be serialized by `ct2-pickup`.
 
 ### Step 6: Execute Work
 For the current `in-progress/` ticket:
