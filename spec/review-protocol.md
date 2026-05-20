@@ -53,6 +53,12 @@ ct2-reconcile {ticket-id} {round}
 See `spec/reconciler.md` for lock semantics, discovery mode, exit codes, and
 terminal-state rules.
 
+`ct2-review-watchdog` is the liveness recovery path for missing reviewer
+sidecars. `ct2-review-enter` stamps `.ct2/.meta/{ticket-id}.in-review`; when a
+ticket waits longer than `max_review_duration_min` and at least one current-round
+sidecar is missing, the watchdog moves the ticket to `escalated/` and sends helm
+an escalation inbox message.
+
 ## Inbox Protocol
 
 ### Message File Path

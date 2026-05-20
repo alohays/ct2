@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""Publish a completed review sidecar without silent no-op collisions."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+from _ct2_vao import ensure_ct2
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Publish one CT2 review sidecar into .ct2/reviews/")
+    parser.add_argument("tmp_path")
+    parser.add_argument("dest_name", help="Destination filename under .ct2/reviews/")
+    parser.add_argument("--project-dir", default=".")
+    args = parser.parse_args()
+
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    tmp = Path(args.tmp_path)
+    if not tmp.is_absolute():
+        tmp = project_dir / tmp
+    dest_name = Path(args.dest_name).name
+    dest = ct2_dir / "reviews" / dest_name
+
+    if not tmp.is_file():
+        print(f"ct2-sidecar-publish: temp sidecar not found: {tmp}", file=sys.stderr)
+        return 1
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(tmp, dest)
+    except FileExistsError:
+        print(f"ct2-sidecar-publish: sidecar already exists: {dest.name}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"ct2-sidecar-publish: atomic publish failed: {exc}", file=sys.stderr)
+        return 2
+    tmp.unlink()
+    print(f"ct2-sidecar-publish: {dest.name}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -35,6 +35,9 @@ REQUIRED_BINS = (
     "ct2-init",
     "ct2-pickup",
     "ct2-inbox",
+    "ct2-review-enter",
+    "ct2-review-watchdog",
+    "ct2-sidecar-publish",
 )
 REQUIRED_SECTIONS = ("## Invocation", "## Objective", "## Required CT2 Effects", "## Stop Condition")
 

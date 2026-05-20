@@ -139,8 +139,11 @@ Write the sidecar atomically:
 ```bash
 tmp=$(mktemp ".ct2/.tmp/cc-review-XXXXXX.md")
 # ... write review to $tmp ...
-mv -n "$tmp" ".ct2/reviews/${ticket_id}-cc-r${round}.md"
+ct2-sidecar-publish "$tmp" "${ticket_id}-cc-r${round}.md"
 ```
+
+If `ct2-sidecar-publish` exits non-zero, report the immutable-collision error
+and do not run reconciliation for that ticket.
 
 **4e. If you cannot verify ACs** (requirements too ambiguous, missing context):
 - Write the sidecar with `verdict: rejected`

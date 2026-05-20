@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Escalate CT2 tickets whose review sidecars are overdue."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import tempfile
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+from _ct2_vao import atomic_write_text, compact_now, ensure_ct2, now, read_frontmatter, ticket_id_from_name
+
+
+DEFAULT_MAX_REVIEW_DURATION_MIN = 240
+
+
+def read_config_int(ct2_dir: Path, key: str, default: int) -> int:
+    try:
+        text = (ct2_dir / "config" / "harness.yaml").read_text(encoding="utf-8")
+    except OSError:
+        return default
+    match = re.search(rf"^{re.escape(key)}:\s*(\d+)", text, re.MULTILINE)
+    return int(match.group(1)) if match else default
+
+
+def parse_stamp_seconds(path: Path) -> float | None:
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if text:
+        try:
+            return datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            pass
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def replace_frontmatter_value(text: str, key: str, value: str) -> str:
+    pattern = rf"^({re.escape(key)}:\s*).*$"
+    if re.search(pattern, text, re.MULTILINE):
+        return re.sub(pattern, rf"\g<1>{value}", text, count=1, flags=re.MULTILINE)
+    return re.sub(r"^(---\n)", rf"\g<1>{key}: {value}\n", text, count=1)
+
+
+def sidecars_missing(ct2_dir: Path, ticket: Path) -> list[str]:
+    fm = read_frontmatter(ticket)
+    ticket_id = ticket_id_from_name(ticket)
+    round_num = str(fm.get("review-round", "0") or "0")
+    missing = []
+    for side in ("cc", "cx"):
+        if not (ct2_dir / "reviews" / f"{ticket_id}-{side}-r{round_num}.md").exists():
+            missing.append(side)
+    return missing
+
+
+def send_escalation(ct2_dir: Path, ticket: Path, missing: list[str], age_min: int, max_min: int) -> Path:
+    inbox = ct2_dir / "inbox" / "ct2-helm"
+    tmp_dir = ct2_dir / ".tmp"
+    inbox.mkdir(parents=True, exist_ok=True)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    msgid = f"msg-{compact_now()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    text = f"""---
+id: {msgid}
+from: ct2-review-watchdog
+to: ct2-helm
+type: escalation
+ticket: {ticket.name}
+timestamp: {now()}
+---
+
+## Subject
+Ticket {ticket.name} - Review SLA exceeded
+
+## Body
+Ticket {ticket.name} has waited in review for {age_min} minutes, exceeding max_review_duration_min={max_min}.
+Missing sidecars: {', '.join(missing)}.
+The ticket was moved to escalated/ for human recovery.
+"""
+    fd, tmp_name = tempfile.mkstemp(prefix=f"{msgid}-", dir=str(tmp_dir))
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    dest = inbox / f"{msgid}.md"
+    os.replace(tmp_name, dest)
+    return dest
+
+
+def escalate(ct2_dir: Path, ticket: Path, missing: list[str], age_min: int, max_min: int) -> dict[str, str | int | list[str]]:
+    ticket_id = ticket_id_from_name(ticket)
+    dest = ct2_dir / "escalated" / ticket.name
+    if dest.exists():
+        raise RuntimeError(f"destination already exists: {dest}")
+    os.rename(ticket, dest)
+    text = dest.read_text(encoding="utf-8")
+    text = replace_frontmatter_value(text, "status", "escalated")
+    text = replace_frontmatter_value(text, "verdict", "escalated")
+    text = replace_frontmatter_value(text, "updated", now())
+    atomic_write_text(ct2_dir, dest, text, "review-watchdog-ticket-")
+    msg = send_escalation(ct2_dir, dest, missing, age_min, max_min)
+    atomic_write_text(ct2_dir, ct2_dir / ".meta" / f"{ticket_id}.review-overdue", now() + "\n", "review-overdue-")
+    try:
+        (ct2_dir / ".meta" / f"{ticket_id}.in-review").unlink()
+    except FileNotFoundError:
+        pass
+    return {
+        "ticket": dest.name,
+        "state": "escalated",
+        "age_min": age_min,
+        "max_review_duration_min": max_min,
+        "missing": missing,
+        "message": f".ct2/inbox/ct2-helm/{msg.name}",
+    }
+
+
+def acquire_ticket_lock(ct2_dir: Path, ticket_id: str) -> Path | None:
+    lock = ct2_dir / ".meta" / f"{ticket_id}-review-watchdog.lock"
+    try:
+        fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        return None
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(f"pid: {os.getpid()}\ntimestamp: {now()}\n")
+    return lock
+
+
+def run(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    max_min = read_config_int(ct2_dir, "max_review_duration_min", DEFAULT_MAX_REVIEW_DURATION_MIN)
+    now_ts = datetime.now(timezone.utc).timestamp()
+    results = []
+    for ticket in sorted((ct2_dir / "in-review").glob("*.md")):
+        missing = sidecars_missing(ct2_dir, ticket)
+        if not missing:
+            continue
+        ticket_id = ticket_id_from_name(ticket)
+        lock = acquire_ticket_lock(ct2_dir, ticket_id)
+        if lock is None:
+            continue
+        try:
+            if not ticket.exists():
+                continue
+            stamp = ct2_dir / ".meta" / f"{ticket_id}.in-review"
+            started = parse_stamp_seconds(stamp)
+            if started is None:
+                results.append({"ticket": ticket.name, "state": "missing-review-stamp", "missing": missing})
+                continue
+            age_min = int((now_ts - started) // 60)
+            if age_min < max_min:
+                continue
+            try:
+                results.append(escalate(ct2_dir, ticket, missing, age_min, max_min))
+            except RuntimeError as exc:
+                print(f"ct2-review-watchdog: {exc}", file=sys.stderr)
+                return 2
+        finally:
+            try:
+                lock.unlink()
+            except OSError:
+                pass
+
+    if args.json:
+        print(json.dumps({"escalations": results}, indent=2, sort_keys=True))
+    else:
+        if not results:
+            print("ct2-review-watchdog: no overdue in-review tickets")
+        for result in results:
+            print(f"ct2-review-watchdog: {result['ticket']} -> {result['state']}")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Escalate in-review tickets with missing overdue sidecars")
+    parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    return run(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

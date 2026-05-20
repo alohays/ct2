@@ -63,11 +63,11 @@ marked below, bringing the ticket back to its `draft/` shape.
 | Field               | Written by                                                                        |
 |---------------------|-----------------------------------------------------------------------------------|
 | All metadata fields | ct2-helm (at ticket creation)                                                     |
-| `status`            | ct2-seal (`draft→backlog`); ct2-forge (`→in-progress`, `→in-review`); reconciler (`→done/rejected/escalated`); ct2-revise (`→draft`) |
+| `status`            | ct2-seal (`draft→backlog`); ct2-forge (`→in-progress`, `→in-review` through `ct2-review-enter`); reconciler (`→done/rejected/escalated`); ct2-review-watchdog (`in-review→escalated`); ct2-revise (`→draft`) |
 | `sealed`            | ct2-seal (timestamp); ct2-revise (reset to `null`)                                |
 | `review-round`      | ct2-forge (incremented on rejected pickup); ct2-revise (reset to `0`)             |
 | `review-status.*`   | reconciler (automatic updates); ct2-revise (reset to `pending` / `null`)          |
-| `verdict`           | reconciler (automatic verdicts); ct2-revise (reset to `pending`)                  |
+| `verdict`           | reconciler (automatic verdicts); ct2-review-watchdog (`escalated` for missing-review SLA breach); ct2-revise (reset to `pending`) |
 | `branch`, `pr`      | ct2-forge (via `ct2-git-start` / `ct2-git-submit`); `ct2-revise` resets `pr` to `null` |
 | `updated`           | any actor that modifies the ticket                                                |
 

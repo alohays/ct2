@@ -31,6 +31,7 @@ if not ct2_dir.is_dir():
     sys.exit(1)
 
 SEP = "─" * 57
+DEFAULT_MAX_REVIEW_DURATION_MIN = 240
 
 def read_frontmatter(path: Path) -> dict:
     """Extract YAML frontmatter key-value pairs as strings."""
@@ -77,6 +78,32 @@ def elapsed_str(path: Path) -> str:
     except Exception:
         return ""
 
+def config_int(key: str, default: int) -> int:
+    try:
+        cfg = (ct2_dir / "config" / "harness.yaml").read_text(encoding="utf-8")
+        m = re.search(rf"^{re.escape(key)}:\s*(\d+)", cfg, re.MULTILINE)
+        return int(m.group(1)) if m else default
+    except Exception:
+        return default
+
+def review_age_min(ticket_path: Path) -> int | None:
+    ticket_id = re.match(r'^(\d+)', ticket_path.stem)
+    if not ticket_id:
+        return None
+    stamp = ct2_dir / ".meta" / f"{ticket_id.group(1)}.in-review"
+    try:
+        text = stamp.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    try:
+        started = datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        try:
+            started = stamp.stat().st_mtime
+        except OSError:
+            return None
+    return int((time.time() - started) // 60)
+
 def get_review_status(ticket_path: Path, reviews_dir: Path) -> str:
     """Return review status string for in-review tickets."""
     fm = read_frontmatter(ticket_path)
@@ -97,7 +124,9 @@ def get_review_status(ticket_path: Path, reviews_dir: Path) -> str:
 
     cc_v = verdict(cc_sidecar)
     cx_v = verdict(cx_sidecar)
-    return f"(r{round_num}: cc={cc_v}, cx={cx_v})"
+    age = review_age_min(ticket_path)
+    age_text = f", age={age}m" if age is not None else ""
+    return f"(r{round_num}: cc={cc_v}, cx={cx_v}{age_text})"
 
 def list_state(state_dir: Path, state_label: str, extra_fn=None):
     """Print one Kanban row."""
@@ -135,6 +164,9 @@ def workflow_summary():
     in_progress = list((ct2_dir / "in-progress").glob("*.md")) if (ct2_dir / "in-progress").is_dir() else []
     in_review = list((ct2_dir / "in-review").glob("*.md")) if (ct2_dir / "in-review").is_dir() else []
     pending_reviews = 0
+    overdue_reviews = 0
+    unstamped_reviews = 0
+    max_review_min = config_int("max_review_duration_min", DEFAULT_MAX_REVIEW_DURATION_MIN)
     reviews_dir = ct2_dir / "reviews"
     for ticket in in_review:
         fm = read_frontmatter(ticket)
@@ -147,12 +179,21 @@ def workflow_summary():
             pending_reviews += 1
         if not (reviews_dir / f"{tid}-cx-r{round_num}.md").exists():
             pending_reviews += 1
+        age = review_age_min(ticket)
+        if age is None:
+            if not (reviews_dir / f"{tid}-cc-r{round_num}.md").exists() or not (reviews_dir / f"{tid}-cx-r{round_num}.md").exists():
+                unstamped_reviews += 1
+        elif age >= max_review_min:
+            if not (reviews_dir / f"{tid}-cc-r{round_num}.md").exists() or not (reviews_dir / f"{tid}-cx-r{round_num}.md").exists():
+                overdue_reviews += 1
     canvas_open_dir = ct2_dir / "plans" / "canvas" / "open"
     open_canvases = len(list(canvas_open_dir.glob("*.canvas.html"))) if canvas_open_dir.is_dir() else 0
     print("WORKFLOW")
     print(f"  in-progress tickets: {len(in_progress)}")
     print(f"  in-review tickets:   {len(in_review)}")
     print(f"  missing sidecars:    {pending_reviews}")
+    print(f"  overdue reviews:     {overdue_reviews}")
+    print(f"  unstamped reviews:   {unstamped_reviews}")
     print(f"  open canvases:       {open_canvases}")
 
 def inbox_summary():
