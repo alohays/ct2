@@ -67,11 +67,10 @@ Scan `.ct2/inbox/ct2-lens-cc/` for messages (not in `processing/` or `done/`):
 for msg in .ct2/inbox/ct2-lens-cc/*.md; do
   [ -f "$msg" ] || continue
   msgfile=$(basename "$msg")
-  if mv -n "$msg" ".ct2/inbox/ct2-lens-cc/processing/${msgfile}" 2>/dev/null; then
+  if claimed=$(ct2-inbox claim ct2-lens-cc "$msgfile" 2>/dev/null); then
     # Read and log the message
-    cat ".ct2/inbox/ct2-lens-cc/processing/${msgfile}"
-    mv -n ".ct2/inbox/ct2-lens-cc/processing/${msgfile}" \
-          ".ct2/inbox/ct2-lens-cc/done/${msgfile}"
+    cat "$claimed"
+    ct2-inbox ack ct2-lens-cc "$msgfile"
   fi
 done
 ```

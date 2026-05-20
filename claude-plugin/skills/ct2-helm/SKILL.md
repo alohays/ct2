@@ -88,9 +88,9 @@ Ask thorough, pointed clarifying questions that cover all aspects requiring user
 4. **Scan state**: List files in `.ct2/draft/`, `.ct2/backlog/`, `.ct2/in-progress/`, `.ct2/in-review/`, `.ct2/done/`, `.ct2/rejected/`, `.ct2/escalated/`.
 
 5. **Check inbox**: Scan `.ct2/inbox/ct2-helm/` for unread messages (files directly in the directory, not in `processing/` or `done/` subdirectories). For each unread message:
-   - Claim it: `mv -n .ct2/inbox/ct2-helm/{msg} .ct2/inbox/ct2-helm/processing/{msg}`
+   - Claim it: `ct2-inbox claim ct2-helm {msg}`
    - Display it clearly to the user (especially `escalation` and `blocked` types)
-   - Acknowledge: `mv -n .ct2/inbox/ct2-helm/processing/{msg} .ct2/inbox/ct2-helm/done/{msg}`
+   - Acknowledge: `ct2-inbox ack ct2-helm {msg}`
 
 6. **Output state summary**: Show a compact view of current Kanban state and any unread inbox messages. Run `ct2-status` if it is available in PATH, otherwise produce the summary manually.
 

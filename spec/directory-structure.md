@@ -107,7 +107,8 @@ This directory is excluded from git via `.git/info/exclude` (never via `.gitigno
 - `done/` is reachable **only** when both `lens-cc` and `lens-cx` verdict = `approved`.
 - At most one ticket exists in `in-progress/` at any time.
 - `reviews/` sidecar files are **immutable** after creation. Re-reviews produce new files under incremented round numbers.
-- State transitions are performed with `mv` (atomic on same-filesystem paths).
+- State transitions are performed with same-filesystem renames; transitions with
+  global preconditions, such as pickup into `in-progress/`, use a lifecycle lock.
 - `.tmp/` is the staging area for CT2 atomic file writes, including inbox
   messages, decision records, evidence artifacts, telemetry snapshots, and other
   advisory/evidentiary outputs that use tmpfile-then-rename.

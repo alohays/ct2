@@ -35,8 +35,10 @@ for ticket state.
 ### Atomic `mv` Is Commit
 
 State transitions are same-filesystem renames between `.ct2/{state}/`
-directories. File creation that produces CT2 artifacts uses `.ct2/.tmp/` and a
-final rename into place.
+directories. If a transition has a global precondition, the corresponding
+one-shot tool must hold the lifecycle lock while rechecking that precondition.
+File creation that produces CT2 artifacts uses `.ct2/.tmp/` and a final rename
+into place.
 
 ### Agent Owns the Loop
 

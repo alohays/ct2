@@ -185,6 +185,8 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 |---------|-------------|
 | `ct2-init [dir]` | Initialize `.ct2/` in a project directory (prompts for git strategy on first run) |
 | `ct2-seal <ticket>` | Validate and move a draft ticket to backlog |
+| `ct2-pickup [dir]` | Move one backlog/rejected ticket to `in-progress/` under the lifecycle lock |
+| `ct2-inbox claim\|ack ...` | Atomically claim or acknowledge inbox messages without relying on shell `mv -n` |
 | `ct2-revise <ticket>` | Archive past sidecars and return an escalated/rejected ticket to `draft/` |
 | `ct2-helm-canvas <sub> ...` | Generate, recover, seal, or expire a helm planning canvas (`spec/helm-canvas.md`) |
 | `ct2-status [dir]` | Display Kanban board, filesystem workflow summary, and inbox |
@@ -259,7 +261,9 @@ Codex metadata output, and plugin/skill contract shape.
 - **Duration circuit breaker**: if forge holds a ticket longer than
   `max_ticket_duration_min`, it is bounced back to `backlog/` automatically.
   Timer is driven by `.ct2/.meta/{id}.started`, not the ticket file's mtime.
-- All transitions are atomic `mv` operations.
+- State transitions use atomic same-filesystem renames; compound transitions with
+  global preconditions, such as pickup into the single `in-progress/` slot, go
+  through locked helpers.
 
 ## Specifications
 

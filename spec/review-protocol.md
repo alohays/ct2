@@ -100,17 +100,18 @@ MSGEOF
 ```bash
 ct2_claim_message() {
   local role="$1" msgfile="$2"
-  mv -n ".ct2/inbox/${role}/${msgfile}" \
-        ".ct2/inbox/${role}/processing/${msgfile}" 2>/dev/null && \
-    echo ".ct2/inbox/${role}/processing/${msgfile}"
+  ct2-inbox claim "$role" "$msgfile"
 }
 
 ct2_ack_message() {
   local role="$1" msgfile="$2"
-  mv -n ".ct2/inbox/${role}/processing/${msgfile}" \
-        ".ct2/inbox/${role}/done/${msgfile}"
+  ct2-inbox ack "$role" "$msgfile"
 }
 ```
+
+Inbox claims must not rely on shell `mv -n` as a no-clobber primitive. `ct2-inbox`
+uses an `O_EXCL` claim lock plus same-filesystem `rename(2)` so exactly one role
+loop can claim a message on macOS and Linux.
 
 ### Message Types
 

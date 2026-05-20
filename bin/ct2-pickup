@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Authoritative locked CT2 ticket pickup."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+from _ct2_vao import atomic_write_text, ensure_ct2, now, read_frontmatter, ticket_id_from_name
+
+
+PRIORITY = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+LOCK_TTL_SECONDS = 600
+
+
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def max_review_rounds(ct2_dir: Path) -> int:
+    try:
+        text = read_text(ct2_dir / "config" / "harness.yaml")
+    except OSError:
+        return 3
+    match = re.search(r"max_review_rounds:\s*(\d+)", text)
+    return int(match.group(1)) if match else 3
+
+
+def lock_is_live(lock: Path) -> bool:
+    try:
+        text = lock.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    match = re.search(r"^pid:\s*(\d+)", text, re.MULTILINE)
+    if not match:
+        return False
+    try:
+        pid = int(match.group(1))
+    except ValueError:
+        return False
+    try:
+        age = datetime.now(timezone.utc).timestamp() - lock.stat().st_mtime
+    except OSError:
+        return False
+    if age >= LOCK_TTL_SECONDS:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def acquire_lifecycle_lock(ct2_dir: Path) -> Path:
+    meta = ct2_dir / ".meta"
+    meta.mkdir(parents=True, exist_ok=True)
+    lock = meta / "lifecycle.lock"
+    try:
+        fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError as exc:
+        if lock_is_live(lock):
+            raise RuntimeError(f"lifecycle lock already held: {lock}") from exc
+        try:
+            lock.unlink()
+        except OSError as unlink_exc:
+            raise RuntimeError(f"lifecycle lock already held: {lock}") from unlink_exc
+        try:
+            fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        except FileExistsError as retry_exc:
+            raise RuntimeError(f"lifecycle lock already held: {lock}") from retry_exc
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(f"pid: {os.getpid()}\ntimestamp: {now()}\n")
+    return lock
+
+
+def replace_frontmatter_value(text: str, key: str, value: str) -> str:
+    pattern = rf"^({re.escape(key)}:\s*).*$"
+    if re.search(pattern, text, re.MULTILINE):
+        return re.sub(pattern, rf"\g<1>{value}", text, count=1, flags=re.MULTILINE)
+    return re.sub(r"^(---\n)", rf"\g<1>{key}: {value}\n", text, count=1)
+
+
+def update_ticket(ct2_dir: Path, path: Path, source_state: str) -> None:
+    text = read_text(path)
+    fm = read_frontmatter(path)
+    text = replace_frontmatter_value(text, "status", "in-progress")
+    text = replace_frontmatter_value(text, "updated", now())
+    if source_state == "rejected":
+        round_num = int(str(fm.get("review-round", "0") or "0"))
+        text = replace_frontmatter_value(text, "review-round", str(round_num + 1))
+    atomic_write_text(ct2_dir, path, text, "pickup-ticket-")
+
+
+def candidates(ct2_dir: Path, source: str, ticket: str | None) -> list[tuple[str, Path]]:
+    states = ("rejected", "backlog") if source == "auto" else (source,)
+    selected: list[tuple[str, Path]] = []
+    max_rounds = max_review_rounds(ct2_dir)
+    for state in states:
+        for path in sorted((ct2_dir / state).glob("*.md")):
+            if ticket and not (path.name == ticket or path.stem == ticket or path.stem.startswith(f"{ticket}-")):
+                continue
+            fm = read_frontmatter(path)
+            if state == "rejected":
+                round_num = int(str(fm.get("review-round", "0") or "0"))
+                if round_num >= max_rounds:
+                    continue
+            selected.append((state, path))
+    return selected
+
+
+def sort_key(item: tuple[str, Path]) -> tuple[int, int, str, str]:
+    state, path = item
+    fm = read_frontmatter(path)
+    state_rank = 0 if state == "rejected" else 1
+    prio = PRIORITY.get(str(fm.get("priority", "low")), 3)
+    sealed = str(fm.get("sealed", "") or "")
+    return (state_rank, prio, sealed, path.name)
+
+
+def pickup(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    lock = None
+    try:
+        lock = acquire_lifecycle_lock(ct2_dir)
+        in_progress = sorted((ct2_dir / "in-progress").glob("*.md"))
+        if in_progress:
+            print(
+                "ct2-pickup: in-progress/ is occupied: "
+                + ", ".join(path.name for path in in_progress),
+                file=sys.stderr,
+            )
+            return 2
+
+        available = sorted(candidates(ct2_dir, args.source, args.ticket), key=sort_key)
+        if not available:
+            print("ct2-pickup: no eligible tickets")
+            return 0
+
+        source_state, source = available[0]
+        dest = ct2_dir / "in-progress" / source.name
+        if dest.exists():
+            print(f"ct2-pickup: destination already exists: {dest}", file=sys.stderr)
+            return 2
+
+        os.rename(source, dest)
+        update_ticket(ct2_dir, dest, source_state)
+        ticket_id = ticket_id_from_name(dest)
+        atomic_write_text(ct2_dir, ct2_dir / ".meta" / f"{ticket_id}.started", now() + "\n", "pickup-started-")
+        with (ct2_dir / "logs" / "ct2-forge.log").open("a", encoding="utf-8") as log:
+            log.write(f"[{now()}] pickup ticket={ticket_id} from={source_state}\n")
+
+        result = {"ticket": dest.name, "from": source_state, "to": "in-progress"}
+        if args.json:
+            print(json.dumps(result, indent=2, sort_keys=True))
+        else:
+            print(f"ct2-pickup: {dest.name} {source_state} -> in-progress")
+        return 0
+    except RuntimeError as exc:
+        print(f"ct2-pickup: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        if lock is not None:
+            try:
+                lock.unlink()
+            except OSError:
+                pass
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Pick up one CT2 ticket under a lifecycle lock")
+    parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument("--source", choices=("auto", "backlog", "rejected"), default="auto")
+    parser.add_argument("--ticket", help="Ticket id, stem, or filename to pick up")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    return pickup(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

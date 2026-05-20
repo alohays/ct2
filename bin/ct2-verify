@@ -27,7 +27,15 @@ REQUIRED_ADAPTERS = (
     "adapters/codex/lens-cc.md",
     "adapters/codex/lens-cx.md",
 )
-REQUIRED_BINS = ("ct2-reconcile", "ct2-lens-cc", "ct2-lens-cx", "ct2-status", "ct2-init")
+REQUIRED_BINS = (
+    "ct2-reconcile",
+    "ct2-lens-cc",
+    "ct2-lens-cx",
+    "ct2-status",
+    "ct2-init",
+    "ct2-pickup",
+    "ct2-inbox",
+)
 REQUIRED_SECTIONS = ("## Invocation", "## Objective", "## Required CT2 Effects", "## Stop Condition")
 
 
@@ -75,6 +83,14 @@ def main() -> int:
         for rel in ("in-review", "reviews", ".tmp", ".meta", "inbox/ct2-helm"):
             path = project / ".ct2" / rel
             results.append(check(path.is_dir(), f"project-dir:{rel}", str(path)))
+        in_progress = sorted((project / ".ct2" / "in-progress").glob("*.md"))
+        results.append(
+            check(
+                len(in_progress) <= 1,
+                "kanban:single-in-progress",
+                ", ".join(path.name for path in in_progress) if in_progress else "0 tickets",
+            )
+        )
 
     if args.run_tests:
         proc = subprocess.run(
