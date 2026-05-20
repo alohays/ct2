@@ -336,6 +336,150 @@ class StateLifecycleTest(unittest.TestCase):
         self.assertEqual(duplicate.returncode, 2)
         self.assertTrue(tmp2.exists())
 
+    def test_ct2_duration_check_bounces_once_to_backlog(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-progress" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-progress", sealed="2026-05-12T00:00:00Z")
+        (ct2 / ".meta" / "001.started").write_text("2020-01-01T00:00:00Z\n", encoding="utf-8")
+
+        check = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-duration-check", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(check.returncode, 0, check.stderr)
+
+        bounced = ct2 / "backlog" / "001-seal-smoke.md"
+        self.assertTrue(bounced.exists())
+        text = bounced.read_text(encoding="utf-8")
+        self.assertIn("status: backlog", text)
+        self.assertIn("duration-bounce-count: 1", text)
+        self.assertIn("total-attempts: 1", text)
+        self.assertFalse((ct2 / ".meta" / "001.started").exists())
+
+    def test_ct2_duration_check_escalates_after_bounce_cap(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-progress" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-progress", sealed="2026-05-12T00:00:00Z")
+        content = ticket.read_text(encoding="utf-8")
+        ticket.write_text(
+            content.replace("review-round: 0\n", "review-round: 0\nduration-bounce-count: 2\ntotal-attempts: 7\n"),
+            encoding="utf-8",
+        )
+        (ct2 / ".meta" / "001.started").write_text("2020-01-01T00:00:00Z\n", encoding="utf-8")
+
+        check = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-duration-check", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(check.returncode, 0, check.stderr)
+
+        escalated = ct2 / "escalated" / "001-seal-smoke.md"
+        self.assertTrue(escalated.exists())
+        text = escalated.read_text(encoding="utf-8")
+        self.assertIn("status: escalated", text)
+        self.assertIn("verdict: escalated", text)
+        self.assertIn("duration-bounce-count: 3", text)
+        self.assertIn("total-attempts: 8", text)
+        self.assertEqual(1, len(list((ct2 / "inbox" / "ct2-helm").glob("msg-*.md"))))
+
+    def test_ct2_duration_check_escalates_after_total_attempt_cap(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-progress" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-progress", sealed="2026-05-12T00:00:00Z")
+        content = ticket.read_text(encoding="utf-8")
+        ticket.write_text(
+            content.replace("review-round: 0\n", "review-round: 0\nduration-bounce-count: 0\ntotal-attempts: 8\n"),
+            encoding="utf-8",
+        )
+        (ct2 / ".meta" / "001.started").write_text("2020-01-01T00:00:00Z\n", encoding="utf-8")
+
+        check = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-duration-check", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(check.returncode, 0, check.stderr)
+
+        escalated = ct2 / "escalated" / "001-seal-smoke.md"
+        self.assertTrue(escalated.exists())
+        text = escalated.read_text(encoding="utf-8")
+        self.assertIn("duration-bounce-count: 1", text)
+        self.assertIn("total-attempts: 9", text)
+
+    def test_ct2_duration_check_honors_nested_max_ticket_duration_min(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        cfg = ct2 / "config" / "harness.yaml"
+        cfg.write_text(
+            "circuit_breaker:\n"
+            "  max_ticket_duration_min: 1\n"
+            "  max_duration_bounces: 3\n"
+            "  max_total_attempts: 9\n",
+            encoding="utf-8",
+        )
+        ticket = ct2 / "in-progress" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-progress", sealed="2026-05-12T00:00:00Z")
+        from datetime import datetime, timedelta, timezone
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        (ct2 / ".meta" / "001.started").write_text(recent + "\n", encoding="utf-8")
+
+        check = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-duration-check", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(check.returncode, 0, check.stderr)
+        self.assertTrue((ct2 / "backlog" / "001-seal-smoke.md").exists())
+        self.assertFalse(ticket.exists())
+
+    def test_ct2_duration_check_honors_nested_max_total_attempts(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        cfg = ct2 / "config" / "harness.yaml"
+        cfg.write_text(
+            "circuit_breaker:\n"
+            "  max_ticket_duration_min: 1\n"
+            "  max_duration_bounces: 5\n"
+            "  max_total_attempts: 2\n",
+            encoding="utf-8",
+        )
+        ticket = ct2 / "in-progress" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-progress", sealed="2026-05-12T00:00:00Z")
+        content = ticket.read_text(encoding="utf-8")
+        ticket.write_text(
+            content.replace("review-round: 0\n", "review-round: 0\nduration-bounce-count: 0\ntotal-attempts: 1\n"),
+            encoding="utf-8",
+        )
+        from datetime import datetime, timedelta, timezone
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        (ct2 / ".meta" / "001.started").write_text(recent + "\n", encoding="utf-8")
+
+        check = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-duration-check", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(check.returncode, 0, check.stderr)
+        self.assertTrue((ct2 / "escalated" / "001-seal-smoke.md").exists())
+        self.assertIn('"total_attempts": 2', check.stdout)
+        self.assertFalse(ticket.exists())
+
+    def test_ct2_duration_check_missing_stamp_starts_timer_without_move(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-progress" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-progress", sealed="2026-05-12T00:00:00Z")
+
+        check = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-duration-check", "--json", project], cwd=REPO_ROOT)
+        self.assertEqual(check.returncode, 0, check.stderr)
+        self.assertTrue(ticket.exists())
+        self.assertTrue((ct2 / ".meta" / "001.started").exists())
+
+    def test_ct2_revise_resets_duration_bounces_but_preserves_total_attempts(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "escalated" / "001-seal-smoke.md"
+        write_ticket(ticket, status="escalated", sealed="2026-05-12T00:00:00Z")
+        content = ticket.read_text(encoding="utf-8")
+        ticket.write_text(
+            content.replace("review-round: 0\n", "review-round: 2\nduration-bounce-count: 3\ntotal-attempts: 8\n"),
+            encoding="utf-8",
+        )
+
+        revise = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-revise", "001"], cwd=project)
+        self.assertEqual(revise.returncode, 0, revise.stderr)
+
+        draft = ct2 / "draft" / "001-seal-smoke.md"
+        text = draft.read_text(encoding="utf-8")
+        self.assertIn("review-round: 0", text)
+        self.assertIn("duration-bounce-count: 0", text)
+        self.assertIn("total-attempts: 8", text)
+
 
 if __name__ == "__main__":
     unittest.main()

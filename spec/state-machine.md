@@ -59,7 +59,8 @@ git contract; the "Git action" column summarizes the coupling.
 | `rejected → in-progress`      | `ct2-pickup`         | ct2-forge     | lifecycle lock held; `in-progress/` is empty; `review-round < max_review_rounds` | `ct2-git-start` (checkout existing branch; rework appends commits) |
 | `in-review → escalated`       | Circuit breaker      | reconciler    | `review-round + 1 ≥ max_review_rounds`; also sends escalation to helm inbox | `ct2-git-finalize escalated` (comment on PR) |
 | `in-review → escalated`       | `ct2-review-watchdog` | watchdog     | missing review sidecar and `now − .meta/{id}.in-review > max_review_duration_min` | send escalation to helm inbox |
-| `in-progress → backlog`       | Duration CB bounce   | ct2-forge     | `now − .meta/{id}.started > max_ticket_duration_min`; stamp removed on bounce | none (branch preserved for resume) |
+| `in-progress → backlog`       | `ct2-duration-check` bounce | ct2-forge | `now − .meta/{id}.started > max_ticket_duration_min`; `duration-bounce-count < max_duration_bounces`; stamp removed on bounce | none (branch preserved for resume) |
+| `in-progress → escalated`     | `ct2-duration-check` cap | ct2-forge | `duration-bounce-count + 1 ≥ max_duration_bounces` OR `total-attempts + 1 ≥ max_total_attempts`; also sends escalation to helm inbox | none (branch preserved for human recovery) |
 | `escalated → draft`           | `ct2-revise` (manual)| human, via ct2-helm | Archives every `reviews/{id}-*.md` to `reviews/.archive/{ts}-{id}/`; resets frontmatter (`status=draft`, `review-round=0`, `verdict=pending`, `sealed=null`, `pr=null`, nested `review-status.lens-*.*` reset); drops stale `.meta/{id}.started` if present | `ct2-git-cleanup` (close PR, delete local + remote branch) |
 | `rejected → draft`            | `ct2-revise --from=rejected` | human, via ct2-helm | Same semantics as `escalated → draft`. Escape hatch when a rejected ticket is stuck outside normal rework (e.g. requirements must be rewritten, not re-implemented). | `ct2-git-cleanup` (close PR, delete local + remote branch) |
 
@@ -109,7 +110,8 @@ The reconciler is the **sole automatic writer** of `review-status` and `verdict`
 | Condition                                      | Action                                                                 |
 |------------------------------------------------|------------------------------------------------------------------------|
 | `review-round + 1 ≥ max_review_rounds`         | Move to `escalated/`; send `escalation` message to ct2-helm inbox     |
-| `now − mtime(.meta/{id}.started) > max_ticket_duration_min` | Abort forge work; return ticket to `backlog/`; remove the `.started` stamp; log event |
+| `now − timestamp(.meta/{id}.started) > max_ticket_duration_min` and next bounce `< max_duration_bounces` | Abort forge work; increment `duration-bounce-count` and `total-attempts`; return ticket to `backlog/`; remove the `.started` stamp; log event |
+| `now − timestamp(.meta/{id}.started) > max_ticket_duration_min` and next bounce `≥ max_duration_bounces` or next total attempt `≥ max_total_attempts` | Increment counters; move ticket to `escalated/`; send `escalation` message to ct2-helm inbox |
 | `now − timestamp(.meta/{id}.in-review) > max_review_duration_min` with missing sidecar | Move to `escalated/`; send `escalation` message to ct2-helm inbox |
 
 > **Note**: The ticket-duration timer reads `.meta/{id}.started` (written by forge at pickup and rework), not the ticket file's mtime. Ticket mtime mutates on every edit and is preserved across `mv`, which makes it an unreliable stopwatch.

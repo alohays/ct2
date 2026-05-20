@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+"""Apply the CT2 in-progress duration circuit breaker with a bounce cap."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import tempfile
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+from _ct2_vao import atomic_write_text, compact_now, ensure_ct2, now, read_frontmatter, ticket_id_from_name
+
+
+DEFAULT_MAX_TICKET_DURATION_MIN = 120
+DEFAULT_MAX_DURATION_BOUNCES = 3
+DEFAULT_MAX_TOTAL_ATTEMPTS = 9
+
+
+def read_config_int(ct2_dir: Path, key: str, default: int, section: str | None = "circuit_breaker") -> int:
+    try:
+        text = (ct2_dir / "config" / "harness.yaml").read_text(encoding="utf-8")
+    except OSError:
+        return default
+    if section:
+        block = re.search(
+            rf"^{re.escape(section)}:\s*\n((?:[ \t]+[^\n]*\n?)+)",
+            text,
+            re.MULTILINE,
+        )
+        if block:
+            nested = re.search(
+                rf"^[ \t]+{re.escape(key)}:\s*(\d+)",
+                block.group(1),
+                re.MULTILINE,
+            )
+            if nested:
+                return int(nested.group(1))
+    flat = re.search(rf"^{re.escape(key)}:\s*(\d+)", text, re.MULTILINE)
+    return int(flat.group(1)) if flat else default
+
+
+def parse_stamp_seconds(path: Path) -> float | None:
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if text:
+        try:
+            return datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            pass
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def set_field(text: str, key: str, value: str) -> str:
+    pattern = rf"^({re.escape(key)}:\s*).*$"
+    if re.search(pattern, text, re.MULTILINE):
+        return re.sub(pattern, rf"\g<1>{value}", text, count=1, flags=re.MULTILINE)
+    if re.search(r"^review-round:.*$", text, re.MULTILINE):
+        return re.sub(r"^(review-round:.*\n)", rf"\g<1>{key}: {value}\n", text, count=1, flags=re.MULTILINE)
+    return re.sub(r"^(---\n)", rf"\g<1>{key}: {value}\n", text, count=1)
+
+
+def acquire_ticket_lock(ct2_dir: Path, ticket_id: str) -> Path | None:
+    lock = ct2_dir / ".meta" / f"{ticket_id}-duration-check.lock"
+    try:
+        fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        return None
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(f"pid: {os.getpid()}\ntimestamp: {now()}\n")
+    return lock
+
+
+def send_escalation(
+    ct2_dir: Path,
+    ticket: Path,
+    bounce_count: int,
+    max_bounces: int,
+    total_attempts: int,
+    max_total_attempts: int,
+) -> Path:
+    inbox = ct2_dir / "inbox" / "ct2-helm"
+    tmp_dir = ct2_dir / ".tmp"
+    inbox.mkdir(parents=True, exist_ok=True)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    msgid = f"msg-{compact_now()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    text = f"""---
+id: {msgid}
+from: ct2-duration-check
+to: ct2-helm
+type: escalation
+ticket: {ticket.name}
+timestamp: {now()}
+---
+
+## Subject
+Ticket {ticket.name} - Duration bounce cap exceeded
+
+## Body
+Ticket {ticket.name} exceeded max_ticket_duration_min too many times.
+duration-bounce-count={bounce_count}; max_duration_bounces={max_bounces}.
+total-attempts={total_attempts}; max_total_attempts={max_total_attempts}.
+The ticket was moved to escalated/ instead of being returned to backlog again.
+"""
+    fd, tmp_name = tempfile.mkstemp(prefix=f"{msgid}-", dir=str(tmp_dir))
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    dest = inbox / f"{msgid}.md"
+    os.replace(tmp_name, dest)
+    return dest
+
+
+def move_with_fields(ct2_dir: Path, ticket: Path, dest_state: str, bounce_count: int, total_attempts: int) -> Path:
+    dest = ct2_dir / dest_state / ticket.name
+    if dest.exists():
+        raise RuntimeError(f"destination already exists: {dest}")
+    os.rename(ticket, dest)
+    text = dest.read_text(encoding="utf-8")
+    text = set_field(text, "status", dest_state)
+    text = set_field(text, "updated", now())
+    text = set_field(text, "duration-bounce-count", str(bounce_count))
+    text = set_field(text, "total-attempts", str(total_attempts))
+    if dest_state == "escalated":
+        text = set_field(text, "verdict", "escalated")
+    atomic_write_text(ct2_dir, dest, text, "duration-check-ticket-")
+    return dest
+
+
+def check_ticket(
+    ct2_dir: Path,
+    ticket: Path,
+    max_duration_min: int,
+    max_bounces: int,
+    max_total_attempts: int,
+) -> dict[str, object]:
+    ticket_id = ticket_id_from_name(ticket)
+    stamp = ct2_dir / ".meta" / f"{ticket_id}.started"
+    started = parse_stamp_seconds(stamp)
+    if started is None:
+        atomic_write_text(ct2_dir, stamp, now() + "\n", "duration-started-")
+        return {"ticket": ticket.name, "state": "stamped"}
+
+    elapsed_min = int((datetime.now(timezone.utc).timestamp() - started) // 60)
+    if elapsed_min <= max_duration_min:
+        return {"ticket": ticket.name, "state": "within-limit", "elapsed_min": elapsed_min}
+
+    fm = read_frontmatter(ticket)
+    bounce_count = int(str(fm.get("duration-bounce-count", "0") or "0")) + 1
+    total_attempts = int(str(fm.get("total-attempts", "0") or "0")) + 1
+    dest_state = "escalated" if bounce_count >= max_bounces or total_attempts >= max_total_attempts else "backlog"
+    dest = move_with_fields(ct2_dir, ticket, dest_state, bounce_count, total_attempts)
+    try:
+        stamp.unlink()
+    except FileNotFoundError:
+        pass
+
+    result: dict[str, object] = {
+        "ticket": dest.name,
+        "state": dest_state,
+        "elapsed_min": elapsed_min,
+        "duration_bounce_count": bounce_count,
+        "total_attempts": total_attempts,
+    }
+    if dest_state == "escalated":
+        msg = send_escalation(ct2_dir, dest, bounce_count, max_bounces, total_attempts, max_total_attempts)
+        result["message"] = f".ct2/inbox/ct2-helm/{msg.name}"
+    with (ct2_dir / "logs" / "ct2-forge.log").open("a", encoding="utf-8") as log:
+        log.write(f"[{now()}] duration-check ticket={ticket_id} -> {dest_state} bounce={bounce_count}\n")
+    return result
+
+
+def run(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    max_duration_min = read_config_int(ct2_dir, "max_ticket_duration_min", DEFAULT_MAX_TICKET_DURATION_MIN)
+    max_bounces = read_config_int(ct2_dir, "max_duration_bounces", DEFAULT_MAX_DURATION_BOUNCES)
+    max_total_attempts = read_config_int(ct2_dir, "max_total_attempts", DEFAULT_MAX_TOTAL_ATTEMPTS)
+    results = []
+    for ticket in sorted((ct2_dir / "in-progress").glob("*.md")):
+        ticket_id = ticket_id_from_name(ticket)
+        lock = acquire_ticket_lock(ct2_dir, ticket_id)
+        if lock is None:
+            continue
+        try:
+            if ticket.exists():
+                results.append(check_ticket(ct2_dir, ticket, max_duration_min, max_bounces, max_total_attempts))
+        except RuntimeError as exc:
+            print(f"ct2-duration-check: {exc}", file=sys.stderr)
+            return 2
+        finally:
+            try:
+                lock.unlink()
+            except OSError:
+                pass
+
+    if args.json:
+        print(json.dumps({"results": results}, indent=2, sort_keys=True))
+    else:
+        if not results:
+            print("ct2-duration-check: no in-progress tickets")
+        for result in results:
+            print(f"ct2-duration-check: {result['ticket']} -> {result['state']}")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run the CT2 duration circuit breaker")
+    parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    return run(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

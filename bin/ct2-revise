@@ -131,6 +131,7 @@ now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 c = re.sub(r'^(status:\s*).*$',       r'\g<1>draft',    c, flags=re.MULTILINE)
 c = re.sub(r'^(review-round:\s*).*$', r'\g<1>0',        c, flags=re.MULTILINE)
+c = re.sub(r'^(duration-bounce-count:\s*).*$', r'\g<1>0', c, flags=re.MULTILINE)
 c = re.sub(r'^(verdict:\s*).*$',      r'\g<1>pending',  c, flags=re.MULTILINE)
 c = re.sub(r'^(updated:\s*).*$',     rf'\g<1>{now}',    c, flags=re.MULTILINE)
 c = re.sub(r'^(sealed:\s*).*$',       r'\g<1>null',     c, flags=re.MULTILINE)
