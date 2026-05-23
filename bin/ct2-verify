@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -45,6 +46,50 @@ REQUIRED_BINS = (
 )
 SEALED_BASELINE_STATES = ("backlog", "in-progress", "in-review", "rejected", "escalated", "done")
 REQUIRED_SECTIONS = ("## Invocation", "## Objective", "## Required CT2 Effects", "## Stop Condition")
+ROLE_DOC_GLOBS = (
+    "adapters/**/*.md",
+    "claude-plugin/skills/*/SKILL.md",
+    "codex-plugin/skills/*/SKILL.md",
+    "config/ct2-lens-*-role.md",
+)
+DONE_BYPASS_PATTERNS = (
+    re.compile(r"\bclose\s+the\s+ticket\b[^\n]*\bmove\s+to\s+`?(?:\.ct2/)?done/?`?", re.IGNORECASE),
+    re.compile(r"\bmove\b[^\n]*\bto\s+`?(?:\.ct2/)?done/?`?", re.IGNORECASE),
+    re.compile(r"\bplace\b[^\n]*\b(?:into|in)\s+`?(?:\.ct2/)?done/?`?", re.IGNORECASE),
+    re.compile(r"\bmove\s+to\s+`?(?:\.ct2/)?done/?`?\s+with\s+a\s+manual\s+override\b", re.IGNORECASE),
+    re.compile(r"\bbypass(?:es)?\s+the\s+dual-approval\s+invariant\b", re.IGNORECASE),
+    re.compile(r"\bmv\b[^\n]*\.ct2/(?:in-review|rejected|escalated)/[^\n]*\s+\.ct2/done/", re.IGNORECASE),
+)
+ALLOWED_GUARD_PATTERNS = (
+    # Inline prohibition: a forbidding word immediately precedes the moving verb.
+    re.compile(
+        r"\b(?:do\s+not|don't|never|must\s+not|may\s+not|cannot|can't|should\s+not|shouldn't)\s+"
+        r"(?:move|place|put|advance|transition|push|publish|finalize)\b"
+        r"[^.\n]{0,120}\bdone\b",
+        re.IGNORECASE,
+    ),
+    # Explicit reservation of done/ for the reconciler.
+    re.compile(r"\bdone/?\b[^.\n]{0,80}\b(?:is|are|stays)\s+reserved\s+for\b", re.IGNORECASE),
+    re.compile(r"\breserved\s+for\s+(?:ct2-reconcile|the\s+reconciler|reconciler)\b", re.IGNORECASE),
+    re.compile(r"\bdone\s+remains\s+reachable\s+only\b", re.IGNORECASE),
+    # "only through/via/by reconciler" or "only the reconciler ..."
+    re.compile(r"\bonly\s+(?:through|via|by)\s+(?:ct2-reconcile|reconciler|dual[ -]approval)\b", re.IGNORECASE),
+    re.compile(r"\bonly\s+the\s+reconciler\b", re.IGNORECASE),
+    # Reconciler is the subject of the moving verb (descriptive prose).
+    re.compile(r"\b(?:the\s+)?(?:ct2-)?reconciler\s+(?:moves|advances|publishes|transitions|finalizes|writes)\b", re.IGNORECASE),
+    # Inline parenthetical clarification e.g. "(the reconciler handles this)".
+    re.compile(r"\(\s*(?:the\s+)?reconciler\s+(?:handles|does|performs)\s+this\s*\)", re.IGNORECASE),
+)
+PROHIBITION_HEADER_RE = re.compile(
+    r"^#{1,6}\s+(?:what\s+you\s+must\s+not|forbidden|never|don'?t\b|prohibitions?)\b",
+    re.IGNORECASE,
+)
+PROHIBITION_BLOCK_OPEN_RE = re.compile(
+    r'^<constraints\b[^>]*\bid\s*=\s*"prohibition[^"]*"',
+    re.IGNORECASE,
+)
+CONSTRAINTS_OPEN_RE = re.compile(r"^<constraints\b", re.IGNORECASE)
+CONSTRAINTS_CLOSE_RE = re.compile(r"^</constraints>", re.IGNORECASE)
 
 
 def check(ok: bool, name: str, evidence: str) -> dict:
@@ -68,6 +113,65 @@ def adapter_ok(path: Path) -> tuple[bool, str]:
     if len(text) > 3000:
         return False, "adapter exceeds 3000 character verifier cap"
     return True, f"{len(text)} chars"
+
+
+def role_docs_no_done_bypass(repo: Path) -> tuple[bool, str]:
+    """Reject role-doc lines that direct an agent to move a ticket into done/.
+
+    Each candidate line is checked against DONE_BYPASS_PATTERNS. A line is
+    exempt only when at least one of these is true:
+
+      1. it sits inside a prohibition section (header like
+         ``## Forbidden Operations`` / ``## What You Must NOT Do`` or a
+         ``<constraints id="prohibitions">`` XML-style block), OR
+      2. it contains an inline guard phrase that explicitly forbids the
+         bypass or attributes the move to the reconciler
+         (``ALLOWED_GUARD_PATTERNS``).
+
+    Loose keyword exemptions like merely mentioning ``reconciler`` or
+    starting with ``Do not`` are intentionally NOT enough on their own —
+    those allowed past variants like "Do not wait; move to done/ manually"
+    and "If the reconciler is unavailable, move to done/ manually."
+    """
+    offenders = []
+    paths = []
+    for pattern in ROLE_DOC_GLOBS:
+        paths.extend(repo.glob(pattern))
+    for path in sorted(set(paths)):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            offenders.append(f"{path.relative_to(repo)}: read failed: {exc}")
+            continue
+        in_prohibition_section = False
+        for lineno, line in enumerate(text.splitlines(), 1):
+            stripped = line.strip()
+            # Section state transitions.
+            if PROHIBITION_BLOCK_OPEN_RE.match(stripped):
+                in_prohibition_section = True
+                continue
+            if CONSTRAINTS_OPEN_RE.match(stripped):
+                # Any other <constraints id="..."> resets prohibition context.
+                in_prohibition_section = False
+                continue
+            if CONSTRAINTS_CLOSE_RE.match(stripped):
+                in_prohibition_section = False
+                continue
+            if stripped.startswith("#"):
+                in_prohibition_section = bool(PROHIBITION_HEADER_RE.match(stripped))
+                continue
+            if in_prohibition_section:
+                continue
+            if any(regex.search(line) for regex in ALLOWED_GUARD_PATTERNS):
+                continue
+            if any(regex.search(line) for regex in DONE_BYPASS_PATTERNS):
+                excerpt = line.strip()
+                if len(excerpt) > 140:
+                    excerpt = excerpt[:137] + "..."
+                offenders.append(f"{path.relative_to(repo)}:{lineno}: {excerpt}")
+    if offenders:
+        return False, "; ".join(offenders)
+    return True, "role docs reserve done/ for ct2-reconcile dual approval"
 
 
 def main() -> int:
@@ -96,6 +200,8 @@ def main() -> int:
     for rel in REQUIRED_ADAPTERS:
         ok, evidence = adapter_ok(repo / rel)
         results.append(check(ok, f"adapter:{rel}", evidence))
+    ok, evidence = role_docs_no_done_bypass(repo)
+    results.append(check(ok, "protocol:no-manual-done-bypass", evidence))
     if (project / ".ct2").exists():
         for rel in ("in-review", "reviews", ".tmp", ".meta", "inbox/ct2-helm"):
             path = project / ".ct2" / rel

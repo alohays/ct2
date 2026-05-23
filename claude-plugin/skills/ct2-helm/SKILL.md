@@ -229,9 +229,11 @@ When you display an `escalation` message from forge or lens:
      step is mandatory — without it, lens loops will see the stale round-0
      sidecars as "already reviewed" and silently skip the ticket forever.
      After `ct2-revise`, continue the normal draft-edit → `ct2-seal` flow.
-   - **Close the ticket**: Move to `done/` with a manual override note (only with explicit user confirmation).
-     Note: this bypasses the dual-approval invariant; use only when the escalation
-     analysis concludes the work is already correct and further review cycles would not help.
+   - **Hold for adjudication**: Keep the ticket in `escalated/` and record the
+     user's conclusion in the planning notes or follow-up ticket. Do not place
+     escalated work in the terminal success state; that state is reserved for
+     `ct2-reconcile` after both lens reviewers approve. If a human override is
+     needed, define it as a formal spec change before using it.
    - **Leave it**: The ticket stays in `escalated/` for later attention.
 
 </workflow>
