@@ -81,7 +81,7 @@ class ConformanceTest(unittest.TestCase):
         check_names = {item["name"] for item in report["checks"]}
         self.assertIn("protocol:no-manual-done-bypass", check_names)
 
-    def test_manual_done_bypass_checker_rejects_role_doc_override(self):
+    def _load_verify_module(self):
         bin_path = str(REPO_ROOT / "bin")
         loader = importlib.machinery.SourceFileLoader(
             "ct2_verify_for_test",
@@ -92,20 +92,78 @@ class ConformanceTest(unittest.TestCase):
         sys.path.insert(0, bin_path)
         self.addCleanup(lambda: sys.path.remove(bin_path) if bin_path in sys.path else None)
         loader.exec_module(module)
+        return module
 
+    def _write_role_doc(self, body: str) -> Path:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         repo = Path(tmp.name)
         role_doc = repo / "claude-plugin" / "skills" / "ct2-helm" / "SKILL.md"
         role_doc.parent.mkdir(parents=True)
-        role_doc.write_text(
-            "- **Close the ticket**: Move to `done/` with a manual override note.\n",
-            encoding="utf-8",
-        )
+        role_doc.write_text(body, encoding="utf-8")
+        return repo
 
+    def test_manual_done_bypass_checker_rejects_role_doc_override(self):
+        module = self._load_verify_module()
+        repo = self._write_role_doc(
+            "- **Close the ticket**: Move to `done/` with a manual override note.\n"
+        )
         ok, evidence = module.role_docs_no_done_bypass(repo)
         self.assertFalse(ok)
         self.assertIn("ct2-helm/SKILL.md:1", evidence)
+
+    def test_manual_done_bypass_checker_rejects_reconciler_unavailable_variant(self):
+        # Mere mention of "reconciler" must not whitelist a bypass instruction.
+        module = self._load_verify_module()
+        repo = self._write_role_doc(
+            "- If the reconciler is unavailable, move the ticket to `done/` manually.\n"
+        )
+        ok, evidence = module.role_docs_no_done_bypass(repo)
+        self.assertFalse(ok, evidence)
+        self.assertIn("ct2-helm/SKILL.md:1", evidence)
+
+    def test_manual_done_bypass_checker_rejects_do_not_wait_variant(self):
+        # "Do not" prefixing an unrelated verb must not whitelist a same-line bypass.
+        module = self._load_verify_module()
+        repo = self._write_role_doc(
+            "- Do not wait for review; move the ticket to `done/` manually.\n"
+        )
+        ok, evidence = module.role_docs_no_done_bypass(repo)
+        self.assertFalse(ok, evidence)
+        self.assertIn("ct2-helm/SKILL.md:1", evidence)
+
+    def test_manual_done_bypass_checker_rejects_ct2_done_path_variant(self):
+        # The actual state path `.ct2/done/` must be detected, not only the
+        # short `done/` form.
+        module = self._load_verify_module()
+        repo = self._write_role_doc(
+            "- Move the ticket to `.ct2/done/` after user confirmation.\n"
+        )
+        ok, evidence = module.role_docs_no_done_bypass(repo)
+        self.assertFalse(ok, evidence)
+        self.assertIn("ct2-helm/SKILL.md:1", evidence)
+
+    def test_manual_done_bypass_checker_allows_explicit_prohibitions(self):
+        module = self._load_verify_module()
+        # Each of these must be allowed: explicit inline prohibition,
+        # reservation prose, reconciler-as-subject prose, and lines inside a
+        # prohibition section.
+        body = (
+            "## Allowed Writes\n"
+            "- After dual approval the reconciler moves the ticket to `done/`.\n"
+            "- Do not move tickets to `.ct2/done/`; only the reconciler can do that.\n"
+            "- `done/` is reserved for ct2-reconcile after both lens approvals.\n"
+            "\n"
+            "## Forbidden Operations\n"
+            "- Place tickets into `done/` (the reconciler handles this).\n"
+            "\n"
+            '<constraints id="prohibitions">\n'
+            "- Place tickets into `done/` (reconciler handles this)\n"
+            "</constraints>\n"
+        )
+        repo = self._write_role_doc(body)
+        ok, evidence = module.role_docs_no_done_bypass(repo)
+        self.assertTrue(ok, evidence)
 
 
 if __name__ == "__main__":
