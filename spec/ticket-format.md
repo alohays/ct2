@@ -112,6 +112,15 @@ The current hard-coded pool size (10) is a bottleneck under production load.
   into `.ct2/reviews/{id}-sealed.md`. Later checkbox completion is allowed, but
   text drift in these sections is a conformance failure unless helm revises and
   reseals the ticket.
+- `ct2-seal` also runs `ct2-ticket-audit --seal-gate --ticket {id}` as a
+  static-quality precondition. The seal gate verifies that the four ticket
+  sections exist with meaningful text, that `touched-files` is specific,
+  that the Requirements/Constraints/AC items are not whole-field
+  placeholders, that ACs are unchecked and verifiable, and that
+  Constraints do not contradict Requirements/ACs on a small set of
+  patterns. See `spec/state-machine.md` § *Seal Gate* for the full
+  pass conditions. A failing seal gate leaves the draft in place and
+  exits non-zero from `ct2-seal`.
 
 ## Review Sidecar Format
 

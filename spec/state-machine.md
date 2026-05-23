@@ -51,7 +51,7 @@ git contract; the "Git action" column summarizes the coupling.
 
 | Transition                    | Trigger              | Actor         | Precondition                                                               | Git action |
 |-------------------------------|----------------------|---------------|----------------------------------------------------------------------------|------------|
-| `draft → backlog`             | `ct2-seal` runs      | ct2-helm      | `title`, `priority`, `touched-files`, `## Acceptance Criteria` all present | none       |
+| `draft → backlog`             | `ct2-seal` runs      | ct2-helm      | `title`, `priority`, `touched-files`, `## Acceptance Criteria` all present; `ct2-ticket-audit --seal-gate --ticket {id}` passes (see *Seal Gate* below) | none       |
 | `backlog → in-progress`       | `ct2-pickup`         | ct2-forge     | lifecycle lock held; `in-progress/` is empty                               | `ct2-git-start` (create branch from base) |
 | `in-progress → in-review`     | `ct2-review-enter` after work completion | ct2-forge | All AC checklist items checked `[x]`; `.meta/{id}.in-review` stamped       | `ct2-git-submit` (push, open PR, record `pr:` URL) |
 | `in-review → done`            | `ct2-reconcile` verdict | reconciler | `cc sidecar = approved` AND `cx sidecar = approved`                        | `ct2-git-finalize approved` (squash-merge if `git_auto_merge_on_approval`) |
@@ -67,6 +67,38 @@ git contract; the "Git action" column summarizes the coupling.
 > **Invariant**: `done` is reachable **only** when both reviewers have verdict `approved`.
 > No automation — including the circuit breaker — may place a ticket into `done` without satisfying this condition.
 > `ct2-revise` is a human-triggered escape and deliberately out of the automated pipeline: it is the only way to re-open a terminal `escalated` ticket.
+
+## Seal Gate
+
+`ct2-seal` requires that a draft ticket pass a static quality audit before it
+becomes a `backlog/` ticket. The check is implemented by
+`ct2-ticket-audit --seal-gate --ticket {id}` and runs in-process inside
+`ct2-seal`; a non-zero exit aborts the seal with no state move and leaves
+the draft in place.
+
+The seal gate is intentionally **static**: it catches cheap, mechanical
+failure modes (missing sections, placeholder text, unverifiable acceptance
+criteria, self-contradictory constraints) before forge spends a review
+round on the ticket. It is **not** an independent semantic plan review and
+is not a substitute for one — issue #23's broader goal of a plan-review
+gate may add further checks or a separate reviewer later.
+
+The current checks are:
+
+| Check | Pass condition |
+|-------|----------------|
+| `seal_gate_required_sections` | Ticket body contains `## Requirements`, `## Constraints`, `## Context`, and `## Acceptance Criteria` and each has meaningful text. |
+| `seal_gate_touched_files_specific` | `touched-files` is non-empty and contains no whole-field placeholder values (`tbd`, `unknown`, `n/a`, etc.) or trivial entries (`-`, `.`, `*`). |
+| `seal_gate_requirements_complete` | At least one Requirements bullet exists and none are weak (under 8 chars, a whole-field placeholder, or contain unambiguous placeholder markers like `TBD`, `TODO`, `FIXME`). The word `unknown` in domain prose is allowed. |
+| `seal_gate_constraints_complete` | Same standard as Requirements. |
+| `seal_gate_context_complete` | Context section has at least 20 meaningful characters and no unambiguous placeholder markers. |
+| `seal_gate_acceptance_criteria_verifiable` | At least one AC checkbox exists, none are weak, and none are pre-checked at seal time. |
+| `seal_gate_no_static_contradictions` | Constraints and goals do not contradict on a short list of patterns (forbidding *adding* tests / docs while ACs require them; declaring stdlib-only while requiring `pip install`). Retention-style constraints (e.g. "no tests may be removed") are not contradictions. |
+
+Placeholder detection deliberately uses two scopes: a substring scanner
+restricted to unambiguous markers (`tbd`, `todo`, `fixme`, `placeholder`,
+`decide later`), and a whole-field matcher that additionally rejects fields
+whose entire content is just `unknown`, `n/a`, `?`, `-`, etc.
 
 ## File-Based State Representation
 

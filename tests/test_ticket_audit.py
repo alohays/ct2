@@ -339,6 +339,92 @@ class TicketAuditTest(unittest.TestCase):
         checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
         self.assertFalse(checks["seal_gate_acceptance_criteria_verifiable"])
 
+    def test_ticket_audit_seal_gate_accepts_domain_unknown(self):
+        # Regression for PR #32 review: "unknown" is real domain vocabulary
+        # (provider states, error classes, etc.) and a substring match must
+        # not reject otherwise valid tickets.
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "draft" / "001-audit-ticket.md"
+        write_ticket(ticket, status="draft", ac_checked=False, verdict="pending")
+        ticket.write_text(
+            ticket.read_text(encoding="utf-8")
+            .replace(
+                "Exercise ticket audit.",
+                "Handle unknown provider statuses without crashing the IDP integration.",
+            )
+            .replace(
+                "Regression fixture for ticket evidence auditing.",
+                "Provider responses may include `status: unknown` values when "
+                "upstream tokens have not yet propagated; we currently raise "
+                "instead of treating them as transient.",
+            )
+            .replace(
+                "Ticket audit reports concrete readiness checks.",
+                "Reject requests with unknown auth headers and emit a structured 401 response.",
+            ),
+            encoding="utf-8",
+        )
+
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--seal-gate", "--ticket", "001", project])
+        self.assertEqual(audit.returncode, 0, audit.stdout + audit.stderr)
+        report = json.loads(audit.stdout)
+        self.assertTrue(report["complete"])
+        checks = {check["name"]: check["ok"] for check in report["tickets"][0]["checks"]}
+        self.assertTrue(checks["seal_gate_requirements_complete"])
+        self.assertTrue(checks["seal_gate_context_complete"])
+        self.assertTrue(checks["seal_gate_acceptance_criteria_verifiable"])
+
+    def test_ticket_audit_seal_gate_accepts_test_retention_constraint(self):
+        # Regression for PR #32 review: "no tests may be removed" is a
+        # retention constraint, not a ban on adding tests, and must not
+        # be flagged as a contradiction with "tests pass".
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "draft" / "001-audit-ticket.md"
+        write_ticket(ticket, status="draft", ac_checked=False, verdict="pending")
+        ticket.write_text(
+            ticket.read_text(encoding="utf-8")
+            .replace(
+                "Use stdlib-only tests.",
+                "No tests may be removed during the lifecycle migration.",
+            )
+            .replace(
+                "Ticket audit reports concrete readiness checks.",
+                "Tests pass after the lifecycle change.",
+            ),
+            encoding="utf-8",
+        )
+
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--seal-gate", "--ticket", "001", project])
+        self.assertEqual(audit.returncode, 0, audit.stdout + audit.stderr)
+        checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
+        self.assertTrue(checks["seal_gate_no_static_contradictions"])
+
+    def test_ticket_audit_seal_gate_still_flags_explicit_no_tests_ban(self):
+        # Positive control: an explicit "do not add tests" should still flag.
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "draft" / "001-audit-ticket.md"
+        write_ticket(ticket, status="draft", ac_checked=False, verdict="pending")
+        ticket.write_text(
+            ticket.read_text(encoding="utf-8")
+            .replace(
+                "Use stdlib-only tests.",
+                "Do not add tests for this ticket.",
+            )
+            .replace(
+                "Ticket audit reports concrete readiness checks.",
+                "Tests pass after the lifecycle change.",
+            ),
+            encoding="utf-8",
+        )
+
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--seal-gate", "--ticket", "001", project])
+        self.assertEqual(audit.returncode, 1, audit.stdout)
+        checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
+        self.assertFalse(checks["seal_gate_no_static_contradictions"])
+
     def test_ticket_audit_rejects_sealed_baseline_drift(self):
         project = self.make_project()
         ct2 = project / ".ct2"

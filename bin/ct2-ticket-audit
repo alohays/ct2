@@ -20,7 +20,17 @@ SEALED_BASELINE_STATES = {"backlog", "in-progress", "in-review", "rejected", "es
 EVIDENCE_KINDS = {"command", "artifact", "verifier", "hook-event"}
 NULLISH = {"", "null", "none"}
 TICKET_SECTIONS = ("Requirements", "Constraints", "Context", "Acceptance Criteria")
-PLACEHOLDER_RE = re.compile(r"\b(tbd|todo|fixme|placeholder|unknown|decide later|n/a)\b", re.IGNORECASE)
+# Inline scanner for unambiguous placeholder markers. `unknown` and `n/a`
+# were removed because they collide with legitimate domain vocabulary
+# (e.g. "handle unknown provider statuses").
+PLACEHOLDER_RE = re.compile(r"\b(tbd|todo|fixme|placeholder|decide later)\b", re.IGNORECASE)
+# Whole-field placeholder (the entire trimmed item / field is just a
+# placeholder word). Used where substring scanning is unsafe but we still
+# want to reject bullet items or values that are *only* a placeholder.
+WHOLE_FIELD_PLACEHOLDER_RE = re.compile(
+    r"^\s*(?:tbd|todo|fixme|placeholder|decide\s+later|unknown|n/a|\?+|-+|\.+)\s*$",
+    re.IGNORECASE,
+)
 REQUIRED_SIDECAR_SECTIONS = (
     "## Summary",
     "## Acceptance Criteria Check",
@@ -157,19 +167,86 @@ def checkbox_items(section: str) -> list[tuple[str, str]]:
 
 def useful_item(item: str) -> bool:
     item = item.strip()
-    return len(item) >= 8 and not PLACEHOLDER_RE.search(item) and item not in {"-", "..."}
+    if len(item) < 8:
+        return False
+    if WHOLE_FIELD_PLACEHOLDER_RE.match(item):
+        return False
+    if PLACEHOLDER_RE.search(item):
+        return False
+    return item not in {"-", "..."}
+
+
+_ADD_VERBS = "add|write|create|introduce|include|author|land|ship|run|execute"
+_ADD_VERBS_ING = "adding|writing|creating|introducing|including|running|executing"
+_ADD_VERBS_ED = "added|written|created|introduced|included|authored|landed|shipped|run|executed"
+
+
+def _forbids_new_tests(limits: str) -> bool:
+    # Distinguish "do not ADD/WRITE/CREATE/RUN tests" (a real prohibition) from
+    # retention constraints like "no tests may be removed" or "tests must not
+    # be skipped" (which are quality safeguards, not bans). Only the former
+    # contradicts a requirement to verify behavior.
+    if re.search(r"\bno\s+new\s+tests?\b", limits):
+        return True
+    # Active: "(do|must|may|should|will) not (add|write|...) ... tests"
+    if re.search(
+        rf"\b(?:do|must|may|should|will|can|cannot|won't|shall)\s+not\s+(?:{_ADD_VERBS})\b"
+        r"[^.]{0,80}\btests?\b",
+        limits,
+    ):
+        return True
+    # Passive: "no tests (may|can|will|shall|are to) be (added|written|...)"
+    if re.search(
+        rf"\bno\s+(?:new\s+)?tests?\s+(?:may|can|will|should|shall|are\s+to)\s+"
+        rf"(?:be\s+)?(?:{_ADD_VERBS_ED})\b",
+        limits,
+    ):
+        return True
+    # Passive subject-first: "tests (may|must|will|shall) not be (added|...)"
+    if re.search(
+        rf"\btests?\s+(?:may|must|will|should|shall|can|cannot)\s+not\s+(?:be\s+)?"
+        rf"(?:{_ADD_VERBS_ED})\b",
+        limits,
+    ):
+        return True
+    if re.search(
+        rf"\bwithout\s+(?:{_ADD_VERBS_ING})\b[^.]{{0,80}}\btests?\b",
+        limits,
+    ):
+        return True
+    if re.search(r"\btests?\s+are\s+(?:forbidden|disallowed|prohibited|banned)\b", limits):
+        return True
+    return False
+
+
+def _forbids_doc_updates(limits: str) -> bool:
+    # Same shape as _forbids_new_tests: require an explicit
+    # update/edit/modify verb. "no docs may be removed" no longer triggers.
+    if re.search(r"\bno\s+new\s+docs?\b", limits):
+        return True
+    if re.search(
+        r"\b(?:do|must|may|should|will)\s+not\s+(?:update|edit|modify|write|change|touch|add)\b"
+        r"[^.]{0,80}\b(?:docs?|documentation)\b",
+        limits,
+    ):
+        return True
+    if re.search(
+        r"\bwithout\s+(?:updating|editing|modifying|writing|changing|touching|adding)\b"
+        r"[^.]{0,80}\b(?:docs?|documentation)\b",
+        limits,
+    ):
+        return True
+    return False
 
 
 def static_contradictions(requirements: str, constraints: str, acceptance: str) -> list[str]:
     goals = f"{requirements}\n{acceptance}".lower()
     limits = constraints.lower()
     contradictions = []
-    if re.search(r"\b(no|without)\s+tests?\b|\bdo\s+not\s+add\s+tests?\b|\bmust\s+not\s+add\s+tests?\b", limits) and re.search(
-        r"\btests?\b", goals
-    ):
-        contradictions.append("constraints forbid tests but requirements or ACs require tests")
-    if re.search(r"\b(no|without)\s+docs?\b|\bdo\s+not\s+update\s+docs?\b", limits) and re.search(r"\bdocs?\b|documentation", goals):
-        contradictions.append("constraints forbid docs but requirements or ACs require docs")
+    if _forbids_new_tests(limits) and re.search(r"\btests?\b", goals):
+        contradictions.append("constraints forbid adding tests but requirements or ACs require tests")
+    if _forbids_doc_updates(limits) and re.search(r"\bdocs?\b|documentation", goals):
+        contradictions.append("constraints forbid doc updates but requirements or ACs require doc updates")
     if re.search(r"\b(no\s+new\s+external\s+dependencies|no\s+external\s+dependencies|stdlib[- ]only)\b", limits) and re.search(
         r"\bpip\s+install\b|\badd\s+(?:an?\s+)?(?:external\s+)?dependenc", goals
     ):
