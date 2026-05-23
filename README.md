@@ -91,7 +91,8 @@ feature command surface.
 
 1. **Plan** — `/ct2:helm` helps you author tickets in `.ct2/draft/`, optionally
    through an interactive HTML planning canvas (see below)
-2. **Seal** — `ct2-seal 001` validates and moves the ticket to `backlog/`
+2. **Seal** — `ct2-seal 001` runs the ticket quality gate, snapshots the sealed
+   baseline, and moves the ticket to `backlog/`
 3. **Build** — `ct2-forge` picks up the ticket and implements it autonomously
 4. **Review** — `ct2-lens-cc` and `ct2-lens-cx` review independently
 5. **Reconcile** — when both approve, the ticket moves to `done/`
@@ -184,7 +185,7 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | Command | Description |
 |---------|-------------|
 | `ct2-init [dir]` | Initialize `.ct2/` in a project directory (prompts for git strategy on first run) |
-| `ct2-seal <ticket>` | Validate and move a draft ticket to backlog |
+| `ct2-seal <ticket>` | Run the draft quality gate, snapshot the sealed baseline, and move the ticket to backlog |
 | `ct2-pickup [dir]` | Move one backlog/rejected ticket to `in-progress/` under the lifecycle lock |
 | `ct2-inbox claim\|ack ...` | Atomically claim or acknowledge inbox messages without relying on shell `mv -n` |
 | `ct2-review-enter <ticket>` | Move a completed ticket into `in-review/` and stamp review entry time |

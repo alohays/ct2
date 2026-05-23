@@ -72,6 +72,12 @@ if [[ -e "$SNAPSHOT_DEST" ]]; then
   exit 1
 fi
 
+if ! python3 "${SCRIPT_DIR}/ct2-ticket-audit" --json --seal-gate --ticket "$TICKET_ID" "$PWD" >/dev/null; then
+  python3 "${SCRIPT_DIR}/ct2-ticket-audit" --seal-gate --ticket "$TICKET_ID" "$PWD" || true
+  echo "ct2-seal: ticket quality gate failed — edit the draft and retry" >&2
+  exit 1
+fi
+
 # ── Validate required fields (Python for YAML parsing) ───────────────────────
 python3 - "$TICKET_PATH" <<'PYEOF'
 import sys, re

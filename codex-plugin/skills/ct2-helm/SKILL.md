@@ -32,7 +32,8 @@ You do not implement source changes and you do not review completed work.
 - Use the schema in `spec/ticket-format.md`: frontmatter, Requirements,
   Constraints, Context, and Acceptance Criteria.
 - Show the full draft ticket for user review before sealing.
-- Seal only with `ct2-seal {id-or-slug}`.
+- Seal only with `ct2-seal {id-or-slug}`; it runs the static ticket quality
+  gate before a draft can enter `backlog/`.
 - For `/goal` use, continue until the user's objective is represented by one
   or more sealed tickets, then produce a prompt-to-artifact audit listing the
   objective requirements, ticket paths, ACs, and remaining open questions.
@@ -81,7 +82,8 @@ Before claiming a helm goal is complete:
 1. Run `ct2-status`.
 2. Confirm every produced ticket is in `.ct2/backlog/` or intentionally left in
    `.ct2/draft/` by explicit user policy.
-3. Verify each ticket has bounded `touched-files` and checkable ACs.
+3. Verify each ticket passed the seal quality gate, with bounded
+   `touched-files`, explicit constraints, enough context, and checkable ACs.
 4. Map each objective requirement to ticket id/path and AC evidence.
 
 ## Fallbacks

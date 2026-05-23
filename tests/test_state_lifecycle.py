@@ -142,6 +142,30 @@ class StateLifecycleTest(unittest.TestCase):
                 self.assertTrue(draft.exists())
                 self.assertFalse(backlog.exists())
 
+    def test_ct2_seal_rejects_low_quality_draft_without_move(self):
+        cases = {
+            "placeholder-ac": lambda text: text.replace("Draft moves to backlog.", "TBD"),
+            "prechecked-ac": lambda text: text.replace("- [ ] Draft moves to backlog.", "- [x] Draft moves to backlog."),
+            "contradictory-tests": lambda text: text.replace(
+                "Use stdlib-only tests.",
+                "No tests may be added.",
+            ).replace("Draft moves to backlog.", "Tests pass."),
+        }
+        for name, mutate in cases.items():
+            with self.subTest(name=name):
+                project = self.make_project()
+                ct2 = project / ".ct2"
+                draft = ct2 / "draft" / "001-seal-smoke.md"
+                backlog = ct2 / "backlog" / "001-seal-smoke.md"
+                write_ticket(draft)
+                draft.write_text(mutate(draft.read_text(encoding="utf-8")), encoding="utf-8")
+
+                seal = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-seal", "001"], cwd=project)
+                self.assertNotEqual(seal.returncode, 0)
+                self.assertIn("ticket quality gate failed", seal.stderr)
+                self.assertTrue(draft.exists())
+                self.assertFalse(backlog.exists())
+
     def test_ct2_pickup_serializes_single_in_progress_slot(self):
         project = self.make_project()
         ct2 = project / ".ct2"

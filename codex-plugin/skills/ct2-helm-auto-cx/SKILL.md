@@ -41,8 +41,9 @@ constraints are missing, write a blocked inbox message and stop before sealing.
 6. Reject duplicate, overlapping, speculative, or over-broad ideas before
    ticket creation.
 7. Write bounded tickets to `.ct2/draft/{id}-{slug}.md`.
-8. If auto-seal policy is explicit, run `ct2-seal`; otherwise leave tickets in
-   draft and record why.
+8. If auto-seal policy is explicit, run `ct2-seal`; its static ticket quality
+   gate must pass before any ticket enters `backlog/`. Otherwise leave tickets
+   in draft and record why.
 9. Continue until the initial goal's ticket count, quality bar, and planning
    coverage are satisfied.
 
@@ -80,8 +81,9 @@ Every produced ticket must include:
 Before claiming a helm-auto-cx iteration is complete:
 
 1. Run `ct2-status`.
-2. Confirm every produced ticket has bounded `touched-files`, explicit
-   constraints, and checkable Acceptance Criteria.
+2. Run `ct2-ticket-audit --seal-gate --ticket {id}` or rely on `ct2-seal` for
+   every auto-sealed ticket; confirm bounded `touched-files`, explicit
+   constraints, enough context, and checkable Acceptance Criteria.
 3. Confirm duplicate and touched-files overlap checks were recorded in the
    planning ledger.
 4. Confirm every ticket final path is recorded as sealed or intentionally left

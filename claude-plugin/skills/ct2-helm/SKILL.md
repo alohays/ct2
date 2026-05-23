@@ -153,6 +153,9 @@ verdict: pending
    ```bash
    ct2-seal {id}-{slug}
    ```
+   `ct2-seal` runs the static ticket quality gate before the ticket can enter
+   `backlog/`; if it fails, leave the ticket in draft and revise the rejected
+   requirements, constraints, context, or ACs.
 
 </workflow>
 
