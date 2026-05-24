@@ -27,7 +27,7 @@ priority: high           # critical | high | medium | low
 created: 2026-04-13T10:00:00Z
 updated: 2026-04-13T14:30:00Z
 sealed: null             # ISO8601 timestamp; set on draft→backlog by ct2-seal; reset to null by ct2-revise
-branch: feat/003-db-pool # Git working branch name (see spec/git-workflow.md)
+branch: null             # Git branch; ct2-git-start derives and records it
 pr: null                 # PR URL; written by ct2-git-submit, reset to null by ct2-revise
 review-round: 0          # Current review round; incremented by forge on each rejected→in-progress pickup
 duration-bounce-count: 0 # Consecutive duration circuit-breaker bounces since last revise
@@ -135,3 +135,8 @@ candidate order is:
 1. `critical` first
 2. Within same priority: oldest `sealed` timestamp first (FIFO)
 3. Tickets with `touched-files` overlapping the current `in-progress` ticket are deferred
+
+Fresh tickets should leave `branch: null`. `ct2-git-start` derives a
+host-clean branch name from the ticket title according to
+`trace_hygiene.branch_prefix_pattern`, records the actual branch in this field,
+and reuses it on later pickups.

@@ -207,6 +207,7 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-runtime-doctor [dir]` | Probe Codex/Claude/local runtime capabilities and write `.ct2/runtime/capabilities.json` |
 | `ct2-protocol-audit [repo]` | Verify protocol field references are cataloged in `spec/protocol-surface.yaml` |
 | `ct2-migrate-<from>-<to> [dir]` | Migrate an older `.ct2/` ledger forward after a protocol-version change |
+| `ct2-trace-hygiene-migrate [dir]` | Switch a project's host-repo artifact preset between `clean` and `legacy-branded` |
 | `ct2-baseline [dir]` | Compute the Trust/Evidence/Autonomy/Cost balanced scorecard baseline |
 | `ct2-role-run --role <role> -- <cmd>` | Run a role command and append cost/latency telemetry |
 | `ct2-cost [dir]` | Summarize `.ct2/telemetry/cost.jsonl` |
@@ -290,6 +291,23 @@ ct2-runtime-doctor /path/to/project
 If the marker is missing, CT2 treats the project as protocol `0.1`. Migration
 helpers create `.ct2/.migrations/<timestamp>-<from>-to-<to>.tar.gz` backups and
 logs before any protocol stamp is advanced.
+
+## Host-Repo Cleanliness
+
+Fresh CT2 projects keep host-visible git artifacts clean by default. Branches
+derive from ticket titles (`feat/parse-nested-config`), PR bodies omit visible
+`.ct2/` paths and role footers, and the only CT2 mapping in a PR body is a
+hidden HTML comment used by automation.
+
+Existing projects whose copied `.ct2/config/harness.yaml` has no
+`trace_hygiene` block retain the legacy-branded behavior. Add
+`trace_hygiene: { preset: legacy-branded }` explicitly if you want visible CT2
+ticket paths and role footers in host PRs.
+
+```bash
+ct2-trace-hygiene-migrate --preset clean
+ct2-trace-hygiene-migrate --preset legacy-branded
+```
 
 ## Agent Skills
 

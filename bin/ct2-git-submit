@@ -84,7 +84,8 @@ BRANCH=$(python3 - "$TICKET_PATH" <<'PYEOF'
 import re, sys
 c = open(sys.argv[1]).read()
 m = re.search(r'^branch:\s*(\S+)', c, re.MULTILINE)
-print(m.group(1) if m else '')
+val = m.group(1) if m else ''
+print('' if val in ('', 'null', '~') else val)
 PYEOF
 )
 PR_URL=$(python3 - "$TICKET_PATH" <<'PYEOF'
@@ -102,7 +103,7 @@ m = re.search(r'^title:\s*"?(.+?)"?\s*$', c, re.MULTILINE)
 print((m.group(1) if m else '').strip())
 PYEOF
 )
-[[ -z "$BRANCH" ]] && BRANCH="feat/${TICKET_STEM}"
+[[ -z "$BRANCH" ]] && BRANCH=$(python3 "${SCRIPT_DIR}/_ct2_trace_hygiene.py" branch --ticket "$TICKET_PATH" --ct2-dir "$CT2_DIR" --ticket-stem "$TICKET_STEM")
 [[ -z "$TITLE" ]] && TITLE="$TICKET_STEM"
 
 # ── Ensure we are on the right branch ─────────────────────────────────────────
@@ -151,17 +152,7 @@ if [[ -n "$EXISTING" ]]; then
 else
   # Build PR body from ticket
   BODY_TMP=$(mktemp "${CT2_DIR}/.tmp/pr-body-XXXXXX.md")
-  python3 - "$TICKET_PATH" "$TICKET_FILE" > "$BODY_TMP" <<'PYEOF'
-import re, sys
-path, fname = sys.argv[1], sys.argv[2]
-c = open(path).read()
-# Strip frontmatter
-body = re.sub(r'^---\n.*?\n---\n', '', c, count=1, flags=re.DOTALL)
-print(f"Ticket: `.ct2/in-review/{fname}` (see CT2 kanban)\n")
-print(body.strip())
-print("\n---")
-print("🤖 Opened by ct2-forge via ct2-git-submit.")
-PYEOF
+  python3 "${SCRIPT_DIR}/_ct2_trace_hygiene.py" pr-body --ticket "$TICKET_PATH" --ct2-dir "$CT2_DIR" --ticket-file "$TICKET_FILE" > "$BODY_TMP"
 
   if PR_URL=$(gh pr create --base "$BASE" --head "$BRANCH" --title "$TITLE" --body-file "$BODY_TMP" 2>&1); then
     :
@@ -176,7 +167,7 @@ fi
 
 # ── Record PR URL in ticket frontmatter ──────────────────────────────────────
 python3 - "$TICKET_PATH" "$PR_URL" <<'PYEOF'
-import re, sys
+import os, re, sys, tempfile
 path, url = sys.argv[1], sys.argv[2]
 c = open(path).read()
 if re.search(r'^pr:', c, re.MULTILINE):
@@ -184,7 +175,12 @@ if re.search(r'^pr:', c, re.MULTILINE):
 else:
     # Insert after `branch:` line
     c = re.sub(r'^(branch:.*\n)', rf'\g<1>pr: {url}\n', c, count=1, flags=re.MULTILINE)
-open(path, 'w').write(c)
+tmp_dir = os.path.join(os.getcwd(), ".ct2", ".tmp")
+os.makedirs(tmp_dir, exist_ok=True)
+fd, tmp = tempfile.mkstemp(prefix="git-submit-ticket-", dir=tmp_dir)
+with os.fdopen(fd, "w", encoding="utf-8") as handle:
+    handle.write(c)
+os.replace(tmp, path)
 PYEOF
 
 echo "ct2-git-submit: ${TICKET_FILE} submitted — PR ${PR_URL}"

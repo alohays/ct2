@@ -66,5 +66,17 @@ git_strategy: branch-per-ticket   # branch-per-ticket | direct-to-main | none
 git_default_base: auto            # auto (detect from origin/HEAD) | explicit branch name
 git_auto_merge_on_approval: false # true = reconciler squash-merges PR on dual-approval
 git_merge_method: squash          # squash | merge | rebase
-git_commit_trailer_style: none    # none | structured (global CLAUDE.md decision trailers)
+git_commit_trailer_style: none    # legacy alias; use trace_hygiene.commit_trailer_style
 git_push_on_commit: true          # push after each commit (false = batch push at submit)
+
+# Host-repo cleanliness defaults. Fresh projects hide CT2-specific strings from
+# branch names, PR bodies, and commit conventions. Existing projects without this
+# block retain legacy-branded behavior until their config is edited.
+trace_hygiene:
+  preset: clean                   # clean | legacy-branded
+  branch_naming: title-slug       # title-slug | ticket-id | custom
+  branch_prefix_pattern: "{type}/{title-slug}"
+  commit_scope_style: minimal     # minimal | conventional | ticket-id
+  commit_trailer_style: minimal   # minimal | refs | structured
+  pr_body_footer: none            # none | minimal | branded
+  pr_body_ticket_link: hidden-html # hidden-html | visible | none
