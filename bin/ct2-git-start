@@ -137,9 +137,12 @@ if [[ -z "$BRANCH" ]]; then
 fi
 
 if [[ "$BRANCH_SOURCE" == "derived" ]]; then
+  if git remote get-url origin &>/dev/null; then
+    git fetch origin --prune 2>/dev/null || true
+  fi
   BASE_BRANCH="$BRANCH"
   SUFFIX=2
-  while git show-ref --verify --quiet "refs/heads/${BRANCH}" || git ls-remote --exit-code --heads origin "$BRANCH" &>/dev/null; do
+  while git show-ref --verify --quiet "refs/heads/${BRANCH}" || git show-ref --verify --quiet "refs/remotes/origin/${BRANCH}"; do
     BRANCH="${BASE_BRANCH}-${SUFFIX}"
     SUFFIX=$((SUFFIX + 1))
   done
@@ -152,7 +155,7 @@ if git show-ref --verify --quiet "refs/heads/${BRANCH}"; then
   if [[ "$CURRENT" != "$BRANCH" ]]; then
     git checkout "$BRANCH" >&2
   fi
-elif git ls-remote --exit-code --heads origin "$BRANCH" &>/dev/null; then
+elif git show-ref --verify --quiet "refs/remotes/origin/${BRANCH}"; then
   git fetch origin "${BRANCH}:${BRANCH}" >&2 || true
   git checkout "$BRANCH" >&2
 else
@@ -169,12 +172,17 @@ fi
 
 # ── Normalize `branch:` field in ticket frontmatter ──────────────────────────
 python3 - "$TICKET_PATH" "$BRANCH" <<'PYEOF'
-import re, sys
+import os, re, sys, tempfile
 path, branch = sys.argv[1], sys.argv[2]
 c = open(path).read()
 if re.search(r'^branch:', c, re.MULTILINE):
     c = re.sub(r'^(branch:\s*).*$', rf'\g<1>{branch}', c, count=1, flags=re.MULTILINE)
-    open(path, 'w').write(c)
+    tmp_dir = os.path.join(os.getcwd(), ".ct2", ".tmp")
+    os.makedirs(tmp_dir, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix="git-start-ticket-", dir=tmp_dir)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(c)
+    os.replace(tmp, path)
 PYEOF
 
 echo "ct2-git-start: ${TICKET_FILE} on branch ${BRANCH}"

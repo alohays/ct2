@@ -33,6 +33,10 @@ LEGACY_DEFAULTS = {
 }
 
 COMMIT_TYPES = {"feat", "fix", "docs", "test", "refactor", "perf", "build", "ci", "chore"}
+EMOJI_RE = re.compile(r"[\U00002600-\U000027BF\U00010000-\U0010ffff]")
+CT2_ROLE_RE = re.compile(r"\bct2-(?:helm|forge|lens-cc|lens-cx|helm-auto-cx|reconcile)\b")
+CT2_PATH_RE = re.compile(r"(?:^|\s)`?\.ct2/[^\s`)]*`?")
+CT2_URL_RE = re.compile(r"https?://[^\s)]+ct2[^\s)]*", re.IGNORECASE)
 
 
 def _strip_quotes(value: str) -> str:
@@ -88,6 +92,8 @@ def trace_hygiene_config(ct2_dir: Path) -> dict[str, str]:
 
     if config.get("preset") == "legacy-branded":
         legacy = dict(LEGACY_DEFAULTS)
+        # Legacy mode intentionally restores the full legacy artifact shape; it
+        # does not merge clean-only customization keys.
         legacy.update({k: v for k, v in config.items() if k == "preset"})
         return legacy
     return config
@@ -109,7 +115,7 @@ def title_slug(title: str, ticket_stem: str) -> str:
     if ":" in cleaned and title.split(":", 1)[0].strip().lower() in COMMIT_TYPES:
         cleaned = cleaned.split(":", 1)[1]
     fallback = re.sub(r"^\d+-", "", ticket_stem)
-    return slugify(cleaned, fallback=fallback or "work")
+    return slugify(cleaned, fallback=fallback or "work")[:60].strip("-") or "work"
 
 
 def proposed_branch(ticket_path: Path, ct2_dir: Path, ticket_stem: str) -> str:
@@ -149,10 +155,11 @@ def section(body: str, title: str) -> str:
 
 
 def visible_lines(text: str) -> list[str]:
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
     lines = []
     for raw in text.splitlines():
         line = raw.strip()
-        if not line or line.startswith("<!--"):
+        if not line:
             continue
         lines.append(line)
     return lines
@@ -164,20 +171,30 @@ def bullet_text(line: str) -> str:
     return line.strip()
 
 
+def sanitize_visible_text(line: str) -> str:
+    line = EMOJI_RE.sub("", line)
+    line = CT2_ROLE_RE.sub("", line)
+    line = CT2_PATH_RE.sub(" ", line)
+    line = CT2_URL_RE.sub("", line)
+    line = re.sub(r"\bCT2\b", "", line)
+    line = re.sub(r"\s{2,}", " ", line)
+    return line.strip(" -")
+
+
 def bullets_from_section(text: str, checked: bool = False) -> list[str]:
     prefix = "- [x] " if checked else "- "
     bullets = []
     for line in visible_lines(text):
         if not re.match(r"^[-*]\s+", line):
             continue
-        item = bullet_text(line)
+        item = sanitize_visible_text(bullet_text(line))
         if item:
             bullets.append(prefix + item)
     return bullets
 
 
 def summary_from_context(context: str, title: str) -> str:
-    paragraph = " ".join(visible_lines(context))
+    paragraph = " ".join(sanitize_visible_text(line) for line in visible_lines(context))
     paragraph = re.sub(r"\s+", " ", paragraph).strip()
     return paragraph or title
 
@@ -189,7 +206,7 @@ def issue_close_line(fm: dict[str, object]) -> str:
     return f"Closes #{issue}"
 
 
-def render_clean_pr_body(ticket_path: Path, ticket_file: str) -> str:
+def render_clean_pr_body(ticket_path: Path, ticket_file: str, cfg: dict[str, str]) -> str:
     text = ticket_path.read_text(encoding="utf-8")
     fm = read_frontmatter(ticket_path)
     title = str(fm.get("title", "") or Path(ticket_file).stem)
@@ -217,10 +234,10 @@ def render_clean_pr_body(ticket_path: Path, ticket_file: str) -> str:
             "",
             *acs,
             "",
-            hidden_ticket_comment(ticket_id),
-            "",
         ]
     )
+    if cfg.get("pr_body_ticket_link") != "none":
+        parts.extend([hidden_ticket_comment(ticket_id), ""])
     return "\n".join(parts)
 
 
@@ -242,7 +259,7 @@ def render_pr_body(ticket_path: Path, ct2_dir: Path, ticket_file: str) -> str:
     cfg = trace_hygiene_config(ct2_dir)
     if cfg.get("preset") == "legacy-branded":
         return render_legacy_pr_body(ticket_path, ticket_file)
-    return render_clean_pr_body(ticket_path, ticket_file)
+    return render_clean_pr_body(ticket_path, ticket_file, cfg)
 
 
 def main() -> int:

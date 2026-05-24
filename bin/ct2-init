@@ -1,31 +1,40 @@
 #!/usr/bin/env bash
 # ct2-init — Initialize the CT2 protocol ledger in a project directory.
-# Usage: ct2-init [--repair] [--install-trace-hook] [--bootstrap-issue-labels] [project-dir]
+# Usage: ct2-init [--repair] [--install-trace-hook] [--uninstall-trace-hook] [--bootstrap-issue-labels] [project-dir]
 # If project-dir is omitted, uses the current working directory.
 
 set -euo pipefail
 
 CT2_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TRACE_HOOK_MARKER="# ct2-trace-hook: v2"
 
 # ── Parse flags ───────────────────────────────────────────────────────────────
 REPAIR=false
 INSTALL_TRACE_HOOK=false
 BOOTSTRAP_ISSUE_LABELS=false
+UNINSTALL_TRACE_HOOK=false
 POSITIONAL=()
 for arg in "$@"; do
   case "$arg" in
     --repair) REPAIR=true ;;
     --install-trace-hook) INSTALL_TRACE_HOOK=true ;;
     --bootstrap-issue-labels) BOOTSTRAP_ISSUE_LABELS=true ;;
+    --uninstall-trace-hook) UNINSTALL_TRACE_HOOK=true ;;
     --help|-h)
-      echo "Usage: ct2-init [--repair] [--install-trace-hook] [--bootstrap-issue-labels] [project-dir]"
+      echo "Usage: ct2-init [--repair] [--install-trace-hook] [--uninstall-trace-hook] [--bootstrap-issue-labels] [project-dir]"
       echo "  --repair                  Fill missing directories and config files without overwriting existing state"
       echo "  --install-trace-hook      Install a local pre-push hook that runs ct2-trace-lint --strict"
+      echo "  --uninstall-trace-hook    Remove a ct2-managed local pre-push hook"
       echo "  --bootstrap-issue-labels  Create/update CT2 GitHub Issue column labels via gh"
       exit 0 ;;
     *) POSITIONAL+=("$arg") ;;
   esac
 done
+
+if [[ "$INSTALL_TRACE_HOOK" == true && "$UNINSTALL_TRACE_HOOK" == true ]]; then
+  echo "ct2-init: choose only one of --install-trace-hook or --uninstall-trace-hook" >&2
+  exit 1
+fi
 
 # ── Resolve target project directory ──────────────────────────────────────────
 PROJECT_DIR="${POSITIONAL[0]:-$(pwd)}"
@@ -162,22 +171,30 @@ else
 fi
 
 # ── Optional local pre-push verifier hook ────────────────────────────────────
-if [[ "$INSTALL_TRACE_HOOK" == true ]]; then
+if [[ "$INSTALL_TRACE_HOOK" == true || "$UNINSTALL_TRACE_HOOK" == true ]]; then
   if [[ "$IS_GIT_REPO" == false ]]; then
-    echo "ct2-init: warning — cannot install trace hook outside a git repository" >&2
+    echo "ct2-init: warning — cannot manage trace hook outside a git repository" >&2
   else
     HOOK_PATH="${GIT_DIR_RESOLVED}/hooks/pre-push"
     mkdir -p "$(dirname "$HOOK_PATH")"
-    if [[ -e "$HOOK_PATH" ]]; then
-      if grep -q "ct2-trace-lint" "$HOOK_PATH" 2>/dev/null; then
-        echo "ct2-init: trace hook already installed at ${HOOK_PATH}"
+    if [[ "$UNINSTALL_TRACE_HOOK" == true ]]; then
+      if [[ -e "$HOOK_PATH" ]] && grep -q "ct2-trace-lint" "$HOOK_PATH" 2>/dev/null; then
+        rm -f "$HOOK_PATH"
+        echo "ct2-init: removed trace verifier hook at ${HOOK_PATH}"
+      elif [[ -e "$HOOK_PATH" ]]; then
+        echo "ct2-init: warning — existing non-ct2 pre-push hook left unchanged: ${HOOK_PATH}" >&2
       else
-        echo "ct2-init: warning — existing pre-push hook left unchanged: ${HOOK_PATH}" >&2
+        echo "ct2-init: no trace hook installed at ${HOOK_PATH}"
       fi
+    elif [[ -e "$HOOK_PATH" ]] && ! grep -q "ct2-trace-lint" "$HOOK_PATH" 2>/dev/null; then
+      echo "ct2-init: warning — existing pre-push hook left unchanged: ${HOOK_PATH}" >&2
+    elif [[ -e "$HOOK_PATH" ]] && grep -qxF "$TRACE_HOOK_MARKER" "$HOOK_PATH" 2>/dev/null; then
+      echo "ct2-init: trace hook already installed at ${HOOK_PATH}"
     else
       HOOK_TMP=$(mktemp "${GIT_DIR_RESOLVED}/hooks/pre-push-ct2-XXXXXX")
       cat > "$HOOK_TMP" <<EOF
 #!/usr/bin/env bash
+$TRACE_HOOK_MARKER
 set -euo pipefail
 
 ROOT="\$(git rev-parse --show-toplevel)"

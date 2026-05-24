@@ -22,6 +22,7 @@ import uuid
 from pathlib import Path
 
 import _ct2_canvas
+from _ct2_protocol import assert_compatible as assert_protocol_compatible
 from _ct2_vao import atomic_write_json, atomic_write_text, ensure_ct2, new_id, now
 
 CANVAS_STATES = ("open", "answered", "sealed", "expired")
@@ -53,7 +54,13 @@ def _normalize_canvas(canvas: dict) -> dict:
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
-    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    project_dir = Path(args.project_dir).resolve()
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-helm-canvas: {exc}", file=sys.stderr)
+        return 2
+    ct2_dir = ensure_ct2(project_dir)
     raw = sys.stdin.read() if args.spec == "-" else Path(args.spec).read_text(encoding="utf-8")
     try:
         spec = json.loads(raw)
@@ -149,7 +156,13 @@ def _ingest_token(ct2_dir: Path, token_obj: dict) -> int:
 
 
 def cmd_recover(args: argparse.Namespace) -> int:
-    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    project_dir = Path(args.project_dir).resolve()
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-helm-canvas: {exc}", file=sys.stderr)
+        return 2
+    ct2_dir = ensure_ct2(project_dir)
     if args.file:
         text = Path(args.file).read_text(encoding="utf-8")
     elif args.token:
@@ -194,7 +207,13 @@ def _find_decision(ct2_dir: Path, ticket: str, round_n: int):
 
 
 def cmd_seal(args: argparse.Namespace) -> int:
-    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    project_dir = Path(args.project_dir).resolve()
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-helm-canvas: {exc}", file=sys.stderr)
+        return 2
+    ct2_dir = ensure_ct2(project_dir)
     ticket = args.ticket
     # spec/helm-canvas.md: this transition happens *after* ct2-seal succeeds.
     if not any((ct2_dir / state / f"{ticket}.md").exists() for state in SEALED_STATES):
@@ -214,7 +233,13 @@ def cmd_seal(args: argparse.Namespace) -> int:
 
 
 def cmd_expire(args: argparse.Namespace) -> int:
-    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    project_dir = Path(args.project_dir).resolve()
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-helm-canvas: {exc}", file=sys.stderr)
+        return 2
+    ct2_dir = ensure_ct2(project_dir)
     ticket = args.ticket
     dst_dir = _canvas_dir(ct2_dir, "expired")
     dst_dir.mkdir(parents=True, exist_ok=True)

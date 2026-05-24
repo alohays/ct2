@@ -10,7 +10,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from _ct2_version import SemVer, read_version, repo_root_from_file, sync_derived_artifacts
+from _ct2_version import SemVer, atomic_write_text, read_version, repo_root_from_file, sync_derived_artifacts
 
 
 CHANGELOG_HEADINGS = (
@@ -20,6 +20,14 @@ CHANGELOG_HEADINGS = (
     "### Deprecated\n",
     "### Removed\n",
     "### Security\n",
+)
+
+RELEASE_FILES = (
+    "VERSION",
+    "CHANGELOG.md",
+    "install.sh",
+    "claude-plugin/.claude-plugin/plugin.json",
+    "codex-plugin/.codex-plugin/plugin.json",
 )
 
 
@@ -35,14 +43,14 @@ def run(cmd: list[str], repo: Path) -> subprocess.CompletedProcess[str]:
 
 
 def write_version(repo: Path, version: SemVer) -> None:
-    (repo / "VERSION").write_text(f"{version}\n", encoding="utf-8")
+    atomic_write_text(repo / "VERSION", f"{version}\n")
 
 
 def unreleased_stub() -> str:
     return "## [Unreleased]\n\n" + "\n".join(CHANGELOG_HEADINGS) + "\n"
 
 
-def promote_changelog(repo: Path, version: SemVer) -> None:
+def promoted_changelog_text(repo: Path, version: SemVer) -> str:
     path = repo / "CHANGELOG.md"
     text = path.read_text(encoding="utf-8")
     marker = "## [Unreleased]"
@@ -55,10 +63,16 @@ def promote_changelog(repo: Path, version: SemVer) -> None:
     next_start = start + len(marker) + next_match.start()
     unreleased_body = text[start + len(marker) : next_start].strip()
     if not re.search(r"^\s*-\s+\S", unreleased_body, re.MULTILINE):
-        unreleased_body = "### Changed\n\n- Release maintenance."
+        raise RuntimeError(
+            "CHANGELOG.md [Unreleased] is empty; add at least one bullet "
+            "before running `ct2-release prepare`"
+        )
     released = f"## [{version}] - {date.today().isoformat()}\n\n{unreleased_body.strip()}\n\n"
-    updated = text[:start] + unreleased_stub() + released + text[next_start:]
-    path.write_text(updated, encoding="utf-8")
+    return text[:start] + unreleased_stub() + released + text[next_start:]
+
+
+def promote_changelog(repo: Path, version: SemVer) -> None:
+    atomic_write_text(repo / "CHANGELOG.md", promoted_changelog_text(repo, version))
 
 
 def ensure_git_repo(repo: Path) -> None:
@@ -68,12 +82,12 @@ def ensure_git_repo(repo: Path) -> None:
 
 
 def ensure_commit(repo: Path, version: SemVer) -> None:
-    status = run(["git", "status", "--short"], repo)
+    status = run(["git", "status", "--short", "--", *RELEASE_FILES], repo)
     if status.returncode != 0:
         raise RuntimeError(status.stderr.strip() or "git status failed")
     if not status.stdout.strip():
-        return
-    add = run(["git", "add", "VERSION", "CHANGELOG.md", "install.sh", "claude-plugin/.claude-plugin/plugin.json", "codex-plugin/.codex-plugin/plugin.json"], repo)
+        raise RuntimeError("release prepare produced no changes in expected release files")
+    add = run(["git", "add", "--", *RELEASE_FILES], repo)
     if add.returncode != 0:
         raise RuntimeError(add.stderr.strip() or "git add failed")
     message = (
@@ -94,6 +108,8 @@ def ensure_commit(repo: Path, version: SemVer) -> None:
             "commit",
             "-m",
             message,
+            "--",
+            *RELEASE_FILES,
         ],
         repo,
     )
@@ -116,9 +132,10 @@ def command_prepare(repo: Path, bump: str) -> int:
     ensure_git_repo(repo)
     current = read_version(repo)
     next_version = current.bump(bump)
+    changelog = promoted_changelog_text(repo, next_version)
     write_version(repo, next_version)
     sync_derived_artifacts(repo)
-    promote_changelog(repo, next_version)
+    atomic_write_text(repo / "CHANGELOG.md", changelog)
     ensure_commit(repo, next_version)
     print(f"prepared {next_version}")
     return 0

@@ -48,12 +48,40 @@ def read_project_protocol(ct2_dir: Path) -> tuple[str, bool]:
         value = path.read_text(encoding="utf-8").strip()
     except OSError:
         return "0.1", True
-    parse_protocol(value)
+    except UnicodeError as exc:
+        raise RuntimeError(f"{path} cannot be read as UTF-8; rewrite or remove the file and re-run ct2-protocol assert") from exc
+    try:
+        parse_protocol(value)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"{path} contains an invalid protocol version ({value!r}); "
+            "rewrite or remove the file and re-run ct2-protocol assert"
+        ) from exc
     return value, False
 
 
+def migration_hops(project_protocol: str, current: str) -> list[tuple[str, str]]:
+    start = parse_protocol(project_protocol)
+    target = parse_protocol(current)
+    if start >= target:
+        return []
+    hops: list[tuple[str, str]] = []
+    major, minor = start
+    while (major, minor) < target:
+        if major < target[0]:
+            next_version = (major + 1, 0)
+        else:
+            next_version = (major, minor + 1)
+        hops.append((f"{major}.{minor}", f"{next_version[0]}.{next_version[1]}"))
+        major, minor = next_version
+    return hops
+
+
 def migration_command(project_protocol: str, current: str) -> str:
-    return f"ct2-migrate-{project_protocol}-{current}"
+    hops = migration_hops(project_protocol, current)
+    if not hops:
+        return f"ct2-migrate-{project_protocol}-{current}"
+    return " && ".join(f"ct2-migrate-{source}-{target}" for source, target in hops)
 
 
 def status(project_dir: Path, repo: Path | None = None) -> ProtocolStatus:
