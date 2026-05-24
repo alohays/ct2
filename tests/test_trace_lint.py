@@ -9,6 +9,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
+BIN_DIR = REPO_ROOT / "bin"
+if str(BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(BIN_DIR))
+
+import _ct2_trace_patterns as patterns
 
 
 def run_cmd(args, cwd, env=None):
@@ -221,6 +226,88 @@ class TraceLintTest(unittest.TestCase):
 
         self.assertEqual(second.returncode, 0, json.dumps(suppressed, indent=2))
         self.assertEqual([], suppressed["findings"])
+
+    def test_baseline_stale_after_file_rename(self):
+        repo = self.make_repo()
+        (repo / ".ct2").mkdir()
+        old = repo / ".ct2" / "OLD.md"
+        old.write_text("legacy\n", encoding="utf-8")
+        self.assertEqual(run_cmd(["git", "add", "-f", ".ct2/OLD.md"], repo).returncode, 0)
+        self.assertEqual(run_cmd(["git", "commit", "-m", "test: track old ct2 file"], repo).returncode, 0)
+        first, data = self.lint_json(repo, "--strict")
+        self.assertEqual(first.returncode, 2)
+        baseline = repo / "baseline.json"
+        baseline.write_text(json.dumps(data), encoding="utf-8")
+
+        self.assertEqual(run_cmd(["git", "mv", ".ct2/OLD.md", ".ct2/NEW.md"], repo).returncode, 0)
+        self.assertEqual(run_cmd(["git", "commit", "-m", "test: rename ct2 file"], repo).returncode, 0)
+        second, renamed = self.lint_json(repo, "--strict", "--baseline", baseline)
+
+        self.assertEqual(second.returncode, 2)
+        self.assertIn("tracked-ct2-dir", self.categories(renamed))
+        self.assertTrue(any(finding.get("path") == ".ct2/NEW.md" for finding in renamed["findings"]))
+
+    def test_baseline_rejects_string_only_rows(self):
+        repo = self.make_repo()
+        baseline = repo / "bad-baseline.json"
+        baseline.write_text(json.dumps(["commit-scope-ticket-id"]), encoding="utf-8")
+
+        proc = run_cmd(
+            [PYTHON, REPO_ROOT / "bin" / "ct2-trace-lint", "--json", "--baseline", baseline],
+            repo,
+        )
+
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("invalid baseline", proc.stdout)
+
+    def test_fingerprint_no_prefix_collision_on_long_match(self):
+        prefix = "x" * 200
+        first = {"category": "commit-trailer-structured-uninvited", "ref": "abc123", "_fingerprint_match": prefix + "a"}
+        second = {"category": "commit-trailer-structured-uninvited", "ref": "abc123", "_fingerprint_match": prefix + "b"}
+
+        self.assertNotEqual(patterns.finding_fingerprint(first), patterns.finding_fingerprint(second))
+
+    def test_branch_ticket_id_re_does_not_flag_issue_numbered_branch(self):
+        self.assertIsNone(patterns.BRANCH_TICKET_ID_RE.search("feat/1234-bug-fix"))
+        self.assertIsNone(patterns.BRANCH_TICKET_ID_RE.search("release/2024-q1"))
+        self.assertIsNotNone(patterns.BRANCH_TICKET_ID_RE.search("feat/017-legacy"))
+
+    def test_structured_trailer_re_ignores_english_prose(self):
+        self.assertIsNone(patterns.STRUCTURED_TRAILER_RE.search("Rejected: invalid inputs are validated"))
+        block = (
+            "Constraint: stdlib only\n"
+            "Rejected: external parser | not needed\n"
+            "Confidence: high\n"
+            "Scope-risk: narrow\n"
+        )
+        self.assertIsNotNone(patterns.STRUCTURED_TRAILER_RE.search(block))
+
+    def test_commit_ct2_path_re_catches_config_and_meta_subdirs(self):
+        self.assertIsNotNone(patterns.COMMIT_CT2_PATH_RE.search("Refs: .ct2/config/harness.yaml"))
+        self.assertIsNotNone(patterns.COMMIT_CT2_PATH_RE.search("Refs: .ct2/.meta/state.json"))
+
+    def test_install_hook_then_upgrade_replaces_old_marker_and_uninstall_removes_it(self):
+        repo = self.make_repo()
+        init = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-init", repo], REPO_ROOT)
+        self.assertEqual(init.returncode, 0, init.stderr)
+        hook = repo / ".git" / "hooks" / "pre-push"
+        hook.write_text("#!/usr/bin/env bash\n# ct2-trace-hook: v1\nct2-trace-lint --strict \"$@\"\n", encoding="utf-8")
+        hook.chmod(0o755)
+
+        upgrade = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-init", "--repair", "--install-trace-hook", repo], REPO_ROOT)
+        self.assertEqual(upgrade.returncode, 0, upgrade.stderr)
+        upgraded = hook.read_text(encoding="utf-8")
+        self.assertIn("# ct2-trace-hook: v2", upgraded)
+        self.assertIn("exec ct2-trace-lint --strict", upgraded)
+
+        uninstall = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-init", "--repair", "--uninstall-trace-hook", repo], REPO_ROOT)
+        self.assertEqual(uninstall.returncode, 0, uninstall.stderr)
+        self.assertFalse(hook.exists())
+
+    def test_synthetic_workflow_generates_ticket_with_python_heredoc(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ct2-trace-lint.yml").read_text(encoding="utf-8")
+        self.assertIn("python3 - <<'PYEOF'", workflow)
+        self.assertNotIn("cat > .ct2/in-progress/001-parse-nested-config.md <<'EOF'", workflow)
 
     def test_pr_mode_uses_gh_json_and_ignores_hidden_mapping_comments(self):
         repo = self.make_repo()

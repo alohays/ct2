@@ -46,8 +46,9 @@ jobs:
 
           bash "$GITHUB_WORKSPACE/bin/ct2-init" "$host"
           mkdir -p .ct2/in-progress
-          cat > .ct2/in-progress/001-parse-nested-config.md <<'EOF'
-          ---
+          python3 - <<'PYEOF'
+          from pathlib import Path
+          Path(".ct2/in-progress/001-parse-nested-config.md").write_text("""---
           id: "001"
           title: "Parse nested config"
           status: in-progress
@@ -81,7 +82,8 @@ jobs:
 
           ## Acceptance Criteria
           - [x] Branch names omit CT2 ticket IDs.
-          EOF
+          """.replace("          ", ""), encoding="utf-8")
+          PYEOF
 
           bash "$GITHUB_WORKSPACE/bin/ct2-git-start" 001
           printf '\nClean default change.\n' >> README.md
