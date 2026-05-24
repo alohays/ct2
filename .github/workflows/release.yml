@@ -41,8 +41,15 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Configure git identity
+        run: |
+          git config user.name "CT2 Release Bot"
+          git config user.email "ct2-release@users.noreply.github.com"
+
       - name: Prepare release commit
-        run: python3 bin/ct2-release prepare "${{ inputs.bump }}"
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: python3 bin/ct2-release prepare "$BUMP"
 
       - name: Run unit tests
         run: python3 -m unittest discover -s tests
@@ -65,7 +72,15 @@ jobs:
           set -euo pipefail
           version="$(cat VERSION)"
           tag="v${version}"
-          git push origin HEAD:main
+          git push origin "HEAD:${{ github.ref_name }}"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "tag ${tag} already exists locally; refusing to double-publish" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "$tag" >/dev/null 2>&1; then
+            echo "tag ${tag} already exists on remote; refusing to double-publish" >&2
+            exit 1
+          fi
           git tag -a "$tag" -m "CT2 ${version}"
           git push origin "$tag"
           awk -v heading="## [${version}] - " '
