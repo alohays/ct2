@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""Publish a CT2 review sidecar to the GitHub PR thread."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from _ct2_issue import find_ticket
+from _ct2_pr import publish_review
+from _ct2_protocol import assert_compatible as assert_protocol_compatible
+from _ct2_vao import ensure_ct2
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Publish a CT2 sidecar as a GitHub PR review")
+    parser.add_argument("ticket", help="Ticket path, id, stem, or filename")
+    parser.add_argument("sidecar", help="Review sidecar path")
+    parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    project_dir = Path(args.project_dir).resolve()
+    try:
+        ct2_dir = ensure_ct2(project_dir)
+        assert_protocol_compatible(project_dir)
+        ticket = find_ticket(ct2_dir, args.ticket)
+        if ticket is None:
+            raise RuntimeError(f"ticket not found: {args.ticket}")
+        sidecar = Path(args.sidecar)
+        if not sidecar.is_absolute():
+            sidecar = project_dir / sidecar
+        if not sidecar.is_file():
+            raise RuntimeError(f"sidecar not found: {args.sidecar}")
+        result = publish_review(project_dir, ticket, sidecar)
+    except Exception as exc:
+        print(f"ct2-pr-review: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        print(f"ct2-pr-review: {result['ticket']} {result['status']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

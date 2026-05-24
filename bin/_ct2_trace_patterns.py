@@ -130,7 +130,7 @@ HOOK_PATH_RE = re.compile(
 )
 AGENT_INTERNAL_RE = re.compile(r"(?i)(?:\bct2-(?:forge|helm|lens-cc|lens-cx|reconciler|review-enter|git-submit)\b|\.ct2/)")
 CI_CT2_REFERENCE_RE = re.compile(r"(?i)(?:\bbin/ct2-[a-z0-9-]+\b|\bct2-[a-z0-9-]+\b)")
-REVIEW_THREAD_EXCEPTION_RE = re.compile(r"(?i)<!--\s*(?:ct2-merge-ready|ct2-reconciler)\b.*?-->", re.DOTALL)
+REVIEW_THREAD_EXCEPTION_RE = re.compile(r"(?i)<!--\s*(?:ct2-review|ct2-merge-ready|ct2-reconciler)\b.*?-->", re.DOTALL)
 ISSUE_STATUS_EXCEPTION_RE = re.compile(r"(?i)<!--\s*ct2-ticket-status:(?:begin|end)\s*-->", re.DOTALL)
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 

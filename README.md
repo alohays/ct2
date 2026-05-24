@@ -203,6 +203,9 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-issue-adopt <issue>` | Adopt an existing GitHub Issue as a CT2 draft ticket |
 | `ct2-issue-reconcile [dir]` | Report drift between CT2 tickets and their mirrored GitHub Issues |
 | `ct2-issue-bootstrap-labels [dir]` | Create or update CT2 GitHub Issue column labels |
+| `ct2-pr-review <ticket> <sidecar>` | Publish a review sidecar as a GitHub PR review |
+| `ct2-pr-merge-ready <ticket>` | Publish a lens merge-ready or reconciler summary PR comment |
+| `ct2-pr-respond <ticket>` | Build a forge TODO from unresolved PR review comments |
 | `ct2-duration-check [dir]` | Apply the in-progress duration breaker and escalate repeated bounces |
 | `ct2-sealed-baseline ...` | Internal. Write/check immutable sealed requirements and AC snapshots |
 | `ct2-revise <ticket>` | Archive past sidecars and return an escalated/rejected ticket to `draft/` |
@@ -316,6 +319,26 @@ ct2-issue-reconcile
 
 PR bodies include `Closes #<issue>` when a ticket is linked, so GitHub can close
 the mirrored issue when the PR merges.
+
+## PR Review Publication
+
+Review sidecars remain authoritative, but fresh projects can mirror each lens
+review onto the GitHub PR thread:
+
+```bash
+ct2-pr-review 001 .ct2/reviews/001-cc-r0.md
+ct2-pr-merge-ready 001 --reviewer lens-cc
+ct2-pr-respond 001
+```
+
+`ct2-pr-review` maps `verdict: approved` to a GitHub approving review and
+`verdict: rejected` to a changes-requested review. Sidecar issue blocks with
+`file:` and `line:` metadata are also sent through the PR review API as inline
+comments. `ct2-pr-merge-ready` posts the structured
+`<!-- ct2-merge-ready: ... -->` terminal marker, and the reconciler posts a
+single `<!-- ct2-reconciler -->` summary on terminal state. If `gh` is missing
+or unavailable, the helpers return `sidecar-only` and CT2 proceeds from the
+sidecar verdicts.
 
 ## Releases
 

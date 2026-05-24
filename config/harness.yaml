@@ -92,3 +92,13 @@ github_integration:
   pr_closes_issue: true
   fallback_mode: queue            # queue | skip
   graphql_token_env: GH_TOKEN
+
+# GitHub PR review publication. Sidecars remain authoritative; PR reviews and
+# comments are the human-readable mirror. Existing project configs without this
+# block remain sidecar-only until edited.
+review_publication:
+  mode: pr-and-sidecar            # pr-and-sidecar | sidecar-only
+  inline_comments: true
+  approval_maps_to_pr_review: true
+  merge_ready_comment_marker: "<!-- ct2-merge-ready"
+  fallback_when_gh_unavailable: sidecar-only

@@ -119,6 +119,15 @@ entries:
     stability: stable
     since: 0.1
     owner: ct2-forge
+  - id: ticket.frontmatter.pr-review
+    kind: ticket-frontmatter-field
+    field: pr-review
+    type: object
+    required: false
+    default: null
+    stability: stable
+    since: 0.2
+    owner: ct2-pr-review
   - id: ticket.frontmatter.plan-exempt
     kind: ticket-frontmatter-field
     field: plan-exempt
@@ -483,6 +492,62 @@ entries:
     type: string
     required: false
     default: GH_TOKEN
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.review_publication
+    kind: harness-yaml-key
+    field: review_publication
+    type: object
+    required: false
+    default: {mode: sidecar-only}
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.review_publication.mode
+    kind: harness-yaml-key
+    field: mode
+    type: enum
+    values: [pr-and-sidecar, sidecar-only]
+    required: false
+    default: pr-and-sidecar
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.review_publication.inline_comments
+    kind: harness-yaml-key
+    field: inline_comments
+    type: boolean
+    required: false
+    default: true
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.review_publication.approval_maps_to_pr_review
+    kind: harness-yaml-key
+    field: approval_maps_to_pr_review
+    type: boolean
+    required: false
+    default: true
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.review_publication.merge_ready_comment_marker
+    kind: harness-yaml-key
+    field: merge_ready_comment_marker
+    type: string
+    required: false
+    default: "<!-- ct2-merge-ready"
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.review_publication.fallback_when_gh_unavailable
+    kind: harness-yaml-key
+    field: fallback_when_gh_unavailable
+    type: enum
+    values: [sidecar-only]
+    required: false
+    default: sidecar-only
     stability: stable
     since: 0.2
     owner: operator

@@ -110,6 +110,9 @@ pickup from `rejected/`.
 If it picks a rejected ticket:
 - Read the rejection round number from frontmatter
 - Read the review sidecar files for feedback (`.ct2/reviews/{id}-cc-r{n}.md`, `.ct2/reviews/{id}-cx-r{n}.md`)
+- Run `ct2-pr-respond "${ticket_id}"` to materialize unresolved GitHub PR
+  review comments into `.ct2/.meta/{id}.pr-review-todo.md` when PR publication
+  is enabled. Continue from sidecars if the helper reports `sidecar-only`.
 - **Resume the git branch** (checkout existing ticket branch — commits from
   previous rounds are preserved, rework commits will append):
   ```bash
