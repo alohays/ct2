@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import tarfile
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -33,14 +35,24 @@ def migration_stem(from_version: str, to_version: str) -> str:
 
 def backup(ct2_dir: Path, from_version: str, to_version: str, stem: str) -> Path:
     dest = ct2_dir / ".migrations" / f"{stem}.tar.gz"
-    with tarfile.open(dest, "w:gz") as archive:
-        for path in sorted(ct2_dir.rglob("*")):
-            rel = path.relative_to(ct2_dir)
-            if rel.parts and rel.parts[0] == ".tmp":
-                continue
-            if path == dest:
-                continue
-            archive.add(path, arcname=Path(".ct2") / rel)
+    tmp_dir = ct2_dir / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix="migration-backup-", suffix=".tar.gz", dir=str(tmp_dir))
+    os.close(fd)
+    try:
+        with tarfile.open(tmp_name, "w:gz") as archive:
+            for path in sorted(ct2_dir.rglob("*")):
+                rel = path.relative_to(ct2_dir)
+                if rel.parts and rel.parts[0] in {".tmp", ".migrations"}:
+                    continue
+                archive.add(path, arcname=Path(".ct2") / rel)
+        os.replace(tmp_name, dest)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
     return dest
 
 
@@ -51,10 +63,16 @@ def stamp(ct2_dir: Path, version: str) -> None:
 def set_field_if_missing(text: str, key: str, value: str, after_key: str = "review-round") -> str:
     if re.search(rf"^{re.escape(key)}:", text, re.MULTILINE):
         return text
-    pattern = rf"^({re.escape(after_key)}:.*\n)"
+    pattern = rf"^({re.escape(after_key)}:.*\r?\n)"
     if re.search(pattern, text, re.MULTILINE):
         return re.sub(pattern, rf"\g<1>{key}: {value}\n", text, count=1, flags=re.MULTILINE)
-    return re.sub(r"^(---\n)", rf"\g<1>{key}: {value}\n", text, count=1)
+    delimiter = re.search(r"^(---\r?\n)", text, re.MULTILINE)
+    if delimiter:
+        return text[: delimiter.end()] + f"{key}: {value}\n" + text[delimiter.end() :]
+    raise ValueError(
+        f"ticket missing both {after_key!r} anchor and opening '---' delimiter; "
+        f"cannot inject {key!r}"
+    )
 
 
 def backfill_sealed_baselines(ct2_dir: Path) -> list[str]:
@@ -74,6 +92,8 @@ def backfill_sealed_baselines(ct2_dir: Path) -> list[str]:
                 os.link(tmp, snapshot)
             except FileExistsError:
                 pass
+            except OSError:
+                shutil.copy2(tmp, snapshot)
             finally:
                 try:
                     tmp.unlink()
@@ -119,7 +139,6 @@ def run_migration(project_dir: Path, from_version: str, to_version: str, dry_run
         changed = migrate_0_1_to_0_2(ct2_dir)
     else:
         changed = migrate_noop(ct2_dir)
-    stamp(ct2_dir, to_version)
     log = ct2_dir / ".migrations" / f"{stem}.log"
     lines = [
         f"timestamp: {now()}",
@@ -129,4 +148,5 @@ def run_migration(project_dir: Path, from_version: str, to_version: str, dry_run
         f"changed: {len(changed)}",
     ]
     atomic_write_text(ct2_dir, log, "\n".join(lines) + "\n", "migration-log-")
+    stamp(ct2_dir, to_version)
     return {"state": "migrated", "observed": observed, "target": to_version, "backup": str(backup_path), "changed": changed}

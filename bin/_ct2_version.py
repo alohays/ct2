@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -45,9 +47,29 @@ class SemVer:
 
 def repo_root_from_file(file_path: str | Path) -> Path:
     path = Path(file_path).resolve()
-    if path.parent.name == "bin":
-        return path.parent.parent
+    for candidate in (path.parent, *path.parents):
+        if (candidate / "VERSION").is_file() and (candidate / "bin").is_dir():
+            return candidate
     return path.parent
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(path.parent),
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 def read_version(repo: Path) -> SemVer:
@@ -71,7 +93,7 @@ def sync_plugin_manifest(path: Path, version: SemVer) -> bool:
     data["version"] = str(version)
     if data.get("version") == old:
         return False
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(data, indent=2, ensure_ascii=True) + "\n")
     return True
 
 
@@ -95,7 +117,7 @@ def sync_install_hint(repo: Path, version: SemVer) -> bool:
         )
     if updated == text:
         return False
-    path.write_text(updated, encoding="utf-8")
+    atomic_write_text(path, updated)
     return True
 
 
