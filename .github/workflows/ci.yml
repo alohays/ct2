@@ -64,6 +64,9 @@ jobs:
       - name: Run VAO self-verifier
         run: python3 bin/ct2-vao-self-verify --run-checks --json --repo .
 
+      - name: Audit protocol surface
+        run: python3 bin/ct2-protocol-audit .
+
       - name: Check whitespace errors
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}

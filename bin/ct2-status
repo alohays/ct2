@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 
+from _ct2_protocol import status as get_protocol_status
 from _ct2_version import git_short_sha, plugin_manifest_paths, read_plugin_version, read_version, repo_root_from_file
 
 # ── Resolve flags / project dir ──────────────────────────────────────────────
@@ -215,6 +216,19 @@ def workflow_summary():
     print(f"  unstamped reviews:   {unstamped_reviews}")
     print(f"  open canvases:       {open_canvases}")
 
+def protocol_summary():
+    print("PROTOCOL")
+    try:
+        result = get_protocol_status(project_dir)
+        print(f"  project: {result.project_protocol}")
+        print(f"  install: {result.current_protocol}")
+        print(f"  status:  {'compatible' if result.compatible else result.action}")
+        if not result.compatible:
+            print(f"  action:  {result.message}")
+    except Exception as exc:
+        print(f"  status:  invalid")
+        print(f"  action:  inspect .ct2/.protocol-version ({exc})")
+
 def inbox_summary():
     inbox_dir = ct2_dir / "inbox"
     if not inbox_dir.is_dir():
@@ -364,6 +378,8 @@ list_state(ct2_dir / "done",        "DONE")
 
 print(SEP)
 workflow_summary()
+print(SEP)
+protocol_summary()
 print(SEP)
 print("INBOX")
 inbox_summary()

@@ -41,6 +41,16 @@ def add_unreleased_bullet(repo, bullet="- Release test entry."):
     path.write_text(text, encoding="utf-8")
 
 
+def clear_unreleased_bullets(repo):
+    path = repo / "CHANGELOG.md"
+    text = path.read_text(encoding="utf-8")
+    marker = "## [Unreleased]"
+    start = text.index(marker) + len(marker)
+    next_start = text.index("\n## [", start)
+    empty = "\n\n### Added\n\n### Changed\n\n### Fixed\n\n### Deprecated\n\n### Removed\n\n### Security\n\n"
+    path.write_text(text[:start] + empty + text[next_start:], encoding="utf-8")
+
+
 def make_release_repo(test_case):
     root = Path(tempfile.mkdtemp())
     test_case.addCleanup(shutil.rmtree, root, ignore_errors=True)
@@ -151,6 +161,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
 
     def test_prepare_rejects_empty_unreleased_body(self):
         repo = make_release_repo(self)
+        clear_unreleased_bullets(repo)
         original = (repo / "VERSION").read_text(encoding="utf-8")
         proc = run_cmd([PYTHON, repo / "bin" / "ct2-release", "prepare", "patch"], cwd=repo)
         self.assertNotEqual(proc.returncode, 0)

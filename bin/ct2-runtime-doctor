@@ -12,6 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _ct2_protocol import migration_command, status as protocol_status
 from _ct2_vao import atomic_write_json, atomic_write_text, ensure_ct2, now
 
 
@@ -94,6 +95,42 @@ def local_tools() -> dict:
     }
 
 
+def protocol_report(project_dir: Path, ct2_dir: Path) -> dict:
+    migrations = ct2_dir / ".migrations"
+    backups = sorted(migrations.glob("*.tar.gz")) if migrations.is_dir() else []
+    logs = sorted(migrations.glob("*.log")) if migrations.is_dir() else []
+    try:
+        result = protocol_status(project_dir)
+        suggested = "none"
+        if result.action == "migrate":
+            suggested = migration_command(result.project_protocol, result.current_protocol)
+        elif result.action == "upgrade-install":
+            suggested = "upgrade CT2 install"
+        return {
+            "project_protocol": result.project_protocol,
+            "current_protocol": result.current_protocol,
+            "compatible": result.compatible,
+            "status": "compatible" if result.compatible else result.action,
+            "message": result.message,
+            "suggested_action": suggested,
+            "marker_missing": result.marker_missing,
+            "last_migration": logs[-1].name if logs else None,
+            "backups_available": len(backups),
+        }
+    except Exception as exc:
+        return {
+            "project_protocol": None,
+            "current_protocol": None,
+            "compatible": False,
+            "status": "invalid",
+            "message": str(exc),
+            "suggested_action": "inspect .ct2/.protocol-version",
+            "marker_missing": False,
+            "last_migration": logs[-1].name if logs else None,
+            "backups_available": len(backups),
+        }
+
+
 def degradation_lines(report: dict) -> list[str]:
     lines = []
     codex = report["runtimes"]["codex"]
@@ -108,6 +145,9 @@ def degradation_lines(report: dict) -> list[str]:
         lines.append(f"Claude Code version below {report['minimum_versions']['claude']}; hook support may be degraded.")
     if not report["local"]["git"]["available"]:
         lines.append("git unavailable; branch-per-ticket workflow is degraded.")
+    protocol = report.get("protocol") if isinstance(report.get("protocol"), dict) else {}
+    if protocol and not protocol.get("compatible"):
+        lines.append(f"Protocol compatibility requires action: {protocol.get('message')}")
     if not lines:
         lines.append("No degraded runtime capabilities detected.")
     return lines
@@ -151,6 +191,7 @@ def main() -> int:
             "runtime_state": "advisory only",
             "state_mutation": "CT2 scripts with atomic mv",
         },
+        "protocol": protocol_report(project_dir, ct2_dir),
         "runtimes": {
             "codex": probe_runtime(project_dir, "codex", "CT2_CODEX_CMD", "codex", MIN_CODEX),
             "claude": probe_runtime(project_dir, "claude", "CT2_CLAUDE_CMD", "claude", MIN_CLAUDE),
@@ -175,6 +216,13 @@ def main() -> int:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:
         print("CT2 Runtime Doctor")
+        protocol = report["protocol"]
+        print(
+            "  Protocol: "
+            f"{protocol['status']} project={protocol['project_protocol']} current={protocol['current_protocol']}"
+        )
+        if protocol["suggested_action"] != "none":
+            print(f"  Protocol action: {protocol['suggested_action']}")
         print(f"  Codex:  {'available' if report['runtimes']['codex']['available'] else 'missing'} {report['runtimes']['codex'].get('version') or ''}")
         print(f"  Claude: {'available' if report['runtimes']['claude']['available'] else 'missing'} {report['runtimes']['claude'].get('version') or ''}")
         print(f"  Wrote:  {ct2_dir / 'runtime' / 'capabilities.json'}")

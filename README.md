@@ -205,6 +205,8 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-status [dir]` | Display Kanban board, filesystem workflow summary, and inbox |
 | `ct2-codex-doctor [dir]` | Preflight installed Codex capabilities and write `.ct2/codex/preflight.json` |
 | `ct2-runtime-doctor [dir]` | Probe Codex/Claude/local runtime capabilities and write `.ct2/runtime/capabilities.json` |
+| `ct2-protocol-audit [repo]` | Verify protocol field references are cataloged in `spec/protocol-surface.yaml` |
+| `ct2-migrate-<from>-<to> [dir]` | Migrate an older `.ct2/` ledger forward after a protocol-version change |
 | `ct2-baseline [dir]` | Compute the Trust/Evidence/Autonomy/Cost balanced scorecard baseline |
 | `ct2-role-run --role <role> -- <cmd>` | Run a role command and append cost/latency telemetry |
 | `ct2-cost [dir]` | Summarize `.ct2/telemetry/cost.jsonl` |
@@ -271,6 +273,24 @@ Stable installs should pin a tag:
 bash install.sh --version v0.2.0
 ```
 
+## Protocol Upgrades
+
+Every project ledger has `.ct2/.protocol-version` with the compatible
+`MAJOR.MINOR` protocol. Fresh `ct2-init` writes the marker; migration helpers
+restamp it only after success.
+
+State-mutating helpers refuse older ledgers before modifying `.ct2/` and print
+the exact migration command, for example:
+
+```bash
+ct2-migrate-0.1-0.2 /path/to/project
+ct2-runtime-doctor /path/to/project
+```
+
+If the marker is missing, CT2 treats the project as protocol `0.1`. Migration
+helpers create `.ct2/.migrations/<timestamp>-<from>-to-<to>.tar.gz` backups and
+logs before any protocol stamp is advanced.
+
 ## Agent Skills
 
 | Skill | Role | Loop | Description |
@@ -325,6 +345,7 @@ Full protocol specifications are in [`spec/`](spec/):
 | [`spec/codex-full-support-prd.md`](spec/codex-full-support-prd.md) | Product requirements for first-class Codex support |
 | [`spec/codex-runtime-contract.md`](spec/codex-runtime-contract.md) | Technical contract for Codex CLI, `/goal`, app-server, skills, MCP, and request-input integration |
 | [`spec/versioning.md`](spec/versioning.md) | SemVer, pre-1.0 compatibility rules, release flow, and installer pinning |
+| [`spec/protocol-surface.md`](spec/protocol-surface.md) | Versioned compatibility surface and migration expectations |
 
 ## Product Planning
 

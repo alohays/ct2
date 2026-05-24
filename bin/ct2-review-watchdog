@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from _ct2_protocol import assert_compatible as assert_protocol_compatible
 from _ct2_vao import atomic_write_text, compact_now, ensure_ct2, now, read_frontmatter, ticket_id_from_name
 
 
@@ -148,6 +149,11 @@ def acquire_ticket_lock(ct2_dir: Path, ticket_id: str) -> Path | None:
 def run(args: argparse.Namespace) -> int:
     project_dir = Path(args.project_dir).resolve()
     ct2_dir = ensure_ct2(project_dir)
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-review-watchdog: {exc}", file=sys.stderr)
+        return 2
     max_min = read_config_int(ct2_dir, "max_review_duration_min", DEFAULT_MAX_REVIEW_DURATION_MIN)
     now_ts = datetime.now(timezone.utc).timestamp()
     results = []

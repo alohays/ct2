@@ -1,0 +1,339 @@
+version: 0.2
+entries:
+  - id: ticket.frontmatter.id
+    kind: ticket-frontmatter-field
+    field: id
+    type: string
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-helm
+  - id: ticket.frontmatter.title
+    kind: ticket-frontmatter-field
+    field: title
+    type: string
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-helm
+  - id: ticket.frontmatter.status
+    kind: ticket-frontmatter-field
+    field: status
+    type: enum
+    values: [draft, backlog, in-progress, in-review, rejected, escalated, done]
+    required: true
+    stability: stable
+    since: 0.1
+    owner: state-machine
+  - id: ticket.frontmatter.priority
+    kind: ticket-frontmatter-field
+    field: priority
+    type: enum
+    values: [critical, high, medium, low]
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-helm
+  - id: ticket.frontmatter.created
+    kind: ticket-frontmatter-field
+    field: created
+    type: timestamp
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-helm
+  - id: ticket.frontmatter.updated
+    kind: ticket-frontmatter-field
+    field: updated
+    type: timestamp
+    required: true
+    stability: stable
+    since: 0.1
+    owner: all-mutating-helpers
+  - id: ticket.frontmatter.sealed
+    kind: ticket-frontmatter-field
+    field: sealed
+    type: timestamp-or-null
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-seal
+  - id: ticket.frontmatter.branch
+    kind: ticket-frontmatter-field
+    field: branch
+    type: string-or-null
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-forge
+  - id: ticket.frontmatter.pr
+    kind: ticket-frontmatter-field
+    field: pr
+    type: string-or-null
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-forge
+  - id: ticket.frontmatter.review-round
+    kind: ticket-frontmatter-field
+    field: review-round
+    type: integer
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-forge
+  - id: ticket.frontmatter.plan-exempt
+    kind: ticket-frontmatter-field
+    field: plan-exempt
+    type: string-or-null
+    required: false
+    stability: stable
+    since: 0.2
+    owner: ct2-helm
+  - id: ticket.frontmatter.duration-bounce-count
+    kind: ticket-frontmatter-field
+    field: duration-bounce-count
+    type: integer
+    required: false
+    default: 0
+    stability: stable
+    since: 0.2
+    owner: ct2-duration-check
+  - id: ticket.frontmatter.total-attempts
+    kind: ticket-frontmatter-field
+    field: total-attempts
+    type: integer
+    required: false
+    default: 0
+    stability: stable
+    since: 0.2
+    owner: ct2-duration-check
+  - id: ticket.frontmatter.estimated-scope
+    kind: ticket-frontmatter-field
+    field: estimated-scope
+    type: enum
+    values: [small, medium, large]
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-helm
+  - id: ticket.frontmatter.touched-files
+    kind: ticket-frontmatter-field
+    field: touched-files
+    type: list
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-helm
+  - id: ticket.frontmatter.verdict
+    kind: ticket-frontmatter-field
+    field: verdict
+    type: enum
+    values: [pending, approved, rejected, escalated]
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-reconcile
+  - id: sidecar.frontmatter.ticket
+    kind: sidecar-frontmatter-field
+    field: ticket
+    type: string
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-lens
+  - id: sidecar.frontmatter.reviewer
+    kind: sidecar-frontmatter-field
+    field: reviewer
+    type: enum
+    values: [ct2-lens-cc, ct2-lens-cx]
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-lens
+  - id: sidecar.frontmatter.round
+    kind: sidecar-frontmatter-field
+    field: round
+    type: integer
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-lens
+  - id: sidecar.frontmatter.timestamp
+    kind: sidecar-frontmatter-field
+    field: timestamp
+    type: timestamp
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-lens
+  - id: sidecar.frontmatter.verdict
+    kind: sidecar-frontmatter-field
+    field: verdict
+    type: enum
+    values: [approved, rejected]
+    required: true
+    stability: stable
+    since: 0.1
+    owner: ct2-lens
+  - id: inbox.frontmatter.id
+    kind: inbox-frontmatter-field
+    field: id
+    type: string
+    required: true
+    stability: stable
+    since: 0.1
+    owner: message-writer
+  - id: inbox.frontmatter.type
+    kind: inbox-frontmatter-field
+    field: type
+    type: enum
+    required: true
+    stability: stable
+    since: 0.1
+    owner: message-writer
+  - id: inbox.frontmatter.from
+    kind: inbox-frontmatter-field
+    field: from
+    type: string
+    required: true
+    stability: stable
+    since: 0.1
+    owner: message-writer
+  - id: inbox.frontmatter.to
+    kind: inbox-frontmatter-field
+    field: to
+    type: string
+    required: true
+    stability: stable
+    since: 0.1
+    owner: message-writer
+  - id: inbox.frontmatter.ticket
+    kind: inbox-frontmatter-field
+    field: ticket
+    type: string
+    required: true
+    stability: stable
+    since: 0.1
+    owner: message-writer
+  - id: inbox.frontmatter.timestamp
+    kind: inbox-frontmatter-field
+    field: timestamp
+    type: timestamp
+    required: true
+    stability: stable
+    since: 0.1
+    owner: message-writer
+  - id: state.protocol-version
+    kind: filesystem-marker
+    path: .ct2/.protocol-version
+    type: protocol-version
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-init-and-migrations
+  - id: state.migration-backups
+    kind: filesystem-directory
+    path: .ct2/.migrations
+    required: true
+    stability: stable
+    since: 0.2
+    owner: migration-helpers
+  - id: state.meta.started
+    kind: filesystem-marker
+    path: .ct2/.meta/{id}.started
+    type: timestamp
+    required: false
+    stability: stable
+    since: 0.1
+    owner: ct2-pickup
+  - id: state.meta.in-review
+    kind: filesystem-marker
+    path: .ct2/.meta/{id}.in-review
+    type: timestamp
+    required: false
+    stability: stable
+    since: 0.2
+    owner: ct2-review-enter
+  - id: state.meta.lifecycle-lock
+    kind: filesystem-marker
+    path: .ct2/.meta/lifecycle.lock
+    type: lockfile
+    required: false
+    stability: stable
+    since: 0.1
+    owner: ct2-pickup
+  - id: config.harness.git_strategy
+    kind: harness-yaml-key
+    field: git_strategy
+    type: enum
+    values: [branch-per-ticket, direct-to-main, none]
+    required: true
+    stability: stable
+    since: 0.1
+    owner: operator
+  - id: config.harness.git_default_base
+    kind: harness-yaml-key
+    field: git_default_base
+    type: string
+    required: true
+    stability: stable
+    since: 0.1
+    owner: operator
+  - id: config.harness.git_auto_merge_on_approval
+    kind: harness-yaml-key
+    field: git_auto_merge_on_approval
+    type: boolean
+    required: true
+    stability: stable
+    since: 0.1
+    owner: operator
+  - id: config.harness.git_merge_method
+    kind: harness-yaml-key
+    field: git_merge_method
+    type: enum
+    values: [squash, merge, rebase]
+    required: true
+    stability: stable
+    since: 0.1
+    owner: operator
+  - id: config.harness.max_review_rounds
+    kind: harness-yaml-key
+    field: max_review_rounds
+    type: integer
+    required: true
+    stability: stable
+    since: 0.1
+    owner: operator
+  - id: config.harness.max_ticket_duration_min
+    kind: harness-yaml-key
+    field: max_ticket_duration_min
+    type: integer
+    required: true
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.max_review_duration_min
+    kind: harness-yaml-key
+    field: max_review_duration_min
+    type: integer
+    required: true
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.max_duration_bounces
+    kind: harness-yaml-key
+    field: max_duration_bounces
+    type: integer
+    required: true
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.max_total_attempts
+    kind: harness-yaml-key
+    field: max_total_attempts
+    type: integer
+    required: true
+    stability: stable
+    since: 0.2
+    owner: operator

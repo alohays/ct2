@@ -49,7 +49,18 @@ While CT2 is in the `0.x` pre-1.0 phase:
 Protocol-impacting changes include ticket frontmatter fields, sidecar fields,
 state-transition semantics, `.ct2/.meta/` markers, `harness.yaml` schema,
 reconciler exit codes, and adapter contracts. The protocol surface catalog
-tracks those contracts once `spec/protocol-surface.yaml` is introduced.
+tracks those contracts in `spec/protocol-surface.yaml`.
+
+Each initialized project records its ledger protocol in `.ct2/.protocol-version`
+as `MAJOR.MINOR`. PATCH versions never require migration. State-mutating helpers
+compare that marker with the installed CT2 protocol before mutating `.ct2/`:
+
+| Project marker | Installed CT2 | Action |
+|---|---|---|
+| same `MAJOR.MINOR` | same `MAJOR.MINOR` | proceed |
+| older `MAJOR.MINOR` | newer `MAJOR.MINOR` | refuse and print `ct2-migrate-<from>-<to>` |
+| newer `MAJOR.MINOR` | older `MAJOR.MINOR` | refuse and ask the user to upgrade CT2 |
+| missing marker | any | treat as `0.1` |
 
 Breaking protocol changes must include:
 
@@ -57,6 +68,11 @@ Breaking protocol changes must include:
 - a changelog entry under a breaking or changed section;
 - migration instructions or a migration helper;
 - tests that prove old-protocol fixtures migrate or fail with a clear message.
+
+Migration helpers are named `ct2-migrate-<from>-<to>`, are forward-only,
+idempotent, write a `.ct2/.migrations/<timestamp>-<from>-to-<to>.tar.gz`
+backup before mutation, log the run, and stamp `.ct2/.protocol-version` only on
+full success.
 
 ## Release Flow
 

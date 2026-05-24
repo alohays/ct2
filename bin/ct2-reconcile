@@ -14,6 +14,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from _ct2_protocol import assert_compatible as assert_protocol_compatible
+
 
 LOCK_TTL_SECONDS = 600
 VALID_VERDICTS = {"approved", "rejected"}
@@ -173,6 +175,11 @@ def reconcile_one(project_dir: Path, ticket_id: str, round_num: str, actor: str)
     if not ct2_dir.is_dir():
         print(f"ct2-reconcile: .ct2/ not found in {project_dir}", file=sys.stderr)
         return 1
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-reconcile: {exc}", file=sys.stderr)
+        return 2
     if not re.fullmatch(r"\d+", ticket_id) or not re.fullmatch(r"\d+", round_num):
         print("ct2-reconcile: ticket-id and round must be numeric", file=sys.stderr)
         return 1
@@ -309,6 +316,11 @@ def main() -> int:
         if not ct2_dir.is_dir():
             print(f"ct2-reconcile: .ct2/ not found in {project_dir}", file=sys.stderr)
             return 1
+        try:
+            assert_protocol_compatible(project_dir)
+        except Exception as exc:
+            print(f"ct2-reconcile: {exc}", file=sys.stderr)
+            return 2
         result = 0
         for ticket_id, round_num in discover_pairs(ct2_dir):
             result = max(result, reconcile_one(project_dir, ticket_id, round_num, ns.actor))

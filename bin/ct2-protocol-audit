@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Audit source field references against the protocol surface catalog."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+
+FIELD_PATTERNS = (
+    re.compile(r'fm\.get\("([^"]+)"'),
+    re.compile(r'frontmatter_value\([^,\n]+,\s*"([^"]+)"'),
+    re.compile(r'read_config_int\([^,\n]+,\s*"([^"]+)"'),
+    re.compile(r'_read_key\s+([A-Za-z][A-Za-z0-9_-]+)'),
+    re.compile(r'replace_frontmatter_value\([^,\n]+,\s*"([^"]+)"'),
+    re.compile(r'set_field\([^,\n]+,\s*"([^"]+)"'),
+)
+
+IGNORED_FIELDS = {
+    "pid",
+}
+
+
+def catalog_fields(path: Path) -> set[str]:
+    fields: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = re.match(r"\s*field:\s*([A-Za-z][A-Za-z0-9_-]+)\s*$", line)
+        if match:
+            fields.add(match.group(1))
+    return fields
+
+
+def source_fields(path: Path) -> set[str]:
+    text = path.read_text(encoding="utf-8", errors="ignore")
+    found: set[str] = set()
+    for pattern in FIELD_PATTERNS:
+        found.update(pattern.findall(text))
+    return {field for field in found if field not in IGNORED_FIELDS}
+
+
+def audit(repo: Path) -> dict[str, object]:
+    catalog = catalog_fields(repo / "spec" / "protocol-surface.yaml")
+    findings = []
+    for path in sorted((repo / "bin").iterdir()):
+        if not path.is_file():
+            continue
+        for field in sorted(source_fields(path) - catalog):
+            findings.append({"path": str(path.relative_to(repo)), "field": field})
+    return {"ok": not findings, "catalog_fields": sorted(catalog), "findings": findings}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Audit CT2 protocol field catalog coverage")
+    parser.add_argument("repo", nargs="?", default=".")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    repo = Path(args.repo).resolve()
+    try:
+        result = audit(repo)
+    except Exception as exc:
+        print(f"ct2-protocol-audit: error: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    elif result["ok"]:
+        print("ct2-protocol-audit: protocol surface catalog covers scanned field references")
+    else:
+        print("ct2-protocol-audit: uncataloged protocol field references", file=sys.stderr)
+        for item in result["findings"]:
+            print(f"  {item['path']}: {item['field']}", file=sys.stderr)
+    return 0 if result["ok"] else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

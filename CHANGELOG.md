@@ -8,7 +8,16 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Added the Protocol Surface catalog, compatibility audit, protocol marker,
+  and forward migration helper framework.
+- Added `ct2-migrate-0.1-0.2`, `ct2-migrate-0.2-0.3`, and
+  `ct2-protocol-audit`.
+
 ### Changed
+
+- State-mutating helpers now check `.ct2/.protocol-version` before mutating.
+  Marker-less legacy ledgers are treated as protocol `0.1` and must run
+  `ct2-migrate-0.1-0.2` before continuing.
 
 ### Fixed
 

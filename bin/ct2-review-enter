@@ -9,6 +9,7 @@ import re
 import sys
 from pathlib import Path
 
+from _ct2_protocol import assert_compatible as assert_protocol_compatible
 from _ct2_vao import atomic_write_text, ensure_ct2, now, ticket_id_from_name
 
 
@@ -39,6 +40,11 @@ def main() -> int:
 
     project_dir = Path(args.project_dir).resolve()
     ct2_dir = ensure_ct2(project_dir)
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-review-enter: {exc}", file=sys.stderr)
+        return 2
     ticket = resolve_ticket(ct2_dir, args.ticket)
     if ticket is None:
         print(f"ct2-review-enter: ticket {args.ticket!r} not found in .ct2/in-progress/", file=sys.stderr)

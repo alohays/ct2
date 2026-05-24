@@ -83,6 +83,8 @@ This directory is excluded from git via `.git/info/exclude` (never via `.gitigno
 ├── logs/
 │   ├── ct2-forge.log
 │   └── ct2-lens-cx.log
+├── .protocol-version                  # MAJOR.MINOR protocol version for this project ledger
+├── .migrations/                       # Forward migration backups and logs
 ├── .meta/
 │   ├── ct2-active-role                # Current role marker consumed by PreToolUse hooks
 │   ├── {id}.started                   # forge pickup stamp; drives duration circuit breaker
@@ -113,6 +115,12 @@ This directory is excluded from git via `.git/info/exclude` (never via `.gitigno
 - `.tmp/` is the staging area for CT2 atomic file writes, including inbox
   messages, decision records, evidence artifacts, telemetry snapshots, and other
   advisory/evidentiary outputs that use tmpfile-then-rename.
+- `.protocol-version` records the CT2 protocol version that initialized or last
+  migrated the ledger. State-mutating helpers refuse incompatible ledgers and
+  print the matching `ct2-migrate-<from>-<to>` command when a forward migration
+  is available.
+- `.migrations/` stores migration backups and logs. Migration helpers snapshot
+  `.ct2/` before mutating and stamp `.protocol-version` only after success.
 - `runtime/`, `evidence/`, `telemetry/`, `decisions/`, `plans/`, `watchers/`,
   and `evals/` are advisory or evidentiary planes. They never replace the
   Kanban directory as the ticket state authority.

@@ -13,6 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from _ct2_protocol import assert_compatible as assert_protocol_compatible
 from _ct2_vao import atomic_write_text, compact_now, ensure_ct2, now, read_frontmatter, ticket_id_from_name
 
 
@@ -181,6 +182,11 @@ def check_ticket(
 def run(args: argparse.Namespace) -> int:
     project_dir = Path(args.project_dir).resolve()
     ct2_dir = ensure_ct2(project_dir)
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-duration-check: {exc}", file=sys.stderr)
+        return 2
     max_duration_min = read_config_int(ct2_dir, "max_ticket_duration_min", DEFAULT_MAX_TICKET_DURATION_MIN)
     max_bounces = read_config_int(ct2_dir, "max_duration_bounces", DEFAULT_MAX_DURATION_BOUNCES)
     max_total_attempts = read_config_int(ct2_dir, "max_total_attempts", DEFAULT_MAX_TOTAL_ATTEMPTS)

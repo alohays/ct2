@@ -9,6 +9,7 @@ import re
 import sys
 from pathlib import Path
 
+from _ct2_protocol import assert_compatible as assert_protocol_compatible
 from _ct2_vao import ensure_ct2, now
 
 
@@ -40,6 +41,11 @@ def normalize_msgfile(raw: str) -> str:
 def claim(args: argparse.Namespace) -> int:
     project_dir = Path(args.project_dir).resolve()
     ct2_dir = ensure_ct2(project_dir)
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-inbox: {exc}", file=sys.stderr)
+        return 2
     msgfile = normalize_msgfile(args.msgfile)
     lock = None
     try:
@@ -71,6 +77,11 @@ def claim(args: argparse.Namespace) -> int:
 def ack(args: argparse.Namespace) -> int:
     project_dir = Path(args.project_dir).resolve()
     ct2_dir = ensure_ct2(project_dir)
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-inbox: {exc}", file=sys.stderr)
+        return 2
     msgfile = normalize_msgfile(args.msgfile)
     src = ct2_dir / "inbox" / args.role / "processing" / msgfile
     dest_dir = ct2_dir / "inbox" / args.role / "done"

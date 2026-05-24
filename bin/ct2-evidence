@@ -8,6 +8,7 @@ import json
 import sys
 from pathlib import Path
 
+from _ct2_protocol import assert_compatible as assert_protocol_compatible
 from _ct2_vao import append_jsonl, atomic_write_json, ensure_ct2, new_id, now, relative_to_project
 
 
@@ -47,6 +48,11 @@ def write_claim(
 
 def cmd_command(args: argparse.Namespace) -> int:
     project_dir = Path(args.project_dir).resolve()
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-evidence: {exc}", file=sys.stderr)
+        return 2
     ct2_dir = ensure_ct2(project_dir)
     evidence_id = new_id("cmd")
     ok = int(args.exit_code) == 0
@@ -73,6 +79,11 @@ def cmd_command(args: argparse.Namespace) -> int:
 
 def record_structured(args: argparse.Namespace, kind: str, prefix: str, subdir: str, extra: dict) -> int:
     project_dir = Path(args.project_dir).resolve()
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-evidence: {exc}", file=sys.stderr)
+        return 2
     ct2_dir = ensure_ct2(project_dir)
     evidence_id = new_id(prefix)
     ok = bool(args.ok)
