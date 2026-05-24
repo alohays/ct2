@@ -52,9 +52,9 @@ def clear_unreleased_bullets(repo):
 
 
 def make_release_repo(test_case):
-    tmp = tempfile.TemporaryDirectory()
-    test_case.addCleanup(tmp.cleanup)
-    repo = Path(tmp.name) / "repo"
+    root = Path(tempfile.mkdtemp())
+    test_case.addCleanup(shutil.rmtree, root, ignore_errors=True)
+    repo = root / "repo"
     for rel in (
         "bin/ct2-release",
         "bin/_ct2_version.py",
