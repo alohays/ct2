@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import _ct2_canvas
+from _ct2_protocol import assert_compatible as assert_protocol_compatible
 from _ct2_vao import atomic_write_json, ensure_ct2, new_id, now
 
 
@@ -111,6 +112,11 @@ def provider_payload(record: dict, provider: str) -> dict:
 
 def cmd_ask(args: argparse.Namespace) -> int:
     project_dir = Path(args.project_dir).resolve()
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-decision: {exc}", file=sys.stderr)
+        return 2
     ct2_dir = ensure_ct2(project_dir)
     decision_id = new_id("decision")
     record = {
@@ -136,6 +142,11 @@ def cmd_ask(args: argparse.Namespace) -> int:
 
 def cmd_answer(args: argparse.Namespace) -> int:
     project_dir = Path(args.project_dir).resolve()
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-decision: {exc}", file=sys.stderr)
+        return 2
     ct2_dir = ensure_ct2(project_dir)
     pending = ct2_dir / "decisions" / "pending" / f"{args.decision_id}.json"
     if not pending.exists():
