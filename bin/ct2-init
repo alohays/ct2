@@ -63,7 +63,29 @@ mkdir -p "${CT2_DIR}/codex/goals"
 mkdir -p "${CT2_DIR}/codex/scopes"
 mkdir -p "${CT2_DIR}/codex/ledgers"
 mkdir -p "${CT2_DIR}/.meta"
+mkdir -p "${CT2_DIR}/.migrations"
 mkdir -p "${CT2_DIR}/.tmp"
+
+# ── Stamp the project protocol version ───────────────────────────────────────
+PROTOCOL_VERSION=$(python3 - "${CT2_REPO_DIR}/VERSION" <<'PYEOF'
+import re, sys
+version = open(sys.argv[1], encoding="utf-8").read().strip()
+match = re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", version)
+if not match:
+    raise SystemExit(f"invalid CT2 VERSION: {version!r}")
+print(f"{match.group(1)}.{match.group(2)}")
+PYEOF
+)
+if [[ ! -f "${CT2_DIR}/.protocol-version" ]]; then
+  PROTOCOL_TMP=$(mktemp "${CT2_DIR}/.tmp/protocol-version-XXXXXX")
+  printf "%s\n" "$PROTOCOL_VERSION" > "$PROTOCOL_TMP"
+  mv -n "$PROTOCOL_TMP" "${CT2_DIR}/.protocol-version" 2>/dev/null
+  if [[ -f "$PROTOCOL_TMP" ]]; then
+    rm -f "$PROTOCOL_TMP"
+  else
+    echo "  wrote: .protocol-version (${PROTOCOL_VERSION})"
+  fi
+fi
 
 # ── Copy default config files (skip existing to preserve project customization) ─
 _copy_if_missing() {

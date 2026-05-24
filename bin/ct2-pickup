@@ -11,6 +11,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from _ct2_protocol import assert_compatible as assert_protocol_compatible
 from _ct2_vao import atomic_write_text, ensure_ct2, now, read_frontmatter, ticket_id_from_name
 
 
@@ -125,6 +126,11 @@ def sort_key(item: tuple[str, Path]) -> tuple[int, int, str, str]:
 def pickup(args: argparse.Namespace) -> int:
     project_dir = Path(args.project_dir).resolve()
     ct2_dir = ensure_ct2(project_dir)
+    try:
+        assert_protocol_compatible(project_dir)
+    except Exception as exc:
+        print(f"ct2-pickup: {exc}", file=sys.stderr)
+        return 2
     lock = None
     try:
         lock = acquire_lifecycle_lock(ct2_dir)

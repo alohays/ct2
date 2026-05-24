@@ -19,6 +19,8 @@ perform one-shot mutations, and agent runtimes own all continuation loops.
 5. `spec/reconciler.md` defines `ct2-reconcile`.
 6. `spec/adapter-format.md` defines agent adapter markdown.
 7. `spec/conformance.md` defines conformance gates.
+8. `spec/protocol-surface.md` defines the versioned compatibility surface.
+9. `spec/versioning.md` defines SemVer, protocol markers, and migrations.
 
 Existing role, git, evidence, runtime, decision, helm-canvas, and eval specs
 compose with this protocol. When a lower-level spec and this document disagree,
@@ -86,3 +88,7 @@ that existing conforming adapters cannot satisfy.
 Adding an optional field, adding a one-shot tool that does not change existing
 contracts, or refactoring the reference implementation without behavior changes
 is not protocol-breaking.
+
+Every `.ct2/` ledger records its compatible protocol in `.protocol-version`.
+State-mutating tools refuse older or newer ledgers before mutation and point to
+the forward-only migration helper when one is expected.

@@ -18,6 +18,7 @@ if [[ ! -d "$CT2_DIR" ]]; then
   echo "Run 'ct2-init' first." >&2
   exit 1
 fi
+python3 "${SCRIPT_DIR}/_ct2_protocol.py" assert --project-dir "$PWD"
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: ct2-seal <ticket-id-or-filename>" >&2

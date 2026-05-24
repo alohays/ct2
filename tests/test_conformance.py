@@ -40,6 +40,8 @@ class ConformanceTest(unittest.TestCase):
             "spec/reconciler.md",
             "spec/adapter-format.md",
             "spec/conformance.md",
+            "spec/protocol-surface.md",
+            "spec/versioning.md",
         ):
             with self.subTest(rel=rel):
                 self.assertTrue((REPO_ROOT / rel).is_file())

@@ -27,12 +27,14 @@
 set -euo pipefail
 
 CT2_DIR="${PWD}/.ct2"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ ! -d "$CT2_DIR" ]]; then
   echo "ct2-revise: error — .ct2/ not found in ${PWD}" >&2
   echo "Run 'ct2-init' first." >&2
   exit 1
 fi
+python3 "${SCRIPT_DIR}/_ct2_protocol.py" assert --project-dir "$PWD"
 
 # ── Parse args ────────────────────────────────────────────────────────────────
 SOURCE_STATE="escalated"

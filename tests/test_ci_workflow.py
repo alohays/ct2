@@ -79,6 +79,9 @@ class CiWorkflowTest(unittest.TestCase):
         self.assertNotIn("Check bash syntax", self.workflow)
         self.assertNotIn("Validate plugin JSON", self.workflow)
 
+    def test_protocol_surface_audit_runs_in_repository_checks(self):
+        self.assertIn("python3 bin/ct2-protocol-audit .", self.workflow)
+
     def test_whitespace_gate_validates_full_change_range(self):
         # PR events must compare the PR base to the PR head, not the worktree.
         self.assertIn("${{ github.event.pull_request.base.sha }}", self.workflow)
