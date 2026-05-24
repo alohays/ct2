@@ -6,7 +6,7 @@ priority: medium            # critical | high | medium | low
 created: TIMESTAMP
 updated: TIMESTAMP
 sealed: null
-branch: feat/000-
+branch: null
 pr: null
 review-round: 0
 plan-exempt: null          # Optional reason; required only when no plan evidence is expected

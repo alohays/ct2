@@ -68,31 +68,91 @@ Strategy is read from `.ct2/config/harness.yaml` key `git_strategy`.
 | `in-progress → backlog` (duration CB) | forge   | none (branch kept; next pickup resumes it)                     |
 | `escalated/rejected → draft` (ct2-revise) | human | `ct2-git-cleanup`: close PR, delete remote + local branches   |
 
+## Host-Repo Cleanliness
+
+Fresh CT2 projects default to host-clean external artifacts. Branch names, PR
+bodies, and commit conventions must not expose CT2 ticket IDs, `.ct2/` paths,
+role names, tool footers, emoji, or CT2 URLs unless the project explicitly opts
+into the legacy preset.
+
+`config/harness.yaml` controls this through `trace_hygiene`:
+
+```yaml
+trace_hygiene:
+  preset: clean
+  branch_naming: title-slug
+  branch_prefix_pattern: "{type}/{title-slug}"
+  commit_scope_style: minimal
+  commit_trailer_style: minimal
+  pr_body_footer: none
+  pr_body_ticket_link: hidden-html
+```
+
+Existing projects whose copied `.ct2/config/harness.yaml` lacks
+`trace_hygiene` retain legacy-branded behavior. Users can opt in explicitly with:
+
+```yaml
+trace_hygiene: { preset: legacy-branded }
+```
+
+## Branch Naming
+
+Clean default branches use `{type}/{title-slug}` such as
+`feat/parse-nested-config`. They do not include the CT2 ticket number. If a
+derived branch already exists, `ct2-git-start` appends `-2`, `-3`, and so on,
+then records the actual branch in ticket frontmatter. Rework uses the recorded
+`branch:` value and never parses the branch to recover the ticket ID.
+
+Legacy-branded projects keep `feat/{ticket-stem}`, for example
+`feat/003-parse-nested-config`.
+
 ## Commit Convention
 
 Forge writes commits as **Conventional Commits subject + prose body**:
 
-```
-<type>(t-<id>): <imperative subject, ≤50 chars>
+```text
+<type>: <imperative subject, <=50 chars>
 
-<Why this change is needed — not what it does; the diff shows that.
+<Why this change is needed, not what it does; the diff shows that.
 Wrap at 72 chars. Cover the motivation, alternatives considered,
 and any constraint that shaped the approach.>
-
-Refs: .ct2/in-progress/<ticket-file>
 ```
 
 - `type`: `feat | fix | refactor | docs | test | chore | perf | build | ci`
-- Scope is always `t-<ticket-id>` (zero-padded), e.g., `t-003`. This gives
-  `git log --grep 't-003'` a reliable view of all commits for a ticket.
+- Scope is omitted by default. Optional `commit_scope_style: conventional`
+  may derive a repository-native scope such as a top-level directory.
 - Subject: imperative mood (`add`, `fix`, `refactor`). Not past tense.
 - Body: explain *why*. Skip if truly trivial (typo fixes).
-- `Refs:` trailer lets reviewers jump from commit to ticket.
+- `Refs:` trailers are omitted by default. If enabled, they must reference a
+  host-visible issue or PR, never `.ct2/` paths.
 
-When `git_commit_trailer_style: structured`, append the global CLAUDE.md
+When `trace_hygiene.commit_trailer_style: structured`, append the global
 decision-context trailers (`Constraint:`, `Rejected:`, `Confidence:`,
-`Scope-risk:`). Default is `none` because these are non-standard outside the
+`Scope-risk:`). Default is `minimal` because these are non-standard outside the
 user's own workflow and can surprise external OSS reviewers.
+
+## PR Body Convention
+
+Clean default PR bodies contain a short summary, visible requirements, visible
+acceptance criteria, and one hidden mapping comment:
+
+```markdown
+<summary>
+
+## What changed
+
+- <requirement>
+
+## Acceptance criteria
+
+- [x] <acceptance criterion>
+
+<!-- ct2-ticket: 003 / pr-managed -->
+```
+
+The hidden comment preserves PR-to-ticket mapping for CT2 automation without
+rendering CT2 strings in the host PR view. Legacy-branded projects keep the old
+visible ticket path and branded footer.
 
 ## Commit Granularity
 

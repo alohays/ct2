@@ -130,7 +130,20 @@ else:
     print(val)
 PYEOF
 )
-[[ -z "$BRANCH" ]] && BRANCH="feat/${TICKET_STEM}"
+BRANCH_SOURCE="frontmatter"
+if [[ -z "$BRANCH" ]]; then
+  BRANCH_SOURCE="derived"
+  BRANCH=$(python3 "${SCRIPT_DIR}/_ct2_trace_hygiene.py" branch --ticket "$TICKET_PATH" --ct2-dir "$CT2_DIR" --ticket-stem "$TICKET_STEM")
+fi
+
+if [[ "$BRANCH_SOURCE" == "derived" ]]; then
+  BASE_BRANCH="$BRANCH"
+  SUFFIX=2
+  while git show-ref --verify --quiet "refs/heads/${BRANCH}" || git ls-remote --exit-code --heads origin "$BRANCH" &>/dev/null; do
+    BRANCH="${BASE_BRANCH}-${SUFFIX}"
+    SUFFIX=$((SUFFIX + 1))
+  done
+fi
 
 # ── Create or checkout ────────────────────────────────────────────────────────
 CURRENT=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")

@@ -297,6 +297,84 @@ entries:
     stability: stable
     since: 0.1
     owner: operator
+  - id: config.harness.trace_hygiene
+    kind: harness-yaml-key
+    field: trace_hygiene
+    type: object
+    required: false
+    default: {preset: legacy-branded}
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.trace_hygiene.preset
+    kind: harness-yaml-key
+    field: preset
+    type: enum
+    values: [clean, legacy-branded]
+    required: false
+    default: clean
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.trace_hygiene.branch_naming
+    kind: harness-yaml-key
+    field: branch_naming
+    type: enum
+    values: [title-slug, ticket-id, custom]
+    required: false
+    default: title-slug
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.trace_hygiene.branch_prefix_pattern
+    kind: harness-yaml-key
+    field: branch_prefix_pattern
+    type: string
+    required: false
+    default: "{type}/{title-slug}"
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.trace_hygiene.commit_scope_style
+    kind: harness-yaml-key
+    field: commit_scope_style
+    type: enum
+    values: [minimal, conventional, ticket-id]
+    required: false
+    default: minimal
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.trace_hygiene.commit_trailer_style
+    kind: harness-yaml-key
+    field: commit_trailer_style
+    type: enum
+    values: [minimal, refs, structured]
+    required: false
+    default: minimal
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.trace_hygiene.pr_body_footer
+    kind: harness-yaml-key
+    field: pr_body_footer
+    type: enum
+    values: [none, minimal, branded]
+    required: false
+    default: none
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.trace_hygiene.pr_body_ticket_link
+    kind: harness-yaml-key
+    field: pr_body_ticket_link
+    type: enum
+    values: [hidden-html, visible, none]
+    required: false
+    default: hidden-html
+    stability: stable
+    since: 0.2
+    owner: operator
   - id: config.harness.max_review_rounds
     kind: harness-yaml-key
     field: max_review_rounds
