@@ -109,10 +109,10 @@ CATEGORY_DEFINITIONS: dict[str, dict[str, str]] = {
 }
 
 COMMIT_SCOPE_TICKET_RE = re.compile(rf"\b(?:{COMMIT_TYPES})\(t-\d{{1,6}}\):")
-COMMIT_CT2_PATH_RE = re.compile(
-    r"(?im)(?:^Refs:\s+`?\.ct2/|^Ticket:\s+`?\.ct2/|\.ct2/(?:draft|backlog|in-progress|in-review|rejected|escalated|done|reviews|\.tmp)\b)"
+COMMIT_CT2_PATH_RE = re.compile(r"(?im)(?:^Refs:\s+`?\.ct2/|^Ticket:\s+`?\.ct2/|\.ct2/[A-Za-z0-9._/-]+)")
+STRUCTURED_TRAILER_RE = re.compile(
+    r"(?ms)^Constraint:\s+\S.*?\nRejected:\s+\S.*?\nConfidence:\s+\S.*?\nScope-risk:\s+\S"
 )
-STRUCTURED_TRAILER_RE = re.compile(r"(?m)^(?:Constraint|Rejected|Confidence|Scope-risk):\s+\S")
 PR_TITLE_CT2_RE = re.compile(r"(?i)(?:\bct2\b|\.ct2/|\bt-\d{2,}\b)")
 ROBOT_FACE = chr(0x1F916)
 PR_BRANDED_FOOTER_RE = re.compile(
@@ -120,8 +120,10 @@ PR_BRANDED_FOOTER_RE = re.compile(
     + re.escape(ROBOT_FACE)
     + r"\s*opened by)"
 )
-PR_CT2_PATH_RE = re.compile(r"(?im)(?:^Ticket:\s+`?\.ct2/|\.ct2/(?:draft|backlog|in-progress|in-review|rejected|escalated|done|reviews|\.tmp)\b)")
-BRANCH_TICKET_ID_RE = re.compile(r"(?i)(?:^|/)(?:[a-z][a-z0-9]*[-/])?(?:t-)?\d{2,4}[-_][a-z0-9]")
+PR_CT2_PATH_RE = re.compile(r"(?im)(?:^Ticket:\s+`?\.ct2/|\.ct2/[A-Za-z0-9._/-]+)")
+BRANCH_TICKET_ID_RE = re.compile(
+    rf"(?i)^(?:origin/)?(?:{COMMIT_TYPES})/(?:t-\d{{1,6}}|\d{{3}})[-_][a-z][a-z0-9]"
+)
 TMP_LEAK_PATH_RE = re.compile(r"(?i)(?:^|/)(?:\.ct2/\.tmp/|\.tmp/.*(?:ct2|trace-hygiene)|.*(?:ct2-write|ct2-json|trace-hygiene)-.*)")
 HOOK_PATH_RE = re.compile(
     r"(?i)(?:^|/)(?:\.githooks|\.github/hooks|hooks)/(?:pre-|post-|commit-msg|prepare-commit-msg|applypatch-msg|fsmonitor-watchman|pre-push|pre-commit|post-merge|post-checkout|[^/]+\.sh$)"
@@ -163,9 +165,12 @@ def finding_fingerprint(finding: dict[str, Any]) -> str:
         str(finding.get("ref", "")),
         str(finding.get("path", "")),
         str(finding.get("line", "")),
-        str(finding.get("match", "")),
+        str(finding.get("_fingerprint_match", finding.get("match", ""))),
     ]
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
+FINGERPRINT_RE = re.compile(r"^[0-9a-f]{16}$")
 
 
 def baseline_fingerprints(path: str) -> set[str]:
@@ -178,7 +183,20 @@ def baseline_fingerprints(path: str) -> set[str]:
     fingerprints: set[str] = set()
     for row in rows:
         if isinstance(row, str):
+            if not FINGERPRINT_RE.fullmatch(row):
+                raise ValueError(f"baseline fingerprint must be 16 lowercase hex characters: {row!r}")
             fingerprints.add(row)
         elif isinstance(row, dict):
-            fingerprints.add(str(row.get("fingerprint") or finding_fingerprint(row)))
+            fingerprint = row.get("fingerprint")
+            if fingerprint is not None:
+                fingerprint = str(fingerprint)
+                if not FINGERPRINT_RE.fullmatch(fingerprint):
+                    raise ValueError(f"baseline finding has invalid fingerprint: {fingerprint!r}")
+                fingerprints.add(fingerprint)
+            elif row.get("category") and row.get("match"):
+                fingerprints.add(finding_fingerprint(row))
+            else:
+                raise ValueError("baseline finding row must include fingerprint or category/match fields")
+        else:
+            raise ValueError("baseline must be a trace-lint JSON result or an array of fingerprint strings/findings")
     return fingerprints

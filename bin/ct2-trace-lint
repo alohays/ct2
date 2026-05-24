@@ -98,13 +98,16 @@ def make_finding(category: str, **values: object) -> dict[str, Any]:
         if value not in (None, ""):
             finding[key] = value
     finding["fix"] = patterns.format_fix(category, **values)
+    if values.get("fingerprint_match") is not None:
+        finding["_fingerprint_match"] = str(values["fingerprint_match"])
     finding["fingerprint"] = patterns.finding_fingerprint(finding)
+    finding.pop("_fingerprint_match", None)
     return finding
 
 
 def add_match(findings: list[dict[str, Any]], category: str, match: object, **values: object) -> None:
     text = match.group(0) if hasattr(match, "group") else str(match)
-    findings.append(make_finding(category, match=compact_match(text), **values))
+    findings.append(make_finding(category, match=compact_match(text), fingerprint_match=text, **values))
 
 
 def iter_commits(repo: Path, range_args: list[str]) -> list[tuple[str, str, str, str]]:
@@ -282,7 +285,10 @@ def scan_pr(repo: Path, pr: str, include_exceptions: bool, findings: list[dict[s
 def suppress_baseline(findings: list[dict[str, Any]], baseline: str | None) -> list[dict[str, Any]]:
     if not baseline:
         return findings
-    suppressed = patterns.baseline_fingerprints(baseline)
+    try:
+        suppressed = patterns.baseline_fingerprints(baseline)
+    except ValueError as exc:
+        raise TraceLintError(f"invalid baseline {baseline}: {exc}") from exc
     return [finding for finding in findings if finding.get("fingerprint") not in suppressed]
 
 
