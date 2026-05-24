@@ -302,7 +302,7 @@ entries:
     field: trace_hygiene
     type: object
     required: false
-    default: {preset: legacy-branded}
+    default: {preset: clean}
     stability: stable
     since: 0.2
     owner: operator

@@ -84,7 +84,8 @@ BRANCH=$(python3 - "$TICKET_PATH" <<'PYEOF'
 import re, sys
 c = open(sys.argv[1]).read()
 m = re.search(r'^branch:\s*(\S+)', c, re.MULTILINE)
-print(m.group(1) if m else '')
+val = m.group(1) if m else ''
+print('' if val in ('', 'null', '~') else val)
 PYEOF
 )
 PR_URL=$(python3 - "$TICKET_PATH" <<'PYEOF'
@@ -166,7 +167,7 @@ fi
 
 # ── Record PR URL in ticket frontmatter ──────────────────────────────────────
 python3 - "$TICKET_PATH" "$PR_URL" <<'PYEOF'
-import re, sys
+import os, re, sys, tempfile
 path, url = sys.argv[1], sys.argv[2]
 c = open(path).read()
 if re.search(r'^pr:', c, re.MULTILINE):
@@ -174,7 +175,12 @@ if re.search(r'^pr:', c, re.MULTILINE):
 else:
     # Insert after `branch:` line
     c = re.sub(r'^(branch:.*\n)', rf'\g<1>pr: {url}\n', c, count=1, flags=re.MULTILINE)
-open(path, 'w').write(c)
+tmp_dir = os.path.join(os.getcwd(), ".ct2", ".tmp")
+os.makedirs(tmp_dir, exist_ok=True)
+fd, tmp = tempfile.mkstemp(prefix="git-submit-ticket-", dir=tmp_dir)
+with os.fdopen(fd, "w", encoding="utf-8") as handle:
+    handle.write(c)
+os.replace(tmp, path)
 PYEOF
 
 echo "ct2-git-submit: ${TICKET_FILE} submitted — PR ${PR_URL}"
