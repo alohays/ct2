@@ -55,7 +55,7 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-set -- "${POSITIONAL[@]}"
+set -- "${POSITIONAL[@]+"${POSITIONAL[@]}"}"
 
 # ── Check dependencies ────────────────────────────────────────────────────────
 if ! command -v git &>/dev/null; then
