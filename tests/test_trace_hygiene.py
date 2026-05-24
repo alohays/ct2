@@ -175,6 +175,56 @@ class TraceHygieneTest(unittest.TestCase):
         self.assertEqual(body.returncode, 0, body.stderr)
         self.assertTrue(body.stdout.startswith("Closes #142\n\n"), body.stdout)
 
+    def test_pr_closes_issue_false_omits_closes_line(self):
+        project = self.make_git_project()
+        cfg = project / ".ct2" / "config" / "harness.yaml"
+        cfg.write_text(cfg.read_text(encoding="utf-8").replace("pr_closes_issue: true", "pr_closes_issue: false"), encoding="utf-8")
+        ticket = project / ".ct2" / "in-progress" / "001-parse-nested-config.md"
+        write_ticket(ticket)
+        ticket.write_text(
+            ticket.read_text(encoding="utf-8").replace("pr: null\n", "pr: null\nissue: 142\n"),
+            encoding="utf-8",
+        )
+
+        body = run_cmd(
+            [
+                PYTHON,
+                REPO_ROOT / "bin" / "_ct2_trace_hygiene.py",
+                "pr-body",
+                "--ticket",
+                ticket,
+                "--ct2-dir",
+                project / ".ct2",
+                "--ticket-file",
+                ticket.name,
+            ]
+        )
+
+        self.assertEqual(body.returncode, 0, body.stderr)
+        self.assertNotIn("Closes #142", body.stdout)
+
+    def test_closes_line_removed_when_issue_unset(self):
+        project = self.make_git_project()
+        ticket = project / ".ct2" / "in-progress" / "001-parse-nested-config.md"
+        write_ticket(ticket)
+
+        body = run_cmd(
+            [
+                PYTHON,
+                REPO_ROOT / "bin" / "_ct2_trace_hygiene.py",
+                "pr-body",
+                "--ticket",
+                ticket,
+                "--ct2-dir",
+                project / ".ct2",
+                "--ticket-file",
+                ticket.name,
+            ]
+        )
+
+        self.assertEqual(body.returncode, 0, body.stderr)
+        self.assertNotIn("Closes #", body.stdout)
+
     def test_pr_body_ticket_link_none_omits_hidden_mapping(self):
         project = self.make_git_project()
         cfg = project / ".ct2" / "config" / "harness.yaml"

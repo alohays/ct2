@@ -66,7 +66,7 @@ def trace_hygiene_config(ct2_dir: Path) -> dict[str, str]:
     except OSError:
         return dict(LEGACY_DEFAULTS)
 
-    match = re.search(r"^trace_hygiene:\s*(.*?)$", text, re.MULTILINE)
+    match = re.search(r"^trace_hygiene:[ \t]*(.*?)$", text, re.MULTILINE)
     if not match:
         return dict(LEGACY_DEFAULTS)
 
@@ -206,7 +206,34 @@ def issue_close_line(fm: dict[str, object]) -> str:
     return f"Closes #{issue}"
 
 
-def render_clean_pr_body(ticket_path: Path, ticket_file: str, cfg: dict[str, str]) -> str:
+def pr_closes_issue_enabled(ct2_dir: Path) -> bool:
+    harness = ct2_dir / "config" / "harness.yaml"
+    try:
+        text = harness.read_text(encoding="utf-8")
+    except OSError:
+        return True
+    match = re.search(r"^github_integration:[ \t]*(.*?)$", text, re.MULTILINE)
+    if not match:
+        return True
+    inline = match.group(1).strip()
+    if inline.startswith("{") and inline.endswith("}"):
+        kv = dict(
+            (key.strip(), value.strip().strip('"'))
+            for key, value in (item.split(":", 1) for item in inline[1:-1].split(",") if ":" in item)
+        )
+        return str(kv.get("pr_closes_issue", "true")).lower() not in {"0", "false", "no", "off"}
+    for line in text[match.end() :].splitlines():
+        if not line.strip():
+            continue
+        if re.match(r"^[A-Za-z0-9_-]+:", line):
+            break
+        item = re.match(r"^\s+pr_closes_issue:\s*(.*?)\s*(?:#.*)?$", line)
+        if item:
+            return item.group(1).strip().strip('"').lower() not in {"0", "false", "no", "off"}
+    return True
+
+
+def render_clean_pr_body(ticket_path: Path, ticket_file: str, ct2_dir: Path, cfg: dict[str, str]) -> str:
     text = ticket_path.read_text(encoding="utf-8")
     fm = read_frontmatter(ticket_path)
     title = str(fm.get("title", "") or Path(ticket_file).stem)
@@ -219,7 +246,7 @@ def render_clean_pr_body(ticket_path: Path, ticket_file: str, cfg: dict[str, str
         acs = ["- [x] Implementation is ready for review."]
     ticket_id = ticket_id_from_name(ticket_path)
     parts = []
-    close_line = issue_close_line(fm)
+    close_line = issue_close_line(fm) if pr_closes_issue_enabled(ct2_dir) else ""
     if close_line:
         parts.extend([close_line, ""])
     parts.extend(
@@ -259,7 +286,7 @@ def render_pr_body(ticket_path: Path, ct2_dir: Path, ticket_file: str) -> str:
     cfg = trace_hygiene_config(ct2_dir)
     if cfg.get("preset") == "legacy-branded":
         return render_legacy_pr_body(ticket_path, ticket_file)
-    return render_clean_pr_body(ticket_path, ticket_file, cfg)
+    return render_clean_pr_body(ticket_path, ticket_file, ct2_dir, cfg)
 
 
 def main() -> int:

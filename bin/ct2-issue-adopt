@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import re
 import sys
@@ -46,6 +47,10 @@ def gh_issue(project_dir: Path, issue: str) -> dict[str, str]:
     return {key: str(data.get(key, "") or "") for key in ("title", "body", "number", "url")}
 
 
+def yaml_single_quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
 def draft_text(ticket_id: str, title: str, issue: str, issue_url: str, body: str) -> str:
     clipped = body[:8192]
     if len(body) > len(clipped):
@@ -53,7 +58,7 @@ def draft_text(ticket_id: str, title: str, issue: str, issue_url: str, body: str
     timestamp = now()
     return f"""---
 id: "{ticket_id}"
-title: "{title}"
+title: {yaml_single_quote(title)}
 status: draft
 priority: medium
 created: {timestamp}
@@ -113,12 +118,18 @@ def main() -> int:
         if existing is not None:
             raise RuntimeError(f"issue #{issue} is already linked to {existing.name}")
         data = gh_issue(project_dir, issue)
-        ticket_id = next_ticket_id(ct2_dir)
-        title = data["title"] or f"GitHub Issue {issue}"
-        dest = ct2_dir / "draft" / f"{ticket_id}-{slugify(title)}.md"
-        if dest.exists():
-            raise RuntimeError(f"destination already exists: {dest}")
-        atomic_write_text(ct2_dir, dest, draft_text(ticket_id, title, issue, data["url"], data["body"]), "issue-adopt-")
+        lock_path = ct2_dir / ".adopt.lock"
+        with lock_path.open("w", encoding="utf-8") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            existing = existing_issue_ticket(ct2_dir, issue)
+            if existing is not None:
+                raise RuntimeError(f"issue #{issue} is already linked to {existing.name}")
+            ticket_id = next_ticket_id(ct2_dir)
+            title = data["title"] or f"GitHub Issue {issue}"
+            dest = ct2_dir / "draft" / f"{ticket_id}-{slugify(title)}.md"
+            if dest.exists():
+                raise RuntimeError(f"destination already exists: {dest}")
+            atomic_write_text(ct2_dir, dest, draft_text(ticket_id, title, issue, data["url"], data["body"]), "issue-adopt-")
         comment = f"Adopted as CT2 ticket {ticket_id}; CT2 will update this issue as work progresses."
         run_gh(["issue", "comment", issue, "--body", comment], project_dir, check=False)
         result = {"ticket": dest.name, "issue": issue, "issue_url": data["url"], "path": f".ct2/draft/{dest.name}"}

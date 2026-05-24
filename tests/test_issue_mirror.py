@@ -4,11 +4,17 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
+BIN_DIR = REPO_ROOT / "bin"
+if str(BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(BIN_DIR))
+
+import _ct2_issue
 
 
 def run_cmd(args, cwd, env=None):
@@ -115,7 +121,7 @@ class IssueMirrorTest(unittest.TestCase):
         self.assertEqual(init.returncode, 0, init.stderr)
         return project
 
-    def install_fake_gh(self, project, failing=False, initial=None):
+    def install_fake_gh(self, project, failing=False, initial=None, stderr="gh unavailable"):
         fake_bin = project / "fake-bin"
         fake_bin.mkdir(exist_ok=True)
         state = project / "fake-gh-state.json"
@@ -125,13 +131,18 @@ class IssueMirrorTest(unittest.TestCase):
         )
         gh = fake_bin / "gh"
         if failing:
-            gh.write_text("#!/usr/bin/env python3\nimport sys\nprint('gh unavailable', file=sys.stderr)\nsys.exit(1)\n", encoding="utf-8")
+            gh.write_text(
+                f"#!/usr/bin/env python3\nimport sys\nprint({stderr!r}, file=sys.stderr)\nsys.exit(1)\n",
+                encoding="utf-8",
+            )
         else:
             gh.write_text(
                 r'''#!/usr/bin/env python3
-import json, os, sys
+import fcntl, json, os, sys
 
 state_path = os.environ["FAKE_GH_STATE"]
+lock = open(state_path + ".lock", "w", encoding="utf-8")
+fcntl.flock(lock, fcntl.LOCK_EX)
 with open(state_path, encoding="utf-8") as fh:
     state = json.load(fh)
 args = sys.argv[1:]
@@ -300,6 +311,114 @@ sys.exit(1)
         self.assertIn("issue: 142", ticket.read_text(encoding="utf-8"))
         self.assertIn("142", self.read_state(state_file)["issues"])
 
+    def test_pending_retry_replays_close_flag(self):
+        project = self.make_project()
+        initial = {
+            "next": 143,
+            "labels": [],
+            "calls": [],
+            "issues": {
+                "142": {
+                    "number": "142",
+                    "url": "https://github.com/example/repo/issues/142",
+                    "title": "Mirror GitHub issue",
+                    "body": "old",
+                    "state": "OPEN",
+                    "labels": ["ct2/in-review"],
+                    "comments": [],
+                }
+            },
+        }
+        env, _state_file = self.install_fake_gh(project, failing=True, initial=initial)
+        ticket = project / ".ct2" / "done" / "001-mirror-github-issue.md"
+        write_ticket(ticket, status="done", issue="142")
+
+        queued = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-issue-mirror", ticket, project, "--close", "--json"], project, env=env)
+        self.assertEqual(queued.returncode, 0, queued.stderr)
+        pending = project / ".ct2" / ".meta" / "001.issue-mirror-pending.json"
+        payload = json.loads(pending.read_text(encoding="utf-8"))
+        self.assertTrue(payload["close"])
+        self.assertEqual(0o600, pending.stat().st_mode & 0o777)
+
+        env, state_file = self.install_fake_gh(project, initial=initial)
+        retried = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-issue-mirror", ticket, project, "--json"], project, env=env)
+        self.assertEqual(retried.returncode, 0, retried.stderr)
+        self.assertFalse(pending.exists())
+        issue = self.read_state(state_file)["issues"]["142"]
+        self.assertEqual("CLOSED", issue["state"])
+
+    def test_rotate_label_keeps_issue_labeled_on_failure(self):
+        calls = []
+
+        def fake_run_gh(args, project_dir, check=True):
+            calls.append(args)
+            if "--add-label" in args:
+                raise _ct2_issue.IssueMirrorError("label missing")
+            raise AssertionError("stale labels should not be removed before target add succeeds")
+
+        project = self.make_project()
+        with mock.patch.object(_ct2_issue, "run_gh", side_effect=fake_run_gh):
+            with self.assertRaises(_ct2_issue.IssueMirrorError):
+                _ct2_issue.rotate_label(project, project / ".ct2", "142", "done")
+
+        self.assertEqual(["issue", "edit", "142", "--add-label", "ct2/done"], calls[0])
+
+    def test_bare_github_integration_config_is_disabled_by_default(self):
+        project = self.make_project()
+        cfg = project / ".ct2" / "config" / "harness.yaml"
+        cfg.write_text("github_integration:\n", encoding="utf-8")
+
+        config = _ct2_issue.read_config(project / ".ct2")
+
+        self.assertFalse(_ct2_issue.parse_bool(config["enabled"]))
+        self.assertFalse(_ct2_issue.integration_enabled(project / ".ct2"))
+
+    def test_pending_payload_redacts_token_like_strings(self):
+        project = self.make_project()
+        env, _state_file = self.install_fake_gh(
+            project,
+            failing=True,
+            stderr="Authorization: token ghp_SECRET1234567890 github_pat_SECRET_tail",
+        )
+        ticket = project / ".ct2" / "backlog" / "001-mirror-github-issue.md"
+        write_ticket(ticket, status="backlog")
+
+        queued = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-issue-mirror", ticket, project, "--create", "--json"], project, env=env)
+
+        self.assertEqual(queued.returncode, 0, queued.stderr)
+        pending = (project / ".ct2" / ".meta" / "001.issue-mirror-pending.json").read_text(encoding="utf-8")
+        self.assertIn("***REDACTED***", pending)
+        self.assertNotIn("ghp_SECRET", pending)
+        self.assertNotIn("github_pat_SECRET", pending)
+        self.assertNotIn("Authorization: token", pending)
+
+    def test_nested_reviewer_status_ignores_body_mentions(self):
+        project = self.make_project()
+        ticket = project / ".ct2" / "backlog" / "001-mirror-github-issue.md"
+        write_ticket(ticket, status="backlog", issue="142")
+        ticket.write_text(
+            ticket.read_text(encoding="utf-8")
+            + "\nA body example says lens-claude:\n  status: needs-work\n",
+            encoding="utf-8",
+        )
+
+        block = _ct2_issue.status_block(ticket)
+
+        self.assertIn("- lens-cc: pending", block)
+
+    def test_managed_status_block_preserves_user_content(self):
+        project = self.make_project()
+        ticket = project / ".ct2" / "backlog" / "001-mirror-github-issue.md"
+        write_ticket(ticket, status="backlog", issue="142")
+        existing = "intro\n\n<!-- ct2-ticket-status:begin -->\nold managed\n<!-- ct2-ticket-status:end -->\n\nuser tail\n"
+
+        body = _ct2_issue.rendered_issue_body(ticket, existing)
+
+        self.assertIn("intro", body)
+        self.assertIn("user tail", body)
+        self.assertNotIn("old managed", body)
+        self.assertEqual(1, body.count("<!-- ct2-ticket-status:begin -->"))
+
     def test_issue_adopt_creates_draft_without_touching_labels(self):
         project = self.make_project()
         initial = {
@@ -333,6 +452,85 @@ sys.exit(1)
         self.assertEqual(["enhancement"], state["issues"]["77"]["labels"])
         self.assertTrue(any(call[:2] == ["issue", "comment"] for call in state["calls"]))
         self.assertFalse(any(call[:2] == ["issue", "edit"] for call in state["calls"]))
+
+    def test_adopt_handles_double_quoted_title(self):
+        project = self.make_project()
+        initial = {
+            "next": 142,
+            "labels": [],
+            "calls": [],
+            "issues": {
+                "77": {
+                    "number": "77",
+                    "url": "https://github.com/example/repo/issues/77",
+                    "title": 'Fix "broken" parser',
+                    "body": "Please support quotes.",
+                    "state": "OPEN",
+                    "labels": [],
+                    "comments": [],
+                }
+            },
+        }
+        env, _state_file = self.install_fake_gh(project, initial=initial)
+
+        adopt = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-issue-adopt", "77", project, "--json"], project, env=env)
+
+        self.assertEqual(adopt.returncode, 0, adopt.stderr)
+        draft = project / json.loads(adopt.stdout)["path"]
+        self.assertIn('title: \'Fix "broken" parser\'', draft.read_text(encoding="utf-8"))
+
+    def test_concurrent_adopt_no_duplicate_id(self):
+        project = self.make_project()
+        initial = {
+            "next": 142,
+            "labels": [],
+            "calls": [],
+            "issues": {
+                "77": {
+                    "number": "77",
+                    "url": "https://github.com/example/repo/issues/77",
+                    "title": "First external request",
+                    "body": "First body.",
+                    "state": "OPEN",
+                    "labels": [],
+                    "comments": [],
+                },
+                "78": {
+                    "number": "78",
+                    "url": "https://github.com/example/repo/issues/78",
+                    "title": "Second external request",
+                    "body": "Second body.",
+                    "state": "OPEN",
+                    "labels": [],
+                    "comments": [],
+                },
+            },
+        }
+        env, _state_file = self.install_fake_gh(project, initial=initial)
+
+        p1 = subprocess.Popen(
+            [PYTHON, REPO_ROOT / "bin" / "ct2-issue-adopt", "77", project, "--json"],
+            cwd=str(project),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, **env},
+        )
+        p2 = subprocess.Popen(
+            [PYTHON, REPO_ROOT / "bin" / "ct2-issue-adopt", "78", project, "--json"],
+            cwd=str(project),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, **env},
+        )
+        out1, err1 = p1.communicate(timeout=30)
+        out2, err2 = p2.communicate(timeout=30)
+
+        self.assertEqual(p1.returncode, 0, err1)
+        self.assertEqual(p2.returncode, 0, err2)
+        ids = {json.loads(out1)["ticket"].split("-", 1)[0], json.loads(out2)["ticket"].split("-", 1)[0]}
+        self.assertEqual({"001", "002"}, ids)
 
 
 if __name__ == "__main__":

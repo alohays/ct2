@@ -28,6 +28,7 @@ DEFAULT_CONFIG = {
     "fallback_mode": "queue",
     "graphql_token_env": "GH_TOKEN",
 }
+TOKEN_LIKE_RE = re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]+\b")
 LABEL_COLORS = {
     "draft": "6B7280",
     "backlog": "1D4ED8",
@@ -61,12 +62,13 @@ def read_config(ct2_dir: Path) -> dict[str, str]:
         text = harness.read_text(encoding="utf-8")
     except OSError:
         return {"enabled": "false"}
-    match = re.search(r"^github_integration:\s*(.*?)$", text, re.MULTILINE)
+    match = re.search(r"^github_integration:[ \t]*(.*?)$", text, re.MULTILINE)
     if not match:
         disabled = dict(DEFAULT_CONFIG)
         disabled["enabled"] = "false"
         return disabled
     config = dict(DEFAULT_CONFIG)
+    config["enabled"] = "false"
     inline = match.group(1).strip()
     if inline.startswith("{") and inline.endswith("}"):
         for item in inline[1:-1].split(","):
@@ -114,9 +116,15 @@ def run_gh(args: list[str], cwd: Path, check: bool = True) -> subprocess.Complet
         check=False,
     )
     if check and proc.returncode != 0:
-        detail = proc.stderr.strip() or proc.stdout.strip() or "gh command failed"
+        detail = sanitize_stderr(proc.stderr.strip() or proc.stdout.strip() or "gh command failed")
         raise IssueMirrorError(detail)
     return proc
+
+
+def sanitize_stderr(text: str) -> str:
+    text = TOKEN_LIKE_RE.sub("***REDACTED***", text)
+    text = re.sub(r"(?i)Authorization:\s*\S+", "Authorization: ***", text)
+    return text[-500:]
 
 
 def strip_frontmatter(text: str) -> str:
@@ -144,7 +152,9 @@ def visible_checkbox_lines(text: str) -> list[str]:
 
 
 def nested_reviewer_status(text: str, lens: str) -> str:
-    match = re.search(rf"{re.escape(lens)}:\s*\n\s*status:\s*([^\n]+)", text)
+    fm_match = re.match(r"^---\n(.*?)\n---", text, flags=re.DOTALL)
+    frontmatter = fm_match.group(1) if fm_match else ""
+    match = re.search(rf"{re.escape(lens)}:\s*\n\s*status:\s*([^\n]+)", frontmatter)
     return clean_scalar(match.group(1)) if match else "pending"
 
 
@@ -237,14 +247,31 @@ def write_pending(ct2_dir: Path, ticket: Path, data: dict[str, Any]) -> None:
     payload = dict(data)
     payload["ticket"] = ticket.name
     payload["updated"] = now()
-    atomic_write_json(ct2_dir, pending_path(ct2_dir, ticket), payload, "issue-pending-")
+    path = pending_path(ct2_dir, ticket)
+    atomic_write_json(ct2_dir, path, payload, "issue-pending-")
+    os.chmod(path, 0o600)
+
+
+def read_pending(ct2_dir: Path, ticket: Path) -> dict[str, Any]:
+    path = pending_path(ct2_dir, ticket)
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
 
 
 def clear_pending(ct2_dir: Path, ticket: Path) -> None:
+    path = pending_path(ct2_dir, ticket)
+    renamed = path.with_name(f"{path.name}.unlinked.{os.getpid()}")
     try:
-        pending_path(ct2_dir, ticket).unlink()
+        os.replace(path, renamed)
     except FileNotFoundError:
         pass
+    else:
+        try:
+            renamed.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def ticket_issue(fm: dict[str, Any]) -> str:
@@ -289,10 +316,10 @@ def ensure_labels(project_dir: Path, ct2_dir: Path) -> None:
 
 def rotate_label(project_dir: Path, ct2_dir: Path, issue: str, state: str) -> None:
     current = label_for_state(ct2_dir, state)
+    run_gh(["issue", "edit", issue, "--add-label", current], project_dir)
     for label in all_column_labels(ct2_dir):
         if label != current:
             run_gh(["issue", "edit", issue, "--remove-label", label], project_dir, check=False)
-    run_gh(["issue", "edit", issue, "--add-label", current], project_dir)
 
 
 def create_issue(project_dir: Path, ct2_dir: Path, ticket: Path, state: str) -> tuple[str, str]:
@@ -354,6 +381,11 @@ def mirror_ticket(
     issue = ticket_issue(fm)
     state = clean_scalar(fm.get("status", "backlog"))
     pending = pending_path(ct2_dir, ticket)
+    pending_payload = read_pending(ct2_dir, ticket) if pending.exists() else {}
+    create = create or parse_bool(pending_payload.get("create", "false"))
+    close = close or parse_bool(pending_payload.get("close", "false"))
+    if comment is None and pending_payload.get("comment") is not None:
+        comment = str(pending_payload["comment"])
     may_create = create or pending.exists()
     if not issue and not may_create:
         write_pending(ct2_dir, ticket, {"reason": "missing-issue", "create": False, "state": state})
@@ -373,14 +405,14 @@ def mirror_ticket(
                 ticket,
                 {
                     "reason": "gh-failure",
-                    "error": str(exc),
+                    "error": sanitize_stderr(str(exc)),
                     "create": bool(create or not issue),
                     "state": state,
                     "close": close,
                     "comment": comment,
                 },
             )
-            return {"ok": True, "status": "queued", "ticket": ticket.name, "error": str(exc)}
+            return {"ok": True, "status": "queued", "ticket": ticket.name, "error": sanitize_stderr(str(exc))}
         raise
 
 

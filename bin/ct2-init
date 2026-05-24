@@ -201,18 +201,18 @@ ROOT="\$(git rev-parse --show-toplevel)"
 if command -v ct2-trace-lint >/dev/null 2>&1; then
   exec ct2-trace-lint --strict "\$ROOT"
 fi
-
-if [[ "$BOOTSTRAP_ISSUE_LABELS" == true ]]; then
-  if ! python3 "${CT2_REPO_DIR}/bin/ct2-issue-bootstrap-labels" "$PROJECT_DIR"; then
-    echo "ct2-init: warning — GitHub Issue label bootstrap failed; continuing" >&2
-  fi
-fi
 exec "${CT2_REPO_DIR}/bin/ct2-trace-lint" --strict "\$ROOT"
 EOF
       chmod +x "$HOOK_TMP"
       mv "$HOOK_TMP" "$HOOK_PATH"
       echo "ct2-init: installed trace verifier hook at ${HOOK_PATH}"
     fi
+  fi
+fi
+
+if [[ "$BOOTSTRAP_ISSUE_LABELS" == true ]]; then
+  if ! python3 "${CT2_REPO_DIR}/bin/ct2-issue-bootstrap-labels" "$PROJECT_DIR"; then
+    echo "ct2-init: warning — GitHub Issue label bootstrap failed; continuing" >&2
   fi
 fi
 
