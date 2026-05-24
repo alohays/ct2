@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "SemVer bump to prepare"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      dry_run:
+        description: "Prepare and test without pushing a tag or GitHub Release"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    name: prepare release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Configure git identity
+        run: |
+          git config user.name "CT2 Release Bot"
+          git config user.email "ct2-release@users.noreply.github.com"
+
+      - name: Prepare release commit
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: python3 bin/ct2-release prepare "$BUMP"
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tests
+
+      - name: Run repository verifier
+        run: python3 bin/ct2-vao-self-verify --run-checks --json --repo .
+
+      - name: Run host cleanliness verifier when available
+        run: |
+          set -euo pipefail
+          if [[ -x bin/ct2-trace-lint ]]; then
+            host="$(mktemp -d)"
+            git -C "$host" init
+            git -C "$host" config user.name "CT2 Release Test"
+            git -C "$host" config user.email "ct2-release@example.invalid"
+            printf '# Release host cleanliness\n' > "$host/README.md"
+            git -C "$host" add README.md
+            git -C "$host" commit -m "init"
+            bash "$GITHUB_WORKSPACE/bin/ct2-init" "$host"
+            "$GITHUB_WORKSPACE/bin/ct2-trace-lint" --strict "$host"
+          fi
+
+      - name: Publish tag and GitHub Release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(cat VERSION)"
+          tag="v${version}"
+          git push origin "HEAD:${{ github.ref_name }}"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "tag ${tag} already exists locally; refusing to double-publish" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "$tag" >/dev/null 2>&1; then
+            echo "tag ${tag} already exists on remote; refusing to double-publish" >&2
+            exit 1
+          fi
+          git tag -a "$tag" -m "CT2 ${version}"
+          git push origin "$tag"
+          awk -v heading="## [${version}] - " '
+            index($0, heading) == 1 { emit=1; next }
+            emit && /^## \[/ { exit }
+            emit { print }
+          ' CHANGELOG.md > release-notes.md
+          gh release create "$tag" --title "CT2 ${version}" --notes-file release-notes.md

@@ -1,0 +1,41 @@
+# Changelog
+
+All notable changes to CT2 are documented here. The format follows
+Keep a Changelog 1.1.0, and the project follows Semantic Versioning 2.0 with
+the pre-1.0 compatibility rules documented in `spec/versioning.md`.
+
+## [Unreleased]
+
+### Added
+
+### Changed
+
+### Fixed
+
+### Deprecated
+
+### Removed
+
+### Security
+
+## [0.2.0] - 2026-05-24
+
+### Added
+
+- Documented the release train, single version source, and SemVer policy.
+- Added release automation scaffolding for manifest synchronization, changelog
+  promotion, and GitHub Release creation.
+
+### Fixed
+
+- Sealed ticket baselines are snapshotted at seal time and can be backfilled
+  for legacy tickets.
+- Review lifecycle recovery and duration breaker safeguards are now covered by
+  local regression tests.
+
+## [0.1.0] - 2026-04-01
+
+### Added
+
+- Initial public CT2 protocol implementation with file-backed tickets,
+  dual-review sidecars, role skills, and local conformance checks.

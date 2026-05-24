@@ -42,6 +42,13 @@ bash ~/.ct2/install.sh
 source ~/.zshrc
 ```
 
+Pinned installs use release tags:
+
+```bash
+bash ~/.ct2/install.sh --version v0.2.0
+ct2-status --version
+```
+
 ### Initialize a project
 
 ```bash
@@ -208,6 +215,7 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-plan-audit [dir]` | Verify tickets in active/review/done states have plan evidence or plan-exempt reason |
 | `ct2-ticket-audit [dir]` | Audit per-ticket state, plan, review sidecar, and evidence readiness |
 | `ct2-role-eval [dir]` | Run fixed role-definition eval cases and record role regression results |
+| `ct2-release sync\|prepare ...` | Synchronize release metadata or prepare a SemVer release commit |
 | `ct2-vao-pilot [--report-file <path>]` | Run the local VAO phase-completion pilot and preserve runtime evidence |
 | `ct2-vao-self-verify [--run-checks]` | Measure VAO completion gates from the self-verification criteria |
 | `ct2-codex-goal ...` | Create, inspect, pause, resume, and clear CT2-local Codex goal metadata |
@@ -242,6 +250,26 @@ updating a copied command list.
 The unittest suite covers Codex goal scope/audit behavior, request-input
 fallbacks, fake-Codex preflight parsing, sidecar validation, `ct2-status`
 Codex metadata output, and plugin/skill contract shape.
+
+## Releases
+
+CT2 uses `VERSION` as the single source of truth. The Claude and Codex plugin
+manifests, installer version hint, changelog, tags, and GitHub Releases are
+checked against that version.
+
+```bash
+ct2-status --version
+ct2-release sync
+ct2-release prepare patch
+```
+
+Release notes live in [`CHANGELOG.md`](CHANGELOG.md). The compatibility and
+pre-1.0 rules are documented in [`spec/versioning.md`](spec/versioning.md).
+Stable installs should pin a tag:
+
+```bash
+bash install.sh --version v0.2.0
+```
 
 ## Agent Skills
 
@@ -296,6 +324,7 @@ Full protocol specifications are in [`spec/`](spec/):
 | [`spec/git-workflow.md`](spec/git-workflow.md) | Git branch, commit, PR, and merge lifecycle |
 | [`spec/codex-full-support-prd.md`](spec/codex-full-support-prd.md) | Product requirements for first-class Codex support |
 | [`spec/codex-runtime-contract.md`](spec/codex-runtime-contract.md) | Technical contract for Codex CLI, `/goal`, app-server, skills, MCP, and request-input integration |
+| [`spec/versioning.md`](spec/versioning.md) | SemVer, pre-1.0 compatibility rules, release flow, and installer pinning |
 
 ## Product Planning
 

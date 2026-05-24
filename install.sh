@@ -2,6 +2,7 @@
 # CT2 Installer — Single-command install for macOS.
 # Usage:
 #   bash install.sh
+#   bash install.sh --version v0.2.0
 #   curl -fsSL https://raw.githubusercontent.com/alohays/ct2/main/install.sh | bash
 #
 # What this does:
@@ -14,6 +15,7 @@ set -euo pipefail
 
 CT2_REPO_URL="https://github.com/alohays/ct2"
 CT2_HOME="${HOME}/.ct2"
+CT2_INSTALL_VERSION="0.2.0"
 SKILLS_SRC="${CT2_HOME}/claude-plugin/skills"
 SKILLS_DST="${HOME}/.claude/skills"
 CODEX_SKILLS_SRC="${CT2_HOME}/codex-plugin/skills"
@@ -28,6 +30,32 @@ NC='\033[0m'
 info()    { printf '%b\n' "${GREEN}[ct2]${NC} $*"; }
 warning() { printf '%b\n' "${YELLOW}[ct2 warn]${NC} $*"; }
 error()   { printf '%b\n' "${RED}[ct2 error]${NC} $*" >&2; }
+
+REQUESTED_REF=""
+POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --version)
+      if [[ $# -lt 2 ]]; then
+        error "--version requires a git ref such as v0.2.0 or main"
+        exit 1
+      fi
+      REQUESTED_REF="$2"
+      shift 2
+      ;;
+    --help|-h)
+      echo "Usage: bash install.sh [--version <tag-or-ref>]"
+      echo "  --version v0.2.0  Install a pinned CT2 release tag"
+      echo "  --version main    Install tip of main"
+      exit 0
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${POSITIONAL[@]+"${POSITIONAL[@]}"}"
 
 # ── Check dependencies ────────────────────────────────────────────────────────
 if ! command -v git &>/dev/null; then
@@ -54,6 +82,46 @@ if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)" 2
   exit 1
 fi
 
+resolve_latest_ref() {
+  python3 - "$CT2_REPO_URL" <<'PYEOF'
+import re
+import subprocess
+import sys
+
+repo = sys.argv[1]
+proc = subprocess.run(
+    ["git", "ls-remote", "--tags", "--refs", repo, "v*"],
+    text=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.DEVNULL,
+    check=False,
+)
+versions = []
+for line in proc.stdout.splitlines():
+    parts = line.split()
+    if len(parts) != 2:
+        continue
+    ref = parts[1].rsplit("/", 1)[-1]
+    match = re.fullmatch(r"v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", ref)
+    if match:
+        versions.append((tuple(int(part) for part in match.groups()), ref))
+if versions:
+    print(sorted(versions)[-1][1])
+PYEOF
+}
+
+if [[ -z "$REQUESTED_REF" ]]; then
+  REQUESTED_REF="$(resolve_latest_ref || true)"
+  if [[ -z "$REQUESTED_REF" ]]; then
+    REQUESTED_REF="main"
+    warning "No release tag found; installing main."
+  else
+    info "Installing latest stable CT2 release (${REQUESTED_REF}). Use --version main for tip-of-tree."
+  fi
+else
+  info "Installing CT2 ref ${REQUESTED_REF}."
+fi
+
 # ── Clone or update CT2 repo ──────────────────────────────────────────────────
 if [[ -d "$CT2_HOME/.git" ]]; then
   info "Updating existing CT2 installation at ${CT2_HOME}..."
@@ -63,9 +131,20 @@ if [[ -d "$CT2_HOME/.git" ]]; then
   # a live forge/lens loop still references the old version in its context.
   warning "If any CT2 sessions (forge, lens-cc, lens-cx) are running,"
   warning "stop them before this update to avoid mid-session semantic drift."
-  git -C "$CT2_HOME" pull --ff-only origin main || {
-    warning "git pull failed; your local installation may be ahead of remote."
+  git -C "$CT2_HOME" fetch --tags origin || {
+    warning "git fetch failed; your local installation may stay on its current ref."
   }
+  if [[ "$REQUESTED_REF" == "main" ]]; then
+    git -C "$CT2_HOME" checkout main >/dev/null 2>&1 || true
+    git -C "$CT2_HOME" pull --ff-only origin main || {
+      warning "git pull failed; your local installation may be ahead of remote."
+    }
+  else
+    git -C "$CT2_HOME" checkout "$REQUESTED_REF" || {
+      error "Unable to checkout ${REQUESTED_REF}. Check that the tag or branch exists."
+      exit 1
+    }
+  fi
 elif [[ -d "$CT2_HOME" ]]; then
   error "${CT2_HOME} exists but is not a CT2 git repository."
   error "Back up and remove it, then re-run install.sh:"
@@ -74,6 +153,12 @@ elif [[ -d "$CT2_HOME" ]]; then
 else
   info "Installing CT2 to ${CT2_HOME}..."
   git clone "$CT2_REPO_URL" "$CT2_HOME"
+  if [[ "$REQUESTED_REF" != "main" ]]; then
+    git -C "$CT2_HOME" checkout "$REQUESTED_REF" || {
+      error "Unable to checkout ${REQUESTED_REF}. Check that the tag or branch exists."
+      exit 1
+    }
+  fi
 fi
 
 # ── Symlink skills into ~/.claude/skills/ ─────────────────────────────────────

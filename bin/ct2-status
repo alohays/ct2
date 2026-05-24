@@ -10,20 +10,39 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 
+from _ct2_version import git_short_sha, plugin_manifest_paths, read_plugin_version, read_version, repo_root_from_file
+
 # ── Resolve flags / project dir ──────────────────────────────────────────────
 doctor_mode = False
+version_mode = False
 positionals = []
 for arg in sys.argv[1:]:
     if arg == "--doctor":
         doctor_mode = True
+    elif arg == "--version":
+        version_mode = True
     elif arg in ("-h", "--help"):
-        print("Usage: ct2-status [--doctor] [project-dir]")
+        print("Usage: ct2-status [--doctor] [--version] [project-dir]")
         sys.exit(0)
     else:
         positionals.append(arg)
 
 project_dir = Path(positionals[0]).resolve() if positionals else Path.cwd()
 ct2_dir = project_dir / ".ct2"
+repo_root = repo_root_from_file(__file__)
+
+if version_mode:
+    version = read_version(repo_root)
+    plugin_paths = plugin_manifest_paths(repo_root)
+    claude_version = read_plugin_version(plugin_paths[0])
+    codex_version = read_plugin_version(plugin_paths[1])
+    print(f"ct2 {version}")
+    print(f"install:         {repo_root}")
+    print(f"commit:          {git_short_sha(repo_root)}")
+    print(f"plugin (claude): {claude_version}")
+    print(f"plugin (codex):  {codex_version}")
+    print(f"protocol:        {version.protocol}")
+    sys.exit(0)
 
 if not ct2_dir.is_dir():
     print(f"ct2-status: .ct2/ not found in {project_dir}", file=sys.stderr)
