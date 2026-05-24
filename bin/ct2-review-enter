@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -30,6 +31,11 @@ def replace_frontmatter_value(text: str, key: str, value: str) -> str:
     if re.search(pattern, text, re.MULTILINE):
         return re.sub(pattern, rf"\g<1>{value}", text, count=1, flags=re.MULTILINE)
     return re.sub(r"^(---\n)", rf"\g<1>{key}: {value}\n", text, count=1)
+
+
+def mirror_issue(project_dir: Path, ticket: Path) -> None:
+    helper = Path(__file__).resolve().parent / "ct2-issue-mirror"
+    subprocess.run([sys.executable, str(helper), str(ticket), str(project_dir)], cwd=str(project_dir), check=False)
 
 
 def main() -> int:
@@ -70,6 +76,7 @@ def main() -> int:
     atomic_write_text(ct2_dir, ct2_dir / ".meta" / f"{ticket_id}.in-review", now() + "\n", "review-enter-stamp-")
     with (ct2_dir / "logs" / "ct2-forge.log").open("a", encoding="utf-8") as log:
         log.write(f"[{now()}] submit ticket={ticket_id} -> in-review\n")
+    mirror_issue(project_dir, dest)
 
     print(f"ct2-review-enter: {dest.name} -> in-review")
     return 0

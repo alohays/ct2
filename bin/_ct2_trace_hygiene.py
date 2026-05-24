@@ -182,6 +182,13 @@ def summary_from_context(context: str, title: str) -> str:
     return paragraph or title
 
 
+def issue_close_line(fm: dict[str, object]) -> str:
+    issue = str(fm.get("issue", "") or "").strip().strip('"')
+    if issue in {"", "null", "~"}:
+        return ""
+    return f"Closes #{issue}"
+
+
 def render_clean_pr_body(ticket_path: Path, ticket_file: str) -> str:
     text = ticket_path.read_text(encoding="utf-8")
     fm = read_frontmatter(ticket_path)
@@ -194,27 +201,37 @@ def render_clean_pr_body(ticket_path: Path, ticket_file: str) -> str:
     if not acs:
         acs = ["- [x] Implementation is ready for review."]
     ticket_id = ticket_id_from_name(ticket_path)
-    parts = [
-        summary_from_context(section(body, "Context"), title),
-        "",
-        "## What changed",
-        "",
-        *reqs,
-        "",
-        "## Acceptance criteria",
-        "",
-        *acs,
-        "",
-        hidden_ticket_comment(ticket_id),
-        "",
-    ]
+    parts = []
+    close_line = issue_close_line(fm)
+    if close_line:
+        parts.extend([close_line, ""])
+    parts.extend(
+        [
+            summary_from_context(section(body, "Context"), title),
+            "",
+            "## What changed",
+            "",
+            *reqs,
+            "",
+            "## Acceptance criteria",
+            "",
+            *acs,
+            "",
+            hidden_ticket_comment(ticket_id),
+            "",
+        ]
+    )
     return "\n".join(parts)
 
 
 def render_legacy_pr_body(ticket_path: Path, ticket_file: str) -> str:
+    fm = read_frontmatter(ticket_path)
+    close_line = issue_close_line(fm)
     body = strip_frontmatter(ticket_path.read_text(encoding="utf-8")).strip()
+    prefix = f"{close_line}\n\n" if close_line else ""
     return (
-        f"Ticket: `.ct2/in-review/{ticket_file}` (see CT2 kanban)\n\n"
+        prefix
+        + f"Ticket: `.ct2/in-review/{ticket_file}` (see CT2 kanban)\n\n"
         f"{body}\n\n"
         "---\n"
         "Opened by ct2-forge via ct2-git-submit.\n"

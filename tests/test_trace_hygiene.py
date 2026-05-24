@@ -126,6 +126,32 @@ class TraceHygieneTest(unittest.TestCase):
         self.assertIn("## What changed", body.stdout)
         self.assertIn("## Acceptance criteria", body.stdout)
 
+    def test_pr_body_links_mirrored_github_issue(self):
+        project = self.make_git_project()
+        ticket = project / ".ct2" / "in-progress" / "001-parse-nested-config.md"
+        write_ticket(ticket)
+        ticket.write_text(
+            ticket.read_text(encoding="utf-8").replace("pr: null\n", "pr: null\nissue: 142\n"),
+            encoding="utf-8",
+        )
+
+        body = run_cmd(
+            [
+                PYTHON,
+                REPO_ROOT / "bin" / "_ct2_trace_hygiene.py",
+                "pr-body",
+                "--ticket",
+                ticket,
+                "--ct2-dir",
+                project / ".ct2",
+                "--ticket-file",
+                ticket.name,
+            ]
+        )
+
+        self.assertEqual(body.returncode, 0, body.stderr)
+        self.assertTrue(body.stdout.startswith("Closes #142\n\n"), body.stdout)
+
     def test_missing_trace_config_uses_legacy_pr_body(self):
         project = self.make_git_project()
         self.strip_trace_hygiene(project)

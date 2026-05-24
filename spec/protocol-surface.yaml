@@ -74,6 +74,43 @@ entries:
     stability: stable
     since: 0.1
     owner: ct2-forge
+  - id: ticket.frontmatter.issue
+    kind: ticket-frontmatter-field
+    field: issue
+    type: integer-or-null
+    required: false
+    default: null
+    stability: stable
+    since: 0.2
+    owner: ct2-issue-mirror
+  - id: ticket.frontmatter.issue-url
+    kind: ticket-frontmatter-field
+    field: issue-url
+    type: string-or-null
+    required: false
+    default: null
+    stability: stable
+    since: 0.2
+    owner: ct2-issue-mirror
+  - id: ticket.frontmatter.issue-source
+    kind: ticket-frontmatter-field
+    field: issue-source
+    type: enum-or-null
+    values: [created, adopted]
+    required: false
+    default: null
+    stability: stable
+    since: 0.2
+    owner: ct2-issue-mirror
+  - id: ticket.frontmatter.private
+    kind: ticket-frontmatter-field
+    field: private
+    type: boolean
+    required: false
+    default: false
+    stability: stable
+    since: 0.2
+    owner: ct2-helm
   - id: ticket.frontmatter.review-round
     kind: ticket-frontmatter-field
     field: review-round
@@ -372,6 +409,80 @@ entries:
     values: [hidden-html, visible, none]
     required: false
     default: hidden-html
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.github_integration
+    kind: harness-yaml-key
+    field: github_integration
+    type: object
+    required: false
+    default: {enabled: false}
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.github_integration.enabled
+    kind: harness-yaml-key
+    field: enabled
+    type: boolean
+    required: false
+    default: true
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.github_integration.issue_mirror
+    kind: harness-yaml-key
+    field: issue_mirror
+    type: enum
+    values: [off, pr-and-issue]
+    required: false
+    default: pr-and-issue
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.github_integration.issue_labels_prefix
+    kind: harness-yaml-key
+    field: issue_labels_prefix
+    type: string
+    required: false
+    default: "ct2/"
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.github_integration.issue_create_on_seal
+    kind: harness-yaml-key
+    field: issue_create_on_seal
+    type: boolean
+    required: false
+    default: true
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.github_integration.pr_closes_issue
+    kind: harness-yaml-key
+    field: pr_closes_issue
+    type: boolean
+    required: false
+    default: true
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.github_integration.fallback_mode
+    kind: harness-yaml-key
+    field: fallback_mode
+    type: enum
+    values: [queue, skip]
+    required: false
+    default: queue
+    stability: stable
+    since: 0.2
+    owner: operator
+  - id: config.harness.github_integration.graphql_token_env
+    kind: harness-yaml-key
+    field: graphql_token_env
+    type: string
+    required: false
+    default: GH_TOKEN
     stability: stable
     since: 0.2
     owner: operator

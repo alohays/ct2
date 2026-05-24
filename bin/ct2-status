@@ -7,6 +7,7 @@ import os
 import re
 import time
 import json
+import subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -229,6 +230,34 @@ def protocol_summary():
         print(f"  status:  invalid")
         print(f"  action:  inspect .ct2/.protocol-version ({exc})")
 
+def github_summary():
+    helper = repo_root / "bin" / "ct2-issue-reconcile"
+    if not helper.exists():
+        return
+    proc = subprocess.run(
+        [sys.executable, str(helper), "--json", str(project_dir)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    print("GITHUB")
+    if proc.returncode == 1:
+        print(f"  issue mirror: unavailable ({proc.stderr.strip() or 'error'})")
+        return
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        print("  issue mirror: unavailable (invalid helper output)")
+        return
+    status = data.get("status", "?")
+    findings = data.get("findings") if isinstance(data.get("findings"), list) else []
+    print(f"  issue mirror: {status}, drift={len(findings)}")
+    for finding in findings[:3]:
+        print(f"    - {finding.get('ticket')} issue #{finding.get('issue')}: {finding.get('kind')}")
+    if len(findings) > 3:
+        print(f"    - ... {len(findings) - 3} more")
+
 def inbox_summary():
     inbox_dir = ct2_dir / "inbox"
     if not inbox_dir.is_dir():
@@ -380,6 +409,8 @@ print(SEP)
 workflow_summary()
 print(SEP)
 protocol_summary()
+print(SEP)
+github_summary()
 print(SEP)
 print("INBOX")
 inbox_summary()

@@ -199,6 +199,10 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-review-enter <ticket>` | Move a completed ticket into `in-review/` and stamp review entry time |
 | `ct2-review-watchdog [dir]` | Escalate tickets whose reviewer sidecars exceed `max_review_duration_min` |
 | `ct2-sidecar-publish <tmp> <dest>` | Publish a review sidecar and fail loudly on immutable-path collision |
+| `ct2-issue-mirror <ticket>` | Create or update the GitHub Issue mirror for a CT2 ticket |
+| `ct2-issue-adopt <issue>` | Adopt an existing GitHub Issue as a CT2 draft ticket |
+| `ct2-issue-reconcile [dir]` | Report drift between CT2 tickets and their mirrored GitHub Issues |
+| `ct2-issue-bootstrap-labels [dir]` | Create or update CT2 GitHub Issue column labels |
 | `ct2-duration-check [dir]` | Apply the in-progress duration breaker and escalate repeated bounces |
 | `ct2-sealed-baseline ...` | Internal. Write/check immutable sealed requirements and AC snapshots |
 | `ct2-revise <ticket>` | Archive past sidecars and return an escalated/rejected ticket to `draft/` |
@@ -286,6 +290,32 @@ with only a hidden mapping comment verify cleanly:
 ct2-trace-lint v1 - host-repo cleanliness audit
 No CT2 trace findings.
 ```
+
+## GitHub Issue Mirror
+
+Fresh projects include a fail-soft GitHub Issue mirror. `ct2-seal` creates one
+issue per ticket when `gh` is available, stores `issue:`, `issue-url:`, and
+`issue-source:` in ticket frontmatter, and every later state transition updates
+one `ct2/<state>` label plus the managed status block:
+
+```markdown
+<!-- ct2-ticket-status:begin -->
+**Status:** `in-review` - round 1 - verdict `pending`
+...
+<!-- ct2-ticket-status:end -->
+```
+
+The ticket file remains the source of truth. If `gh` is unavailable, CT2 queues
+`.ct2/.meta/{id}.issue-mirror-pending.json` and retries on the next mirror call.
+
+```bash
+ct2-issue-bootstrap-labels
+ct2-issue-adopt 142
+ct2-issue-reconcile
+```
+
+PR bodies include `Closes #<issue>` when a ticket is linked, so GitHub can close
+the mirrored issue when the PR merges.
 
 ## Releases
 

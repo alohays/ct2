@@ -137,9 +137,12 @@ user's own workflow and can surprise external OSS reviewers.
 ## PR Body Convention
 
 Clean default PR bodies contain a short summary, visible requirements, visible
-acceptance criteria, and one hidden mapping comment:
+acceptance criteria, an optional `Closes #<issue>` line when the ticket is
+mirrored to a GitHub Issue, and one hidden mapping comment:
 
 ```markdown
+Closes #123
+
 <summary>
 
 ## What changed

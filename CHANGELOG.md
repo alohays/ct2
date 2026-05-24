@@ -16,6 +16,9 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 - Added the host-repo cleanliness contract and `ct2-trace-lint` verifier with
   JSON output, baseline suppression, fix suggestions, PR checks, and synthetic
   CI coverage.
+- Added the fail-soft GitHub Issue mirror (`ct2-issue-mirror`,
+  `ct2-issue-adopt`, `ct2-issue-reconcile`, and label bootstrap) with ticket
+  frontmatter links and lifecycle label/status-block updates.
 
 ### Changed
 

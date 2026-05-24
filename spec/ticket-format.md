@@ -29,6 +29,9 @@ updated: 2026-04-13T14:30:00Z
 sealed: null             # ISO8601 timestamp; set on draft→backlog by ct2-seal; reset to null by ct2-revise
 branch: null             # Git branch; ct2-git-start derives and records it
 pr: null                 # PR URL; written by ct2-git-submit, reset to null by ct2-revise
+issue: null              # GitHub Issue number; created by ct2-seal or ct2-issue-adopt
+issue-url: null          # GitHub Issue URL; written by the issue mirror
+issue-source: null       # created | adopted
 review-round: 0          # Current review round; incremented by forge on each rejected→in-progress pickup
 duration-bounce-count: 0 # Consecutive duration circuit-breaker bounces since last revise
 total-attempts: 0        # Monotonic implementation-attempt counter; survives ct2-revise
@@ -75,6 +78,7 @@ marked below, bringing the ticket back to its `draft/` shape.
 | `review-status.*`   | reconciler (automatic updates); ct2-revise (reset to `pending` / `null`)          |
 | `verdict`           | reconciler (automatic verdicts); ct2-review-watchdog (`escalated` for missing-review SLA breach); ct2-revise (reset to `pending`) |
 | `branch`, `pr`      | ct2-forge (via `ct2-git-start` / `ct2-git-submit`); `ct2-revise` resets `pr` to `null` |
+| `issue`, `issue-url`, `issue-source` | `ct2-issue-mirror` (`created`) or `ct2-issue-adopt` (`adopted`); preserved by `ct2-revise` |
 | `updated`           | any actor that modifies the ticket                                                |
 
 ## Ticket Body Structure

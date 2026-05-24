@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+"""Create or update the GitHub Issue mirror for a CT2 ticket."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from _ct2_issue import find_ticket, mirror_ticket
+from _ct2_protocol import assert_compatible as assert_protocol_compatible
+from _ct2_vao import ensure_ct2
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Mirror a CT2 ticket onto its GitHub Issue")
+    parser.add_argument("ticket", help="Ticket path, id, stem, or filename")
+    parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument("--create", action="store_true", help="Create an issue when the ticket has no issue field")
+    parser.add_argument("--close", action="store_true", help="Close the issue after updating it")
+    parser.add_argument("--comment", help="Optional issue comment to post after updating")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    project_dir = Path(args.project_dir).resolve()
+    try:
+        ct2_dir = ensure_ct2(project_dir)
+        assert_protocol_compatible(project_dir)
+        ticket = find_ticket(ct2_dir, args.ticket)
+        if ticket is None:
+            raise SystemExit(f"ct2-issue-mirror: ticket not found: {args.ticket}")
+        result = mirror_ticket(project_dir, ticket, create=args.create, close=args.close, comment=args.comment)
+    except SystemExit as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"ct2-issue-mirror: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    elif result.get("status") == "mirrored":
+        print(f"ct2-issue-mirror: {result['ticket']} -> issue #{result['issue']}")
+    elif result.get("status") == "queued":
+        print(f"ct2-issue-mirror: {result['ticket']} queued for retry")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

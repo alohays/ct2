@@ -168,5 +168,8 @@ fi
 # ── Also drop any stale circuit-breaker stamp ────────────────────────────────
 rm -f "${CT2_DIR}/.meta/${TICKET_ID}.started"
 
+python3 "${SCRIPT_DIR}/ct2-issue-mirror" "$DRAFT_DEST" "$PWD" --comment "Ticket revised and returned to draft." >/dev/null || \
+  echo "ct2-revise: warning — issue mirror failed; ticket remains in draft" >&2
+
 echo "✓ ${TICKET_FILE} is now in draft/ with reset frontmatter."
 echo "  Edit the ticket as needed, then run 'ct2-seal ${TICKET_ID}' to re-enter the pipeline."

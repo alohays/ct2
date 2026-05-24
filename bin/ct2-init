@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ct2-init — Initialize the CT2 protocol ledger in a project directory.
-# Usage: ct2-init [--repair] [--install-trace-hook] [project-dir]
+# Usage: ct2-init [--repair] [--install-trace-hook] [--bootstrap-issue-labels] [project-dir]
 # If project-dir is omitted, uses the current working directory.
 
 set -euo pipefail
@@ -10,15 +10,18 @@ CT2_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # ── Parse flags ───────────────────────────────────────────────────────────────
 REPAIR=false
 INSTALL_TRACE_HOOK=false
+BOOTSTRAP_ISSUE_LABELS=false
 POSITIONAL=()
 for arg in "$@"; do
   case "$arg" in
     --repair) REPAIR=true ;;
     --install-trace-hook) INSTALL_TRACE_HOOK=true ;;
+    --bootstrap-issue-labels) BOOTSTRAP_ISSUE_LABELS=true ;;
     --help|-h)
-      echo "Usage: ct2-init [--repair] [--install-trace-hook] [project-dir]"
-      echo "  --repair              Fill missing directories and config files without overwriting existing state"
-      echo "  --install-trace-hook  Install a local pre-push hook that runs ct2-trace-lint --strict"
+      echo "Usage: ct2-init [--repair] [--install-trace-hook] [--bootstrap-issue-labels] [project-dir]"
+      echo "  --repair                  Fill missing directories and config files without overwriting existing state"
+      echo "  --install-trace-hook      Install a local pre-push hook that runs ct2-trace-lint --strict"
+      echo "  --bootstrap-issue-labels  Create/update CT2 GitHub Issue column labels via gh"
       exit 0 ;;
     *) POSITIONAL+=("$arg") ;;
   esac
@@ -181,6 +184,12 @@ ROOT="\$(git rev-parse --show-toplevel)"
 if command -v ct2-trace-lint >/dev/null 2>&1; then
   exec ct2-trace-lint --strict "\$ROOT"
 fi
+
+if [[ "$BOOTSTRAP_ISSUE_LABELS" == true ]]; then
+  if ! python3 "${CT2_REPO_DIR}/bin/ct2-issue-bootstrap-labels" "$PROJECT_DIR"; then
+    echo "ct2-init: warning — GitHub Issue label bootstrap failed; continuing" >&2
+  fi
+fi
 exec "${CT2_REPO_DIR}/bin/ct2-trace-lint" --strict "\$ROOT"
 EOF
       chmod +x "$HOOK_TMP"
@@ -244,5 +253,6 @@ echo "  5. Start the reviewer loop:      claude → /ct2:lens-cc"
 echo "  6. Start the Codex reviewer:     ct2-lens-cx"
 echo "  7. Check Codex support:          ct2-codex-doctor"
 echo "  8. Verify host cleanliness:      ct2-trace-lint --strict"
+echo "  9. Bootstrap issue labels:       ct2-issue-bootstrap-labels"
 echo ""
 echo "Run 'ct2-status' at any time to check the current state."
