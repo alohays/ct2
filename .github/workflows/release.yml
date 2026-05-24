@@ -61,7 +61,15 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -x bin/ct2-trace-lint ]]; then
-            bin/ct2-trace-lint --strict .
+            host="$(mktemp -d)"
+            git -C "$host" init
+            git -C "$host" config user.name "CT2 Release Test"
+            git -C "$host" config user.email "ct2-release@example.invalid"
+            printf '# Release host cleanliness\n' > "$host/README.md"
+            git -C "$host" add README.md
+            git -C "$host" commit -m "init"
+            bash "$GITHUB_WORKSPACE/bin/ct2-init" "$host"
+            "$GITHUB_WORKSPACE/bin/ct2-trace-lint" --strict "$host"
           fi
 
       - name: Publish tag and GitHub Release
