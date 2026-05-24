@@ -35,7 +35,8 @@ The following CT2-identifiable strings can appear by design when the
 corresponding GitHub integration is enabled:
 
 - PR review publication markers:
-  `<!-- ct2-merge-ready: ... -->` and `<!-- ct2-reconciler -->`.
+  `<!-- ct2-review: ... -->`, `<!-- ct2-merge-ready: ... -->`, and
+  `<!-- ct2-reconciler -->`.
 - GitHub Issue mirror status blocks:
   `<!-- ct2-ticket-status:begin -->` through
   `<!-- ct2-ticket-status:end -->`.

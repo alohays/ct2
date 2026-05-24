@@ -41,6 +41,38 @@ Sidecars are specified in `spec/sidecar-format.md`. They remain immutable after
 creation. A re-review after rework produces a new file under an incremented
 round number.
 
+## PR Thread Publication
+
+When `review_publication.mode: pr-and-sidecar`, each lens publishes its sidecar
+to the GitHub PR thread with `ct2-pr-review`. The sidecar file remains the
+authoritative verdict store; the PR review is the human-readable mirror.
+
+`ct2-pr-review` maps `verdict: approved` to a GitHub approving review when
+`approval_maps_to_pr_review: true`, and maps `verdict: rejected` to a
+changes-requested review. Sidecar issue blocks that include `file:` and `line:`
+metadata are sent as inline review comments when `inline_comments: true`.
+
+After a lens determines its current-round review is merge-ready, it runs:
+
+```bash
+ct2-pr-merge-ready {ticket-id} --reviewer lens-cc
+ct2-pr-merge-ready {ticket-id} --reviewer lens-cx
+```
+
+The command posts an idempotent structured marker:
+
+```markdown
+## CT2 Merge-Ready Verdict
+<!-- ct2-merge-ready: lens-cc round=0 -->
+verdict: approved
+remaining-blockers: 0
+```
+
+The reconciler still computes the AND of sidecar verdicts. On terminal
+transition it posts one `<!-- ct2-reconciler -->` PR comment when publication is
+enabled. If `gh` is missing, unauthenticated, or rate-limited, all PR publication
+helpers fall back to `sidecar-only`; local CT2 state transitions continue.
+
 ## Reconciler Protocol
 
 The reconciler is the one-shot `ct2-reconcile` command. After writing a sidecar,

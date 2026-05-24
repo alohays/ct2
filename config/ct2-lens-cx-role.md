@@ -148,3 +148,25 @@ Write `reviews/{id}-cx-r{n}.md` independently to prevent anchoring bias.
 - Place tickets into `done/` (reconciler handles this)
 
 </constraints>
+
+<workflow id="publish-review">
+
+## Publish Review
+
+After writing your immutable sidecar, run:
+
+```bash
+ct2-pr-review {ticket-id} .ct2/reviews/{ticket-id}-cx-r{round}.md
+```
+
+If the sidecar verdict is `approved`, then run:
+
+```bash
+ct2-pr-merge-ready {ticket-id} --reviewer lens-cx
+```
+
+Both commands are fail-soft. If they report `sidecar-only`, continue with the
+normal `ct2-reconcile {ticket-id} {round}` path; the sidecar remains
+authoritative.
+
+</workflow>

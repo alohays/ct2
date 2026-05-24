@@ -12,6 +12,15 @@ issue: null
 issue-url: null
 issue-source: null
 review-round: 0
+pr-review:
+  lens-cc:
+    last-round: null
+    review-id: null
+    merge-ready-comment-id: null
+  lens-cx:
+    last-round: null
+    review-id: null
+    merge-ready-comment-id: null
 plan-exempt: null          # Optional reason; required only when no plan evidence is expected
 estimated-scope: small      # small | medium | large
 touched-files:

@@ -19,6 +19,9 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 - Added the fail-soft GitHub Issue mirror (`ct2-issue-mirror`,
   `ct2-issue-adopt`, `ct2-issue-reconcile`, and label bootstrap) with ticket
   frontmatter links and lifecycle label/status-block updates.
+- Added PR-thread review publication helpers (`ct2-pr-review`,
+  `ct2-pr-merge-ready`, `ct2-pr-respond`) that mirror sidecars to GitHub PR
+  reviews, merge-ready markers, response TODOs, and reconciler summary comments.
 
 ### Changed
 

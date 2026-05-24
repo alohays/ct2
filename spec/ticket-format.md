@@ -32,6 +32,15 @@ pr: null                 # PR URL; written by ct2-git-submit, reset to null by c
 issue: null              # GitHub Issue number; created by ct2-seal or ct2-issue-adopt
 issue-url: null          # GitHub Issue URL; written by the issue mirror
 issue-source: null       # created | adopted
+pr-review:               # GitHub PR review mirror metadata, reserved for PR publication helpers
+  lens-cc:
+    last-round: null
+    review-id: null
+    merge-ready-comment-id: null
+  lens-cx:
+    last-round: null
+    review-id: null
+    merge-ready-comment-id: null
 review-round: 0          # Current review round; incremented by forge on each rejected→in-progress pickup
 duration-bounce-count: 0 # Consecutive duration circuit-breaker bounces since last revise
 total-attempts: 0        # Monotonic implementation-attempt counter; survives ct2-revise
@@ -79,6 +88,7 @@ marked below, bringing the ticket back to its `draft/` shape.
 | `verdict`           | reconciler (automatic verdicts); ct2-review-watchdog (`escalated` for missing-review SLA breach); ct2-revise (reset to `pending`) |
 | `branch`, `pr`      | ct2-forge (via `ct2-git-start` / `ct2-git-submit`); `ct2-revise` resets `pr` to `null` |
 | `issue`, `issue-url`, `issue-source` | `ct2-issue-mirror` (`created`) or `ct2-issue-adopt` (`adopted`); preserved by `ct2-revise` |
+| `pr-review.*`      | Reserved for PR publication helpers (`ct2-pr-review`, `ct2-pr-merge-ready`) when GitHub review publication is enabled |
 | `updated`           | any actor that modifies the ticket                                                |
 
 ## Ticket Body Structure

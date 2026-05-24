@@ -178,6 +178,15 @@ def mirror_issue(project_dir: Path, ticket: Path, close: bool = False) -> None:
     subprocess.run(args, cwd=str(project_dir), check=False)
 
 
+def pr_reconciler_summary(project_dir: Path, ticket: Path, verdict: str) -> None:
+    helper = Path(__file__).resolve().parent / "ct2-pr-merge-ready"
+    subprocess.run(
+        [sys.executable, str(helper), str(ticket), str(project_dir), "--reconciler-summary", "--verdict", verdict],
+        cwd=str(project_dir),
+        check=False,
+    )
+
+
 def reconcile_one(project_dir: Path, ticket_id: str, round_num: str, actor: str) -> int:
     ct2_dir = project_dir / ".ct2"
     if not ct2_dir.is_dir():
@@ -273,6 +282,7 @@ def reconcile_one(project_dir: Path, ticket_id: str, round_num: str, actor: str)
             send_escalation(ct2_dir, actor, ticket.name, round_num, max_review_rounds(ct2_dir))
         git_finalize(project_dir, final_verdict, ticket_id)
         mirror_issue(project_dir, dest, close=(dest_state == "done"))
+        pr_reconciler_summary(project_dir, dest, final_verdict)
         return 0
     finally:
         if lock is not None:

@@ -30,6 +30,9 @@ not write review sidecars, and do not approve your own work.
    priority and sealed timestamp.
 3. Run `ct2-pickup` to move exactly one ticket to `.ct2/in-progress/` under
    the lifecycle lock, then run `ct2-git-start`.
+   If the ticket came from `.ct2/rejected/`, run `ct2-pr-respond {ticket}` to
+   materialize any unresolved PR review comments into `.ct2/.meta/` before
+   planning the rework.
 4. Run `ct2-duration-check` each loop before continuing work on an
    `in-progress/` ticket; obey backlog/escalated moves produced by the helper.
 5. Read the whole ticket. If the ticket is ambiguous in a way requiring user

@@ -58,6 +58,25 @@ The body is human-readable markdown. It must include these headings:
 The reconciler does not parse the body. Reviewers use it to explain evidence,
 blocking issues, warnings, and remediation.
 
+### Optional PR Inline Fields
+
+`ct2-pr-review` recognizes optional metadata at the top of an issue block:
+
+```markdown
+### [BLOCKING] Missing input validation
+file: api/handlers/upload.go
+line: 142
+suggestion: |
+  if size > maxUploadBytes:
+      raise ValueError("payload too large")
+
+The handler must reject oversized payloads before processing.
+```
+
+When `review_publication.inline_comments: true`, `file:` and `line:` cause the
+block to be mirrored as an inline GitHub PR review comment. `suggestion:` is
+optional and is wrapped in a GitHub suggestion block when present.
+
 ## Immutability
 
 Sidecars are immutable after creation. A re-review writes a new sidecar for a
