@@ -13,6 +13,9 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 - Added `ct2-migrate-0.1-0.2`, `ct2-migrate-0.2-0.3`, and
   `ct2-protocol-audit`.
 - Added `trace_hygiene` config for host-clean branch names and PR bodies.
+- Added the host-repo cleanliness contract and `ct2-trace-lint` verifier with
+  JSON output, baseline suppression, fix suggestions, PR checks, and synthetic
+  CI coverage.
 
 ### Changed
 

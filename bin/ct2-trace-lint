@@ -1,0 +1,405 @@
+#!/usr/bin/env python3
+"""Audit a host repository for CT2-visible trace leakage."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+import _ct2_trace_patterns as patterns
+
+
+DEFAULT_SINCE = "30 days ago"
+
+
+class TraceLintError(RuntimeError):
+    pass
+
+
+def run_cmd(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
+    proc = subprocess.run(
+        args,
+        cwd=str(cwd),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if check and proc.returncode != 0:
+        detail = proc.stderr.strip() or proc.stdout.strip() or "command failed"
+        raise TraceLintError(f"{' '.join(args)}: {detail}")
+    return proc
+
+
+def git(repo: Path, args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+    return run_cmd(["git", "-C", str(repo), *args], repo, check=check)
+
+
+def git_root(path: Path) -> Path:
+    proc = run_cmd(["git", "-C", str(path), "rev-parse", "--show-toplevel"], path, check=False)
+    if proc.returncode != 0:
+        raise TraceLintError(f"not a git repository: {path}")
+    return Path(proc.stdout.strip()).resolve()
+
+
+def is_range(value: str) -> bool:
+    return ".." in value or value.endswith("^!")
+
+
+def is_git_ref(repo: Path, value: str) -> bool:
+    proc = git(repo, ["rev-parse", "--verify", "--quiet", f"{value}^{{commit}}"], check=False)
+    return proc.returncode == 0
+
+
+def resolve_target(raw: str | None) -> tuple[Path, str | None]:
+    if raw and is_range(raw):
+        return git_root(Path.cwd()), raw
+    if raw:
+        candidate = Path(raw).expanduser()
+        if candidate.exists():
+            return git_root(candidate), None
+        return git_root(Path.cwd()), raw
+    return git_root(Path.cwd()), None
+
+
+def commit_range_args(repo: Path, range_spec: str | None, since: str | None) -> tuple[list[str], str]:
+    if range_spec:
+        return [range_spec], range_spec
+    if since:
+        if is_git_ref(repo, since):
+            return [f"{since}..HEAD"], f"{since}..HEAD"
+        return ["--since", since], f"since {since}"
+    return ["--since", DEFAULT_SINCE], f"since {DEFAULT_SINCE}"
+
+
+def first_line_number(text: str, match_start: int) -> int:
+    return text.count("\n", 0, match_start) + 1
+
+
+def compact_match(value: str) -> str:
+    return " ".join(value.split())[:160]
+
+
+def make_finding(category: str, **values: object) -> dict[str, Any]:
+    meta = patterns.CATEGORY_DEFINITIONS[category]
+    finding: dict[str, Any] = {
+        "category": category,
+        "severity": meta["severity"],
+        "surface": meta["surface"],
+        "message": meta["message"],
+    }
+    for key in ("ref", "path", "line", "match"):
+        value = values.get(key)
+        if value not in (None, ""):
+            finding[key] = value
+    finding["fix"] = patterns.format_fix(category, **values)
+    if values.get("fingerprint_match") is not None:
+        finding["_fingerprint_match"] = str(values["fingerprint_match"])
+    finding["fingerprint"] = patterns.finding_fingerprint(finding)
+    finding.pop("_fingerprint_match", None)
+    return finding
+
+
+def add_match(findings: list[dict[str, Any]], category: str, match: object, **values: object) -> None:
+    text = match.group(0) if hasattr(match, "group") else str(match)
+    findings.append(make_finding(category, match=compact_match(text), fingerprint_match=text, **values))
+
+
+def iter_commits(repo: Path, range_args: list[str]) -> list[tuple[str, str, str, str]]:
+    fmt = "%x1e%H%x00%h%x00%s%x00%b"
+    proc = git(repo, ["log", f"--format={fmt}", *range_args], check=False)
+    if proc.returncode != 0:
+        raise TraceLintError(proc.stderr.strip() or "git log failed")
+    commits = []
+    for record in proc.stdout.split("\x1e"):
+        if not record.strip():
+            continue
+        parts = record.rstrip("\n").split("\x00", 3)
+        if len(parts) != 4:
+            continue
+        commits.append((parts[0], parts[1], parts[2], parts[3]))
+    return commits
+
+
+def scan_commits(repo: Path, range_args: list[str], findings: list[dict[str, Any]]) -> None:
+    for _sha, short, subject, body in iter_commits(repo, range_args):
+        match = patterns.COMMIT_SCOPE_TICKET_RE.search(subject)
+        if match:
+            add_match(findings, "commit-scope-ticket-id", match, ref=short)
+        match = patterns.COMMIT_CT2_PATH_RE.search(body)
+        if match:
+            add_match(findings, "commit-trailer-ct2-path", match, ref=short)
+        match = patterns.STRUCTURED_TRAILER_RE.search(body)
+        if match:
+            add_match(findings, "commit-trailer-structured-uninvited", match, ref=short)
+
+
+def branch_names(repo: Path) -> list[str]:
+    proc = git(repo, ["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"], check=False)
+    if proc.returncode != 0:
+        return []
+    names = []
+    for line in proc.stdout.splitlines():
+        name = line.strip()
+        if not name or name.endswith("/HEAD"):
+            continue
+        names.append(name)
+    return sorted(set(names))
+
+
+def scan_branch_name(findings: list[dict[str, Any]], name: str, ref: str | None = None) -> None:
+    match = patterns.BRANCH_TICKET_ID_RE.search(name)
+    if match:
+        add_match(findings, "branch-name-ticket-id", match, ref=ref or name, path=name)
+
+
+def scan_branches(repo: Path, findings: list[dict[str, Any]]) -> None:
+    for name in branch_names(repo):
+        scan_branch_name(findings, name)
+
+
+def tracked_files(repo: Path) -> list[str]:
+    proc = git(repo, ["ls-files", "-z"], check=False)
+    if proc.returncode != 0:
+        return []
+    return [item for item in proc.stdout.split("\0") if item]
+
+
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors="ignore")
+
+
+def has_hook_policy(repo: Path) -> bool:
+    return (repo / "OWNERS").exists() or (repo / ".github" / "CODEOWNERS").exists()
+
+
+def scan_file_content(repo: Path, rel: str, findings: list[dict[str, Any]]) -> None:
+    path = repo / rel
+    if not path.is_file():
+        return
+    basename = path.name
+    if basename in {"AGENTS.md", "CLAUDE.md"}:
+        text = read_text(path)
+        match = patterns.AGENT_INTERNAL_RE.search(text)
+        if match:
+            findings.append(
+                make_finding(
+                    "agents-md-mentions-ct2-internal",
+                    path=rel,
+                    line=first_line_number(text, match.start()),
+                    match=compact_match(match.group(0)),
+                )
+            )
+    if rel.startswith(".github/workflows/") and rel.endswith((".yml", ".yaml")):
+        text = read_text(path)
+        match = patterns.CI_CT2_REFERENCE_RE.search(text)
+        if match:
+            findings.append(
+                make_finding(
+                    "ci-workflow-references-ct2",
+                    path=rel,
+                    line=first_line_number(text, match.start()),
+                    match=compact_match(match.group(0)),
+                )
+            )
+
+
+def has_ct2_ignore(repo: Path) -> bool:
+    candidates = [repo / ".gitignore"]
+    common = git(repo, ["rev-parse", "--git-common-dir"], check=False)
+    if common.returncode == 0:
+        git_dir = Path(common.stdout.strip())
+        if not git_dir.is_absolute():
+            git_dir = repo / git_dir
+        candidates.append(git_dir / "info" / "exclude")
+    for path in candidates:
+        if not path.exists():
+            continue
+        for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line in {".ct2", ".ct2/", "/.ct2", "/.ct2/"}:
+                return True
+    return False
+
+
+def scan_tracked_files(repo: Path, findings: list[dict[str, Any]]) -> None:
+    hook_policy = has_hook_policy(repo)
+    for rel in tracked_files(repo):
+        if rel == ".ct2" or rel.startswith(".ct2/"):
+            findings.append(make_finding("tracked-ct2-dir", path=rel, match=rel))
+        if patterns.TMP_LEAK_PATH_RE.search(rel):
+            findings.append(make_finding("tmp-leakage", path=rel, match=rel))
+        if patterns.HOOK_PATH_RE.search(rel) and not hook_policy:
+            findings.append(make_finding("hooks-committed-without-policy", path=rel, match=rel))
+        scan_file_content(repo, rel, findings)
+    if not has_ct2_ignore(repo):
+        findings.append(make_finding("gitignore-missing-ct2", path=".gitignore", match=".ct2/"))
+
+
+def gh_pr_view(repo: Path, pr: str) -> dict[str, Any]:
+    proc = run_cmd(
+        ["gh", "pr", "view", pr, "--json", "title,body,url,headRefName"],
+        repo,
+        check=False,
+    )
+    if proc.returncode != 0:
+        detail = proc.stderr.strip() or proc.stdout.strip() or "gh pr view failed"
+        raise TraceLintError(detail)
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise TraceLintError(f"gh pr view returned invalid JSON: {exc}") from exc
+
+
+def scan_pr(repo: Path, pr: str, include_exceptions: bool, findings: list[dict[str, Any]]) -> None:
+    data = gh_pr_view(repo, pr)
+    title = str(data.get("title", ""))
+    body = str(data.get("body", ""))
+    head = str(data.get("headRefName", ""))
+    match = patterns.PR_TITLE_CT2_RE.search(title)
+    if match:
+        add_match(findings, "pr-title-ct2-token", match, ref=f"PR #{pr}")
+    visible = patterns.visible_pr_text(body)
+    match = patterns.PR_BRANDED_FOOTER_RE.search(visible)
+    if match:
+        add_match(findings, "pr-body-branded-footer", match, ref=f"PR #{pr}")
+    match = patterns.PR_CT2_PATH_RE.search(visible)
+    if match:
+        add_match(findings, "pr-body-ct2-path", match, ref=f"PR #{pr}")
+    if head:
+        scan_branch_name(findings, head, ref=f"PR #{pr}")
+    if include_exceptions:
+        for match in patterns.REVIEW_THREAD_EXCEPTION_RE.finditer(body):
+            add_match(findings, "exception-review-thread-marker", match, ref=f"PR #{pr}")
+        for match in patterns.ISSUE_STATUS_EXCEPTION_RE.finditer(body):
+            add_match(findings, "exception-issue-status-marker", match, ref=f"PR #{pr}")
+
+
+def suppress_baseline(findings: list[dict[str, Any]], baseline: str | None) -> list[dict[str, Any]]:
+    if not baseline:
+        return findings
+    try:
+        suppressed = patterns.baseline_fingerprints(baseline)
+    except ValueError as exc:
+        raise TraceLintError(f"invalid baseline {baseline}: {exc}") from exc
+    return [finding for finding in findings if finding.get("fingerprint") not in suppressed]
+
+
+def sort_findings(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        findings,
+        key=lambda item: (
+            -patterns.SEVERITY_RANK[str(item["severity"])],
+            str(item["category"]),
+            str(item.get("ref", "")),
+            str(item.get("path", "")),
+            str(item.get("line", "")),
+        ),
+    )
+
+
+def summarize(findings: list[dict[str, Any]]) -> dict[str, int]:
+    summary = {"error": 0, "warn": 0, "info": 0}
+    for finding in findings:
+        summary[str(finding["severity"])] += 1
+    return summary
+
+
+def render_human(result: dict[str, Any], fix_suggest: bool) -> str:
+    lines = [
+        f"ct2-trace-lint v{patterns.PATTERN_VERSION} - host-repo cleanliness audit",
+        f"repo: {result['repo']}",
+        f"range: {result['range']}",
+    ]
+    if result.get("pr"):
+        lines.append(f"pr: {result['pr']}")
+    lines.append("")
+    findings = result["findings"]
+    if not findings:
+        lines.append("No CT2 trace findings.")
+    for finding in findings:
+        loc = finding.get("ref") or finding.get("path") or ""
+        path = finding.get("path")
+        if path and path != loc:
+            loc = f"{loc} {path}".strip()
+        line = finding.get("line")
+        if line:
+            loc = f"{loc}:{line}" if loc else f"line {line}"
+        match = finding.get("match", "")
+        suffix = f"  {match}" if match else ""
+        lines.append(f"[{finding['severity']}] {finding['category']}  {loc}{suffix}".rstrip())
+        if fix_suggest and finding.get("fix"):
+            lines.append(f"  fix: {finding['fix']}")
+    summary = result["summary"]
+    lines.append("")
+    lines.append(f"{summary['error']} errors, {summary['warn']} warnings, {summary['info']} info")
+    if result.get("baseline"):
+        lines.append(f"baseline: {result['baseline']}")
+    return "\n".join(lines)
+
+
+def lint(args: argparse.Namespace) -> dict[str, Any]:
+    repo, range_spec = resolve_target(args.target)
+    range_args, range_label = commit_range_args(repo, range_spec, args.since)
+    findings: list[dict[str, Any]] = []
+    scan_commits(repo, range_args, findings)
+    scan_branches(repo, findings)
+    scan_tracked_files(repo, findings)
+    if args.pr:
+        scan_pr(repo, str(args.pr), args.include_exceptions, findings)
+    findings = sort_findings(suppress_baseline(findings, args.baseline))
+    return {
+        "version": patterns.PATTERN_VERSION,
+        "repo": str(repo),
+        "range": range_label,
+        "pr": str(args.pr) if args.pr else None,
+        "baseline": args.baseline,
+        "findings": findings,
+        "summary": summarize(findings),
+    }
+
+
+def exit_code(result: dict[str, Any], strict: bool) -> int:
+    threshold = "info" if strict else "warn"
+    for finding in result["findings"]:
+        if patterns.severity_at_or_above(str(finding["severity"]), threshold):
+            return 2
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Audit a host repository for CT2 trace leakage")
+    parser.add_argument("target", nargs="?", help="Repository path or commit range. Default: current repo.")
+    parser.add_argument("--since", help="Git ref or git-log date expression. Default: last 30 days.")
+    parser.add_argument("--pr", help="Lint a specific GitHub PR via gh pr view.")
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    parser.add_argument("--fix-suggest", action="store_true", help="Show non-destructive fix suggestions.")
+    parser.add_argument("--include-exceptions", action="store_true", help="Report contract-exempt A1/A2 CT2 markers.")
+    parser.add_argument("--strict", action="store_true", help="Exit non-zero for any finding, including info.")
+    parser.add_argument("--baseline", help="Suppress findings present in a previous JSON result.")
+    args = parser.parse_args()
+    try:
+        result = lint(args)
+    except TraceLintError as exc:
+        if args.json:
+            print(json.dumps({"version": patterns.PATTERN_VERSION, "error": str(exc)}, indent=2, sort_keys=True))
+        else:
+            print(f"ct2-trace-lint: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        print(render_human(result, args.fix_suggest))
+    return exit_code(result, args.strict)
+
+
+if __name__ == "__main__":
+    os.environ.setdefault("PYTHONDONTWRITEBYTECODE", "1")
+    raise SystemExit(main())

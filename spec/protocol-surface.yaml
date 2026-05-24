@@ -415,3 +415,108 @@ entries:
     stability: stable
     since: 0.2
     owner: operator
+  - id: cli.ct2-trace-lint.json.version
+    kind: cli-json-field
+    field: version
+    type: integer
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-trace-lint
+  - id: cli.ct2-trace-lint.json.repo
+    kind: cli-json-field
+    field: repo
+    type: string
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-trace-lint
+  - id: cli.ct2-trace-lint.json.range
+    kind: cli-json-field
+    field: range
+    type: string
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-trace-lint
+  - id: cli.ct2-trace-lint.json.pr
+    kind: cli-json-field
+    field: pr
+    type: string-or-null
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-trace-lint
+  - id: cli.ct2-trace-lint.json.baseline
+    kind: cli-json-field
+    field: baseline
+    type: string-or-null
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-trace-lint
+  - id: cli.ct2-trace-lint.json.findings
+    kind: cli-json-field
+    field: findings
+    type: list
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-trace-lint
+  - id: cli.ct2-trace-lint.json.summary
+    kind: cli-json-field
+    field: summary
+    type: object
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-trace-lint
+  - id: cli.ct2-trace-lint.finding.category
+    kind: cli-json-field
+    field: category
+    type: enum
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-trace-lint
+  - id: cli.ct2-trace-lint.finding.severity
+    kind: cli-json-field
+    field: severity
+    type: enum
+    values: [error, warn, info]
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-trace-lint
+  - id: cli.ct2-trace-lint.finding.surface
+    kind: cli-json-field
+    field: surface
+    type: string
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-trace-lint
+  - id: cli.ct2-trace-lint.finding.message
+    kind: cli-json-field
+    field: message
+    type: string
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-trace-lint
+  - id: cli.ct2-trace-lint.finding.fix
+    kind: cli-json-field
+    field: fix
+    type: string
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-trace-lint
+  - id: cli.ct2-trace-lint.finding.fingerprint
+    kind: cli-json-field
+    field: fingerprint
+    type: string
+    required: true
+    stability: stable
+    since: 0.2
+    owner: ct2-trace-lint
