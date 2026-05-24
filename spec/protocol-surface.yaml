@@ -508,7 +508,7 @@ entries:
     kind: harness-yaml-key
     field: mode
     type: enum
-    values: [pr-and-sidecar, sidecar-only, pr-only]
+    values: [pr-and-sidecar, sidecar-only]
     required: false
     default: pr-and-sidecar
     stability: stable

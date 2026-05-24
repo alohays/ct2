@@ -97,7 +97,7 @@ github_integration:
 # comments are the human-readable mirror. Existing project configs without this
 # block remain sidecar-only until edited.
 review_publication:
-  mode: pr-and-sidecar            # pr-and-sidecar | sidecar-only | pr-only
+  mode: pr-and-sidecar            # pr-and-sidecar | sidecar-only
   inline_comments: true
   approval_maps_to_pr_review: true
   merge_ready_comment_marker: "<!-- ct2-merge-ready"

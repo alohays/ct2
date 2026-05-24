@@ -20,7 +20,7 @@ def main() -> int:
     parser.add_argument("project_dir", nargs="?", default=".")
     parser.add_argument("--reviewer", choices=("lens-cc", "lens-cx"), help="Lens reviewer posting merge-ready")
     parser.add_argument("--reconciler-summary", action="store_true", help="Post the reconciler terminal summary")
-    parser.add_argument("--verdict", default="approved")
+    parser.add_argument("--verdict", choices=("approved", "rejected", "escalated"), default="approved")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     project_dir = Path(args.project_dir).resolve()

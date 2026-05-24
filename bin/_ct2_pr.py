@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
@@ -48,7 +49,7 @@ def read_config(ct2_dir: Path) -> dict[str, str]:
         disabled = dict(DEFAULT_CONFIG)
         disabled["mode"] = "sidecar-only"
         return disabled
-    match = re.search(r"^review_publication:\s*(.*?)$", text, re.MULTILINE)
+    match = re.search(r"^review_publication:[ \t]*(.*?)$", text, re.MULTILINE)
     if not match:
         disabled = dict(DEFAULT_CONFIG)
         disabled["mode"] = "sidecar-only"
@@ -77,13 +78,14 @@ def publication_enabled(ct2_dir: Path) -> bool:
     return read_config(ct2_dir).get("mode", "sidecar-only") != "sidecar-only"
 
 
-def run_gh(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess[str]:
+def run_gh(args: list[str], cwd: Path, check: bool = True, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
     if shutil.which("gh") is None:
         raise PrPublicationError("gh CLI unavailable")
     proc = subprocess.run(
         ["gh", *args],
         cwd=str(cwd),
         text=True,
+        input=input_text,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
@@ -119,7 +121,7 @@ def repo_slug_from_pr(selector: str) -> str:
     match = re.search(r"github\.com[:/](?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/\d+", selector)
     if match:
         return f"{match.group('owner')}/{match.group('repo')}"
-    return ":owner/:repo"
+    raise PrPublicationError("pr must be a full github.com PR URL for inline review publication")
 
 
 def sidecar_meta(sidecar: Path) -> dict[str, str]:
@@ -154,20 +156,46 @@ def parse_inline_comments(text: str) -> list[dict[str, str]]:
     comments: list[dict[str, str]] = []
     blocks = re.split(r"(?m)^###\s+", text)
     for block in blocks[1:]:
-        file_match = re.search(r"(?m)^file:\s*(\S+)", block)
-        line_match = re.search(r"(?m)^line:\s*(\d+)", block)
-        if not file_match or not line_match:
+        lines = block.splitlines()
+        if not lines:
             continue
-        title = block.splitlines()[0].strip()
-        body = re.sub(r"(?m)^(file|line|suggestion):.*(?:\n(?:  .*)?)*", "", block).strip()
-        suggestion = ""
-        suggestion_match = re.search(r"(?ms)^suggestion:\s*\|\s*\n(.*?)(?:\n\S|\Z)", block)
-        if suggestion_match:
-            suggestion = suggestion_match.group(1).strip("\n")
+        title = lines[0].strip()
+        file_path = ""
+        line_num = ""
+        body_lines: list[str] = []
+        suggestion_lines: list[str] = []
+        in_suggestion = False
+        for raw_line in lines[1:]:
+            if in_suggestion:
+                if raw_line.startswith("  "):
+                    suggestion_lines.append(raw_line[2:])
+                    continue
+                if not raw_line.strip():
+                    suggestion_lines.append("")
+                    continue
+                in_suggestion = False
+            file_match = re.match(r"^file:\s*(\S+)", raw_line)
+            if file_match:
+                file_path = file_match.group(1)
+                continue
+            line_match = re.match(r"^line:\s*(\d+)", raw_line)
+            if line_match:
+                line_num = line_match.group(1)
+                continue
+            if re.match(r"^suggestion:\s*\|\s*$", raw_line):
+                in_suggestion = True
+                continue
+            if raw_line.startswith("## "):
+                break
+            body_lines.append(raw_line)
+        if not file_path or not line_num:
+            continue
+        body = "\n".join(body_lines).strip()
+        suggestion = "\n".join(suggestion_lines).rstrip("\n")
         comment_body = f"### {title}\n\n{body or title}".strip()
         if suggestion:
             comment_body += f"\n\n```suggestion\n{suggestion}\n```"
-        comments.append({"path": file_match.group(1), "line": line_match.group(1), "body": comment_body})
+        comments.append({"path": file_path, "line": line_num, "body": comment_body})
     return comments
 
 
@@ -201,19 +229,40 @@ def publish_inline_comments(project_dir: Path, selector: str, event: str, body: 
         return
     repo = repo_slug_from_pr(selector)
     number = pr_number(selector)
-    args = ["api", f"repos/{repo}/pulls/{number}/reviews", "--method", "POST", "-f", f"event={event}", "-f", f"body={body}"]
-    for comment in comments:
-        args.extend(
-            [
-                "-f",
-                f"comments[][path]={comment['path']}",
-                "-F",
-                f"comments[][line]={comment['line']}",
-                "-f",
-                f"comments[][body]={comment['body']}",
-            ]
-        )
-    run_gh(args, project_dir)
+    payload = {
+        "event": event,
+        "body": body,
+        "comments": [
+            {"path": comment["path"], "line": int(comment["line"]), "body": comment["body"]}
+            for comment in comments
+        ],
+    }
+    run_gh(
+        ["api", f"repos/{repo}/pulls/{number}/reviews", "--method", "POST", "--input", "-"],
+        project_dir,
+        input_text=json.dumps(payload),
+    )
+
+
+def review_marker(side: str, round_num: str) -> str:
+    return f"<!-- ct2-review: {side} round={round_num} -->"
+
+
+def reviews_for_pr(project_dir: Path, selector: str) -> list[dict[str, Any]]:
+    proc = run_gh(["pr", "view", selector, "--json", "reviews"], project_dir)
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise PrPublicationError(f"gh pr view returned invalid reviews JSON: {exc}") from exc
+    reviews = data.get("reviews") or []
+    return reviews if isinstance(reviews, list) else []
+
+
+def review_already_present(project_dir: Path, selector: str, marker: str) -> bool:
+    for review in reviews_for_pr(project_dir, selector):
+        if marker in str(review.get("body", "")):
+            return True
+    return False
 
 
 def publish_review(project_dir: Path, ticket: Path, sidecar: Path) -> dict[str, Any]:
@@ -227,17 +276,21 @@ def publish_review(project_dir: Path, ticket: Path, sidecar: Path) -> dict[str, 
     comments = parse_inline_comments(sidecar_body(sidecar))
     event, flag = review_event(ct2_dir, meta.get("verdict", "pending"))
     body = review_body(sidecar, meta, comments)
+    marker = review_marker(review_side(meta), meta.get("round", "0"))
     try:
+        if review_already_present(project_dir, selector, marker):
+            return {"ok": True, "status": "already-present", "ticket": ticket.name, "comments": len(comments), "event": event}
         if parse_bool(read_config(ct2_dir).get("inline_comments", "true")) and comments:
             publish_inline_comments(project_dir, selector, event, body, comments)
-        body_tmp = temp_body(ct2_dir, body)
-        try:
-            run_gh(["pr", "review", selector, flag, "--body-file", body_tmp], project_dir)
-        finally:
+        else:
+            body_tmp = temp_body(ct2_dir, body)
             try:
-                os.unlink(body_tmp)
-            except FileNotFoundError:
-                pass
+                run_gh(["pr", "review", selector, flag, "--body-file", body_tmp], project_dir)
+            finally:
+                try:
+                    os.unlink(body_tmp)
+                except FileNotFoundError:
+                    pass
         return {"ok": True, "status": "published", "ticket": ticket.name, "comments": len(comments), "event": event}
     except Exception as exc:
         return fallback_result(ct2_dir, ticket, str(exc))
@@ -308,6 +361,10 @@ def publish_reconciler_summary(project_dir: Path, ticket: Path, verdict: str) ->
                 "",
             ]
         )
+        for comment in comments_for_pr(project_dir, selector):
+            existing = str(comment.get("body", ""))
+            if "<!-- ct2-reconciler -->" in existing and f"`{verdict}`" in existing and f"`{ticket.name}`" in existing:
+                return {"ok": True, "status": "already-present", "ticket": ticket.name, "verdict": verdict}
         post_pr_comment(project_dir, selector, body)
         return {"ok": True, "status": "published", "ticket": ticket.name, "verdict": verdict}
     except Exception as exc:
@@ -352,7 +409,7 @@ def render_response_todo(comments: list[dict[str, Any]]) -> str:
         cid = str(comment.get("id") or comment.get("databaseId") or "?")
         path = comment.get("path") or "summary"
         line = comment.get("line") or comment.get("originalLine") or "-"
-        body = " ".join(str(comment.get("body", "")).split())[:180]
+        body = html.escape(" ".join(str(comment.get("body", "")).replace("`", "").split())[:180], quote=False)
         lines.append(f"- [ ] comment {cid} `{path}:{line}` - {body}")
     lines.append("")
     return "\n".join(lines)

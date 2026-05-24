@@ -27,10 +27,10 @@ def run_cmd(args, cwd, env=None):
     )
 
 
-def write_ticket(path):
+def write_ticket(path, pr="https://github.com/example/repo/pull/5", round_num="0"):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        """---
+        f"""---
 id: "001"
 title: "Publish PR review"
 status: in-review
@@ -39,11 +39,11 @@ created: 2026-05-24T00:00:00Z
 updated: 2026-05-24T00:00:00Z
 sealed: 2026-05-24T00:00:00Z
 branch: feat/publish-pr-review
-pr: https://github.com/example/repo/pull/5
+pr: {pr}
 issue: null
 issue-url: null
 issue-source: null
-review-round: 0
+review-round: {round_num}
 duration-bounce-count: 0
 total-attempts: 0
 estimated-scope: small
@@ -75,7 +75,7 @@ The PR thread should show review decisions.
     )
 
 
-def write_sidecar(path, reviewer="ct2-lens-cc", verdict="approved"):
+def write_sidecar(path, reviewer="ct2-lens-cc", verdict="approved", line="1", suggestion_extra=""):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"""---
@@ -96,9 +96,10 @@ Review summary.
 
 ### [BLOCKING] Tighten validation
 file: README.md
-line: 1
+line: {line}
 suggestion: |
   # Host
+{suggestion_extra}
 
 The heading needs to remain present.
 
@@ -128,7 +129,7 @@ class PrReviewPublicationTest(unittest.TestCase):
         write_sidecar(project / ".ct2" / "reviews" / "001-cc-r0.md")
         return project
 
-    def install_fake_gh(self, project, failing=False):
+    def install_fake_gh(self, project, failing=False, reject_inline=False, review_comment_body="Please address this blocking comment."):
         fake_bin = project / "fake-bin"
         fake_bin.mkdir(exist_ok=True)
         state = project / "fake-gh-pr-state.json"
@@ -138,14 +139,16 @@ class PrReviewPublicationTest(unittest.TestCase):
                     "calls": [],
                     "reviews": [],
                     "comments": [],
+                    "review_api": [],
                     "review_comments": [
                         {
                             "id": 100,
                             "path": "README.md",
                             "line": 1,
-                            "body": "Please address this blocking comment.",
+                            "body": review_comment_body,
                         }
                     ],
+                    "reject_inline": reject_inline,
                 }
             ),
             encoding="utf-8",
@@ -188,13 +191,19 @@ if args[:2] == ["pr", "comment"]:
     sys.exit(0)
 
 if args[:2] == ["pr", "view"]:
-    print(json.dumps({"comments": state.get("comments", [])}))
+    print(json.dumps({"comments": state.get("comments", []), "reviews": state.get("reviews", [])}))
     save()
     sys.exit(0)
 
 if args and args[0] == "api":
     if "pulls/5/reviews" in args[1]:
-        state.setdefault("review_api", []).append(args)
+        payload = json.loads(sys.stdin.read() or "{}")
+        if state.get("reject_inline") or any(comment.get("line") == 999 for comment in payload.get("comments", [])):
+            save()
+            print("Validation Failed", file=sys.stderr)
+            sys.exit(1)
+        state.setdefault("review_api", []).append({"args": args, "payload": payload})
+        state.setdefault("reviews", []).append({"args": args, "body": payload.get("body", ""), "comments": payload.get("comments", [])})
         save()
         print(json.dumps({"id": 555}))
         sys.exit(0)
@@ -227,8 +236,8 @@ sys.exit(1)
         self.assertEqual("published", result["status"])
         self.assertEqual("APPROVE", result["event"])
         state = self.read_state(state_file)
-        self.assertEqual(1, len(state["review_api"]))
-        self.assertIn("--approve", state["reviews"][0]["args"])
+        self.assertEqual(1, len(state["review_api"]) + len([r for r in state["reviews"] if r["args"][:2] == ["pr", "review"]]))
+        self.assertEqual("APPROVE", state["review_api"][0]["payload"]["event"])
         self.assertIn("<!-- ct2-review: lens-cc round=0 -->", state["reviews"][0]["body"])
 
         for _ in range(2):
@@ -248,12 +257,110 @@ sys.exit(1)
             env=env,
         )
         self.assertEqual(summary.returncode, 0, summary.stderr)
+        summary_again = run_cmd(
+            [PYTHON, REPO_ROOT / "bin" / "ct2-pr-merge-ready", ticket, project, "--reconciler-summary", "--verdict", "approved", "--json"],
+            project,
+            env=env,
+        )
+        self.assertEqual(summary_again.returncode, 0, summary_again.stderr)
+        self.assertEqual("already-present", json.loads(summary_again.stdout)["status"])
         self.assertTrue(any("ct2-reconciler" in comment["body"] for comment in self.read_state(state_file)["comments"]))
 
         respond = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pr-respond", ticket, project, "--json"], project, env=env)
         self.assertEqual(respond.returncode, 0, respond.stderr)
         todo = project / ".ct2" / ".meta" / "001.pr-review-todo.md"
         self.assertIn("comment 100", todo.read_text(encoding="utf-8"))
+
+    def test_pr_review_is_idempotent_and_does_not_double_publish(self):
+        project = self.make_project()
+        env, state_file = self.install_fake_gh(project)
+        ticket = project / ".ct2" / "in-review" / "001-publish-pr-review.md"
+        sidecar = project / ".ct2" / "reviews" / "001-cc-r0.md"
+
+        first = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pr-review", ticket, sidecar, project, "--json"], project, env=env)
+        second = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pr-review", ticket, sidecar, project, "--json"], project, env=env)
+
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual("already-present", json.loads(second.stdout)["status"])
+        state = self.read_state(state_file)
+        rest_reviews = len(state["review_api"])
+        cli_reviews = len([review for review in state["reviews"] if review["args"][:2] == ["pr", "review"]])
+        self.assertEqual(1, rest_reviews + cli_reviews)
+
+    def test_inline_review_api_failure_degrades_to_sidecar_only(self):
+        project = self.make_project()
+        env, _state_file = self.install_fake_gh(project, reject_inline=True)
+        ticket = project / ".ct2" / "in-review" / "001-publish-pr-review.md"
+        sidecar = project / ".ct2" / "reviews" / "001-cc-r0.md"
+
+        review = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pr-review", ticket, sidecar, project, "--json"], project, env=env)
+
+        self.assertEqual(review.returncode, 0, review.stderr)
+        result = json.loads(review.stdout)
+        self.assertEqual("sidecar-only", result["status"])
+        self.assertIn("Validation Failed", result["error"])
+
+    def test_plain_pr_number_reports_full_url_requirement_for_inline_comments(self):
+        project = self.make_project()
+        write_ticket(project / ".ct2" / "in-review" / "001-publish-pr-review.md", pr="5")
+        env, _state_file = self.install_fake_gh(project)
+        ticket = project / ".ct2" / "in-review" / "001-publish-pr-review.md"
+        sidecar = project / ".ct2" / "reviews" / "001-cc-r0.md"
+
+        review = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pr-review", ticket, sidecar, project, "--json"], project, env=env)
+
+        self.assertEqual(review.returncode, 0, review.stderr)
+        result = json.loads(review.stdout)
+        self.assertEqual("sidecar-only", result["status"])
+        self.assertIn("full github.com PR URL", result["error"])
+
+    def test_pr_respond_strips_backticks_and_escapes_angle_brackets(self):
+        project = self.make_project()
+        env, _state_file = self.install_fake_gh(project, review_comment_body="```bad``` <script> & details")
+        ticket = project / ".ct2" / "in-review" / "001-publish-pr-review.md"
+
+        respond = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pr-respond", ticket, project, "--json"], project, env=env)
+
+        self.assertEqual(respond.returncode, 0, respond.stderr)
+        todo = (project / ".ct2" / ".meta" / "001.pr-review-todo.md").read_text(encoding="utf-8")
+        self.assertNotIn("`bad`", todo)
+        self.assertIn("&lt;script&gt; &amp; details", todo)
+
+    def test_pr_only_mode_is_not_advertised(self):
+        self.assertNotIn("pr-only", (REPO_ROOT / "config" / "harness.yaml").read_text(encoding="utf-8"))
+        self.assertNotIn("pr-only", (REPO_ROOT / "spec" / "protocol-surface.yaml").read_text(encoding="utf-8"))
+
+    def test_merge_ready_new_round_posts_fresh_marker(self):
+        project = self.make_project()
+        env, state_file = self.install_fake_gh(project)
+        ticket = project / ".ct2" / "in-review" / "001-publish-pr-review.md"
+
+        first = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pr-merge-ready", ticket, project, "--reviewer", "lens-cc", "--json"], project, env=env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        write_ticket(ticket, round_num="1")
+        second = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pr-merge-ready", ticket, project, "--reviewer", "lens-cc", "--json"], project, env=env)
+
+        self.assertEqual(second.returncode, 0, second.stderr)
+        bodies = [comment["body"] for comment in self.read_state(state_file)["comments"]]
+        self.assertTrue(any("ct2-merge-ready: lens-cc round=0" in body for body in bodies))
+        self.assertTrue(any("ct2-merge-ready: lens-cc round=1" in body for body in bodies))
+
+    def test_multiline_suggestion_preserves_paragraphs(self):
+        project = self.make_project()
+        sidecar = project / ".ct2" / "reviews" / "001-cc-r0.md"
+        write_sidecar(sidecar, suggestion_extra="\n  second line\n\n  third paragraph")
+        env, state_file = self.install_fake_gh(project)
+        ticket = project / ".ct2" / "in-review" / "001-publish-pr-review.md"
+
+        review = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pr-review", ticket, sidecar, project, "--json"], project, env=env)
+
+        self.assertEqual(review.returncode, 0, review.stderr)
+        body = self.read_state(state_file)["review_api"][0]["payload"]["comments"][0]["body"]
+        self.assertIn("second line", body)
+        self.assertIn("third paragraph", body)
+        suggestion = body.split("```suggestion", 1)[1]
+        self.assertNotIn("The heading needs to remain present.", suggestion)
 
     def test_pr_review_falls_back_to_sidecar_only_when_gh_fails(self):
         project = self.make_project()
