@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -123,6 +124,11 @@ def sort_key(item: tuple[str, Path]) -> tuple[int, int, str, str]:
     return (state_rank, prio, sealed, path.name)
 
 
+def mirror_issue(project_dir: Path, ticket: Path) -> None:
+    helper = Path(__file__).resolve().parent / "ct2-issue-mirror"
+    subprocess.run([sys.executable, str(helper), str(ticket), str(project_dir)], cwd=str(project_dir), check=False)
+
+
 def pickup(args: argparse.Namespace) -> int:
     project_dir = Path(args.project_dir).resolve()
     ct2_dir = ensure_ct2(project_dir)
@@ -160,6 +166,7 @@ def pickup(args: argparse.Namespace) -> int:
         atomic_write_text(ct2_dir, ct2_dir / ".meta" / f"{ticket_id}.started", now() + "\n", "pickup-started-")
         with (ct2_dir / "logs" / "ct2-forge.log").open("a", encoding="utf-8") as log:
             log.write(f"[{now()}] pickup ticket={ticket_id} from={source_state}\n")
+        mirror_issue(project_dir, dest)
 
         result = {"ticket": dest.name, "from": source_state, "to": "in-progress"}
         if args.json:

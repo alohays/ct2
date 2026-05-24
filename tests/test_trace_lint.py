@@ -299,6 +299,8 @@ class TraceLintTest(unittest.TestCase):
         upgraded = hook.read_text(encoding="utf-8")
         self.assertIn("# ct2-trace-hook: v2", upgraded)
         self.assertIn("exec ct2-trace-lint --strict", upgraded)
+        self.assertNotIn("BOOTSTRAP_ISSUE_LABELS", upgraded)
+        self.assertNotIn("ct2-issue-bootstrap-labels", upgraded)
 
         uninstall = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-init", "--repair", "--uninstall-trace-hook", repo], REPO_ROOT)
         self.assertEqual(uninstall.returncode, 0, uninstall.stderr)

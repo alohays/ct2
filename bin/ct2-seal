@@ -189,5 +189,8 @@ TMP_SNAPSHOT=""
 rm -f "$TICKET_PATH"
 trap - EXIT
 
+python3 "${SCRIPT_DIR}/ct2-issue-mirror" "$DEST" "$PWD" --create >/dev/null || \
+  echo "ct2-seal: warning — issue mirror failed; ticket remains sealed" >&2
+
 echo "✓ ${TICKET_FILE} sealed and moved to backlog/"
 echo "  Run 'ct2-status' to verify, or start ct2-forge to begin processing."

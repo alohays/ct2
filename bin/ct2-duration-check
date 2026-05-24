@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import uuid
@@ -136,7 +137,13 @@ def move_with_fields(ct2_dir: Path, ticket: Path, dest_state: str, bounce_count:
     return dest
 
 
+def mirror_issue(project_dir: Path, ticket: Path) -> None:
+    helper = Path(__file__).resolve().parent / "ct2-issue-mirror"
+    subprocess.run([sys.executable, str(helper), str(ticket), str(project_dir)], cwd=str(project_dir), check=False)
+
+
 def check_ticket(
+    project_dir: Path,
     ct2_dir: Path,
     ticket: Path,
     max_duration_min: int,
@@ -174,6 +181,7 @@ def check_ticket(
     if dest_state == "escalated":
         msg = send_escalation(ct2_dir, dest, bounce_count, max_bounces, total_attempts, max_total_attempts)
         result["message"] = f".ct2/inbox/ct2-helm/{msg.name}"
+    mirror_issue(project_dir, dest)
     with (ct2_dir / "logs" / "ct2-forge.log").open("a", encoding="utf-8") as log:
         log.write(f"[{now()}] duration-check ticket={ticket_id} -> {dest_state} bounce={bounce_count}\n")
     return result
@@ -198,7 +206,7 @@ def run(args: argparse.Namespace) -> int:
             continue
         try:
             if ticket.exists():
-                results.append(check_ticket(ct2_dir, ticket, max_duration_min, max_bounces, max_total_attempts))
+                results.append(check_ticket(project_dir, ct2_dir, ticket, max_duration_min, max_bounces, max_total_attempts))
         except RuntimeError as exc:
             print(f"ct2-duration-check: {exc}", file=sys.stderr)
             return 2

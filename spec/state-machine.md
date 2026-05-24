@@ -68,6 +68,25 @@ git contract; the "Git action" column summarizes the coupling.
 > No automation — including the circuit breaker — may place a ticket into `done` without satisfying this condition.
 > `ct2-revise` is a human-triggered escape and deliberately out of the automated pipeline: it is the only way to re-open a terminal `escalated` ticket.
 
+## GitHub Issue Mirror
+
+When `github_integration.enabled: true`, each automated transition invokes
+`ct2-issue-mirror` after the local file move and frontmatter update. The mirror
+is fail-soft: `gh` failures write `.ct2/.meta/{id}.issue-mirror-pending.json`
+and never roll back the CT2 state transition.
+
+| Transition | Mirror action |
+|---|---|
+| `draft → backlog` | create or update the issue, apply `ct2/backlog`, render status block |
+| `backlog/rejected → in-progress` | apply `ct2/in-progress`, render status block |
+| `in-progress → in-review` | apply `ct2/in-review`, render status block with PR link |
+| `in-review → done` | apply `ct2/done`, render status block, close issue best-effort |
+| `in-review → rejected` | apply `ct2/rejected`, render status block |
+| `in-review → escalated` | apply `ct2/escalated`, render status block |
+| `in-progress → backlog` | apply `ct2/backlog`, render status block |
+| `in-progress → escalated` | apply `ct2/escalated`, render status block |
+| `escalated/rejected → draft` | apply `ct2/draft`, render status block, post revision note |
+
 ## Seal Gate
 
 `ct2-seal` requires that a draft ticket pass a static quality audit before it

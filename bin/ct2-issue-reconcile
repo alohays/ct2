@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Read-only drift check between CT2 tickets and mirrored GitHub Issues."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from _ct2_issue import integration_enabled, reconcile_findings
+from _ct2_protocol import assert_compatible as assert_protocol_compatible
+from _ct2_vao import ensure_ct2
+
+
+def tickets(ct2_dir: Path) -> list[Path]:
+    result = []
+    for state in ("draft", "backlog", "in-progress", "in-review", "rejected", "escalated", "done"):
+        result.extend(sorted((ct2_dir / state).glob("*.md")))
+    return result
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Check GitHub Issue mirror drift without mutating state")
+    parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+    project_dir = Path(args.project_dir).resolve()
+    try:
+        ct2_dir = ensure_ct2(project_dir)
+        assert_protocol_compatible(project_dir)
+        if not integration_enabled(ct2_dir):
+            result = {"ok": True, "status": "disabled", "findings": []}
+        else:
+            findings = []
+            for ticket in tickets(ct2_dir):
+                findings.extend(reconcile_findings(project_dir, ticket))
+            result = {"ok": not findings, "status": "checked", "findings": findings}
+    except Exception as exc:
+        if args.json:
+            print(json.dumps({"ok": False, "status": "error", "error": str(exc), "findings": []}, indent=2, sort_keys=True))
+        else:
+            print(f"ct2-issue-reconcile: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    elif not result["findings"]:
+        print(f"ct2-issue-reconcile: {result['status']}; no drift")
+    else:
+        print("ct2-issue-reconcile: drift found")
+        for finding in result["findings"]:
+            print(f"  {finding['ticket']} issue #{finding['issue']}: {finding['kind']} ({finding['detail']})")
+    return 0 if result["ok"] else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

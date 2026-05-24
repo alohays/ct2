@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import uuid
@@ -135,6 +136,11 @@ def escalate(ct2_dir: Path, ticket: Path, missing: list[str], age_min: int, max_
     }
 
 
+def mirror_issue(project_dir: Path, ticket_name: str) -> None:
+    helper = Path(__file__).resolve().parent / "ct2-issue-mirror"
+    subprocess.run([sys.executable, str(helper), ticket_name, str(project_dir)], cwd=str(project_dir), check=False)
+
+
 def acquire_ticket_lock(ct2_dir: Path, ticket_id: str) -> Path | None:
     lock = ct2_dir / ".meta" / f"{ticket_id}-review-watchdog.lock"
     try:
@@ -177,7 +183,9 @@ def run(args: argparse.Namespace) -> int:
             if age_min < max_min:
                 continue
             try:
-                results.append(escalate(ct2_dir, ticket, missing, age_min, max_min))
+                result = escalate(ct2_dir, ticket, missing, age_min, max_min)
+                mirror_issue(project_dir, str(result["ticket"]))
+                results.append(result)
             except RuntimeError as exc:
                 print(f"ct2-review-watchdog: {exc}", file=sys.stderr)
                 return 2

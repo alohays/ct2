@@ -80,3 +80,15 @@ trace_hygiene:
   commit_trailer_style: minimal   # minimal | refs | structured
   pr_body_footer: none            # none | minimal | branded
   pr_body_ticket_link: hidden-html # hidden-html | visible | none
+
+# GitHub Issue mirror. Fresh projects can expose ticket state through GitHub
+# Issues while keeping the CT2 ticket file authoritative. Existing project
+# configs without this block keep mirroring disabled until edited or migrated.
+github_integration:
+  enabled: true
+  issue_mirror: pr-and-issue      # off | pr-and-issue
+  issue_labels_prefix: "ct2/"
+  issue_create_on_seal: true
+  pr_closes_issue: true
+  fallback_mode: queue            # queue | skip
+  graphql_token_env: GH_TOKEN

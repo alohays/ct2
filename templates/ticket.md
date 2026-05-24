@@ -8,6 +8,9 @@ updated: TIMESTAMP
 sealed: null
 branch: null
 pr: null
+issue: null
+issue-url: null
+issue-source: null
 review-round: 0
 plan-exempt: null          # Optional reason; required only when no plan evidence is expected
 estimated-scope: small      # small | medium | large

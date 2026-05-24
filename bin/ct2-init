@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ct2-init — Initialize the CT2 protocol ledger in a project directory.
-# Usage: ct2-init [--repair] [--install-trace-hook] [--uninstall-trace-hook] [project-dir]
+# Usage: ct2-init [--repair] [--install-trace-hook] [--uninstall-trace-hook] [--bootstrap-issue-labels] [project-dir]
 # If project-dir is omitted, uses the current working directory.
 
 set -euo pipefail
@@ -11,18 +11,21 @@ TRACE_HOOK_MARKER="# ct2-trace-hook: v2"
 # ── Parse flags ───────────────────────────────────────────────────────────────
 REPAIR=false
 INSTALL_TRACE_HOOK=false
+BOOTSTRAP_ISSUE_LABELS=false
 UNINSTALL_TRACE_HOOK=false
 POSITIONAL=()
 for arg in "$@"; do
   case "$arg" in
     --repair) REPAIR=true ;;
     --install-trace-hook) INSTALL_TRACE_HOOK=true ;;
+    --bootstrap-issue-labels) BOOTSTRAP_ISSUE_LABELS=true ;;
     --uninstall-trace-hook) UNINSTALL_TRACE_HOOK=true ;;
     --help|-h)
-      echo "Usage: ct2-init [--repair] [--install-trace-hook] [--uninstall-trace-hook] [project-dir]"
-      echo "  --repair              Fill missing directories and config files without overwriting existing state"
-      echo "  --install-trace-hook  Install a local pre-push hook that runs ct2-trace-lint --strict"
-      echo "  --uninstall-trace-hook Remove a ct2-managed local pre-push hook"
+      echo "Usage: ct2-init [--repair] [--install-trace-hook] [--uninstall-trace-hook] [--bootstrap-issue-labels] [project-dir]"
+      echo "  --repair                  Fill missing directories and config files without overwriting existing state"
+      echo "  --install-trace-hook      Install a local pre-push hook that runs ct2-trace-lint --strict"
+      echo "  --uninstall-trace-hook    Remove a ct2-managed local pre-push hook"
+      echo "  --bootstrap-issue-labels  Create/update CT2 GitHub Issue column labels via gh"
       exit 0 ;;
     *) POSITIONAL+=("$arg") ;;
   esac
@@ -207,6 +210,12 @@ EOF
   fi
 fi
 
+if [[ "$BOOTSTRAP_ISSUE_LABELS" == true ]]; then
+  if ! python3 "${CT2_REPO_DIR}/bin/ct2-issue-bootstrap-labels" "$PROJECT_DIR"; then
+    echo "ct2-init: warning — GitHub Issue label bootstrap failed; continuing" >&2
+  fi
+fi
+
 # ── Choose git workflow strategy ─────────────────────────────────────────────
 # On fresh init + TTY, prompt. Otherwise fall back to a sensible default.
 # See spec/git-workflow.md for the contract.
@@ -261,5 +270,6 @@ echo "  5. Start the reviewer loop:      claude → /ct2:lens-cc"
 echo "  6. Start the Codex reviewer:     ct2-lens-cx"
 echo "  7. Check Codex support:          ct2-codex-doctor"
 echo "  8. Verify host cleanliness:      ct2-trace-lint --strict"
+echo "  9. Bootstrap issue labels:       ct2-issue-bootstrap-labels"
 echo ""
 echo "Run 'ct2-status' at any time to check the current state."
