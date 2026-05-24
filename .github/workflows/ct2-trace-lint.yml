@@ -1,0 +1,93 @@
+name: CT2 Trace Lint
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  host-cleanliness-promise:
+    name: host cleanliness promise
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Build synthetic host repo
+        run: |
+          set -euo pipefail
+          host="$(mktemp -d)"
+          cd "$host"
+          git init
+          git config user.name "CT2 CI"
+          git config user.email "ct2-ci@example.invalid"
+          printf '# Synthetic host\n' > README.md
+          git add README.md
+          git commit -m "init"
+
+          bash "$GITHUB_WORKSPACE/bin/ct2-init" "$host"
+          mkdir -p .ct2/in-progress
+          cat > .ct2/in-progress/001-parse-nested-config.md <<'EOF'
+          ---
+          id: "001"
+          title: "Parse nested config"
+          status: in-progress
+          priority: medium
+          created: 2026-05-24T00:00:00Z
+          updated: 2026-05-24T00:00:00Z
+          sealed: 2026-05-24T00:00:00Z
+          branch: null
+          pr: null
+          review-round: 0
+          duration-bounce-count: 0
+          total-attempts: 0
+          estimated-scope: small
+          touched-files:
+            - README.md
+          review-status:
+            lens-claude:
+              status: pending
+              sidecar: null
+            lens-codex:
+              status: pending
+              sidecar: null
+          verdict: pending
+          ---
+
+          ## Requirements
+          - [x] Parse nested config safely.
+
+          ## Context
+          Synthetic host fixture for the host-repo cleanliness promise.
+
+          ## Acceptance Criteria
+          - [x] Branch names omit CT2 ticket IDs.
+          EOF
+
+          bash "$GITHUB_WORKSPACE/bin/ct2-git-start" 001
+          printf '\nClean default change.\n' >> README.md
+          git add README.md
+          git commit \
+            -m "feat: update synthetic host" \
+            -m "Exercise the default clean branch and commit path."
+
+          "$GITHUB_WORKSPACE/bin/ct2-trace-lint" --strict "$host"

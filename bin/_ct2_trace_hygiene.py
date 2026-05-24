@@ -8,6 +8,7 @@ import json
 import re
 from pathlib import Path
 
+from _ct2_trace_patterns import hidden_ticket_comment
 from _ct2_vao import read_frontmatter, ticket_id_from_name
 
 
@@ -204,7 +205,7 @@ def render_clean_pr_body(ticket_path: Path, ticket_file: str) -> str:
         "",
         *acs,
         "",
-        f"<!-- ct2-ticket: {ticket_id} / pr-managed -->",
+        hidden_ticket_comment(ticket_id),
         "",
     ]
     return "\n".join(parts)

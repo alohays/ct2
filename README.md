@@ -54,6 +54,7 @@ ct2-status --version
 ```bash
 cd /path/to/your/project
 ct2-init
+ct2-trace-lint --strict
 ```
 
 ### Start sessions
@@ -208,6 +209,7 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-protocol-audit [repo]` | Verify protocol field references are cataloged in `spec/protocol-surface.yaml` |
 | `ct2-migrate-<from>-<to> [dir]` | Migrate an older `.ct2/` ledger forward after a protocol-version change |
 | `ct2-trace-hygiene-migrate [dir]` | Switch a project's host-repo artifact preset between `clean` and `legacy-branded` |
+| `ct2-trace-lint [repo\|range]` | Audit a host repo for CT2-visible branches, commits, PR bodies, tracked files, hooks, and CI references |
 | `ct2-baseline [dir]` | Compute the Trust/Evidence/Autonomy/Cost balanced scorecard baseline |
 | `ct2-role-run --role <role> -- <cmd>` | Run a role command and append cost/latency telemetry |
 | `ct2-cost [dir]` | Summarize `.ct2/telemetry/cost.jsonl` |
@@ -253,6 +255,37 @@ updating a copied command list.
 The unittest suite covers Codex goal scope/audit behavior, request-input
 fallbacks, fake-Codex preflight parsing, sidecar validation, `ct2-status`
 Codex metadata output, and plugin/skill contract shape.
+
+## Host-Repo Cleanliness
+
+Fresh CT2 projects default to host-clean branches and PR bodies. The policy is
+specified in [`spec/host-repo-cleanliness.md`](spec/host-repo-cleanliness.md)
+and enforced with:
+
+```bash
+ct2-trace-lint --strict
+ct2-trace-lint origin/main..HEAD --json
+ct2-trace-lint --pr 123 --fix-suggest
+ct2-trace-lint --baseline legacy-trace-baseline.json
+ct2-init --repair --install-trace-hook
+```
+
+Example legacy finding:
+
+```text
+[error] commit-scope-ticket-id  c0246a1  fix(t-017):
+[error] commit-trailer-ct2-path  c0246a1  Refs: .ct2/in-progress/017-ticket.md
+[warn] branch-name-ticket-id  feat/017-ticket  017-t
+```
+
+After switching to clean defaults with `ct2-trace-hygiene-migrate --preset
+clean`, a title-derived branch such as `feat/parse-nested-config` and a PR body
+with only a hidden mapping comment verify cleanly:
+
+```text
+ct2-trace-lint v1 - host-repo cleanliness audit
+No CT2 trace findings.
+```
 
 ## Releases
 

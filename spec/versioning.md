@@ -51,6 +51,11 @@ state-transition semantics, `.ct2/.meta/` markers, `harness.yaml` schema,
 reconciler exit codes, and adapter contracts. The protocol surface catalog
 tracks those contracts in `spec/protocol-surface.yaml`.
 
+The host-repo cleanliness promise in `spec/host-repo-cleanliness.md` is also a
+compatibility contract. After CT2 reaches `1.0.0`, a default-state breach of
+that contract is a MAJOR-version event unless the release includes a documented
+compatibility path that preserves existing host repositories.
+
 Each initialized project records its ledger protocol in `.ct2/.protocol-version`
 as `MAJOR.MINOR`. PATCH versions never require migration. State-mutating helpers
 compare that marker with the installed CT2 protocol before mutating `.ct2/`:

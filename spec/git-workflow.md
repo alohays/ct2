@@ -75,6 +75,9 @@ bodies, and commit conventions must not expose CT2 ticket IDs, `.ct2/` paths,
 role names, tool footers, emoji, or CT2 URLs unless the project explicitly opts
 into the legacy preset.
 
+The full host-repo promise and linter output contract live in
+`spec/host-repo-cleanliness.md`.
+
 `config/harness.yaml` controls this through `trace_hygiene`:
 
 ```yaml

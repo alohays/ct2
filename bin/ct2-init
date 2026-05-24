@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ct2-init — Initialize the CT2 protocol ledger in a project directory.
-# Usage: ct2-init [project-dir]
+# Usage: ct2-init [--repair] [--install-trace-hook] [project-dir]
 # If project-dir is omitted, uses the current working directory.
 
 set -euo pipefail
@@ -9,13 +9,16 @@ CT2_REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # ── Parse flags ───────────────────────────────────────────────────────────────
 REPAIR=false
+INSTALL_TRACE_HOOK=false
 POSITIONAL=()
 for arg in "$@"; do
   case "$arg" in
     --repair) REPAIR=true ;;
+    --install-trace-hook) INSTALL_TRACE_HOOK=true ;;
     --help|-h)
-      echo "Usage: ct2-init [--repair] [project-dir]"
-      echo "  --repair  Fill missing directories and config files without overwriting existing state"
+      echo "Usage: ct2-init [--repair] [--install-trace-hook] [project-dir]"
+      echo "  --repair              Fill missing directories and config files without overwriting existing state"
+      echo "  --install-trace-hook  Install a local pre-push hook that runs ct2-trace-lint --strict"
       exit 0 ;;
     *) POSITIONAL+=("$arg") ;;
   esac
@@ -155,6 +158,38 @@ else
   echo "  CT2 workflows (forge, lens) depend on git. Consider initializing git first." >&2
 fi
 
+# ── Optional local pre-push verifier hook ────────────────────────────────────
+if [[ "$INSTALL_TRACE_HOOK" == true ]]; then
+  if [[ "$IS_GIT_REPO" == false ]]; then
+    echo "ct2-init: warning — cannot install trace hook outside a git repository" >&2
+  else
+    HOOK_PATH="${GIT_DIR_RESOLVED}/hooks/pre-push"
+    mkdir -p "$(dirname "$HOOK_PATH")"
+    if [[ -e "$HOOK_PATH" ]]; then
+      if grep -q "ct2-trace-lint" "$HOOK_PATH" 2>/dev/null; then
+        echo "ct2-init: trace hook already installed at ${HOOK_PATH}"
+      else
+        echo "ct2-init: warning — existing pre-push hook left unchanged: ${HOOK_PATH}" >&2
+      fi
+    else
+      HOOK_TMP=$(mktemp "${GIT_DIR_RESOLVED}/hooks/pre-push-ct2-XXXXXX")
+      cat > "$HOOK_TMP" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="\$(git rev-parse --show-toplevel)"
+if command -v ct2-trace-lint >/dev/null 2>&1; then
+  exec ct2-trace-lint --strict "\$ROOT"
+fi
+exec "${CT2_REPO_DIR}/bin/ct2-trace-lint" --strict "\$ROOT"
+EOF
+      chmod +x "$HOOK_TMP"
+      mv "$HOOK_TMP" "$HOOK_PATH"
+      echo "ct2-init: installed trace verifier hook at ${HOOK_PATH}"
+    fi
+  fi
+fi
+
 # ── Choose git workflow strategy ─────────────────────────────────────────────
 # On fresh init + TTY, prompt. Otherwise fall back to a sensible default.
 # See spec/git-workflow.md for the contract.
@@ -208,5 +243,6 @@ echo "  4. Start the engineer loop:      claude → /ct2:forge"
 echo "  5. Start the reviewer loop:      claude → /ct2:lens-cc"
 echo "  6. Start the Codex reviewer:     ct2-lens-cx"
 echo "  7. Check Codex support:          ct2-codex-doctor"
+echo "  8. Verify host cleanliness:      ct2-trace-lint --strict"
 echo ""
 echo "Run 'ct2-status' at any time to check the current state."
