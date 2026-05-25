@@ -52,7 +52,11 @@ jobs:
       - name: Prepare release commit
         env:
           BUMP: ${{ inputs.bump }}
-        run: python3 bin/ct2-release prepare "$BUMP"
+          ACTOR: ${{ github.actor }}
+          ACTOR_ID: ${{ github.actor_id }}
+        run: |
+          python3 bin/ct2-release prepare "$BUMP" \
+            --co-author "${ACTOR} <${ACTOR_ID}+${ACTOR}@users.noreply.github.com>"
 
       - name: Run unit tests
         run: python3 -m unittest discover -s tests
