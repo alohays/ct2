@@ -8,6 +8,14 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Release commits prepared by `release.yml` now include a `Co-Authored-By`
+  trailer pointing at the workflow trigger user. A new repeatable
+  `--co-author "Name <user@example.com>"` flag on `ct2-release prepare`
+  validates the trailer shape (rejecting embedded `\r`/`\n` and missing
+  brackets/`@`) and dedupes repeats; the workflow wires it through
+  `${{ github.actor }}` and `${{ github.actor_id }}` via env-var
+  indirection.
+
 ### Changed
 
 ### Fixed
