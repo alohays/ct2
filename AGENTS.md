@@ -40,7 +40,7 @@ ct2-issue-adopt {issue}                # Adopt an existing GitHub Issue as a CT2
 ct2-issue-reconcile [dir]              # Report drift between CT2 tickets and mirrored GitHub Issues
 ct2-issue-bootstrap-labels [dir]       # Create or update the CT2 GitHub Issue column labels
 ct2-release sync                       # Synchronize derived release artifacts from VERSION
-ct2-release prepare {patch|minor|major} [--co-author "Name <email>"]  # Bump VERSION, promote CHANGELOG, sync manifests, commit (--co-author is repeatable; release.yml passes the trigger user automatically)
+ct2-release prepare {patch|minor|major} [--co-author "Name <email>"]  # Bump VERSION, promote CHANGELOG, sync manifests, commit; --co-author repeatable
 ```
 
 Manual verification: `ct2-init` in a scratch directory, author a ticket, `ct2-seal`, confirm with `ct2-status`.
