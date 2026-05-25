@@ -303,11 +303,17 @@ class ReleaseWorkflowTest(unittest.TestCase):
         )
 
     def test_prepare_rejects_malformed_co_author_without_mutating_version(self):
-        repo = make_release_repo(self)
-        add_unreleased_bullet(repo)
-        original_version = (repo / "VERSION").read_text(encoding="utf-8")
-        for value in ("alohays", "alohays <no-at-sign>", "<only-email@example.com>"):
+        for value in (
+            "alohays",
+            "alohays <no-at-sign>",
+            "<only-email@example.com>",
+            "Name\n<a@b>",
+            "Name\r<a@b>",
+        ):
             with self.subTest(value=value):
+                repo = make_release_repo(self)
+                add_unreleased_bullet(repo)
+                original_version = (repo / "VERSION").read_text(encoding="utf-8")
                 proc = run_cmd(
                     [
                         PYTHON,
@@ -321,7 +327,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
                 )
                 self.assertNotEqual(proc.returncode, 0)
                 self.assertIn("invalid --co-author", proc.stderr)
-        self.assertEqual(original_version, (repo / "VERSION").read_text(encoding="utf-8"))
+                self.assertEqual(original_version, (repo / "VERSION").read_text(encoding="utf-8"))
 
     def test_prepare_without_co_author_keeps_existing_trailer_block(self):
         repo = make_release_repo(self)

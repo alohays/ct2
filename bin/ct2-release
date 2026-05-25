@@ -13,7 +13,7 @@ from pathlib import Path
 from _ct2_version import SemVer, atomic_write_text, read_version, repo_root_from_file, sync_derived_artifacts
 
 
-CO_AUTHOR_RE = re.compile(r"^[^<>]+\s<[^<>\s]+@[^<>\s]+>$")
+CO_AUTHOR_RE = re.compile(r"^[^<>\r\n]+[ \t]<[^<>\s]+@[^<>\s]+>$")
 
 
 CHANGELOG_HEADINGS = (
