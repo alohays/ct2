@@ -222,9 +222,121 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn('bash "$GITHUB_WORKSPACE/bin/ct2-init" "$host"', workflow)
         self.assertIn('"$GITHUB_WORKSPACE/bin/ct2-trace-lint" --strict "$host"', workflow)
         self.assertNotIn("bin/ct2-trace-lint --strict .", workflow)
+        self.assertIn("ACTOR: ${{ github.actor }}", workflow)
+        self.assertIn("ACTOR_ID: ${{ github.actor_id }}", workflow)
+        self.assertIn(
+            '--co-author "${ACTOR} <${ACTOR_ID}+${ACTOR}@users.noreply.github.com>"',
+            workflow,
+        )
         install = (REPO_ROOT / "install.sh").read_text(encoding="utf-8")
         self.assertIn("--version", install)
         self.assertIn(f"CT2_INSTALL_VERSION=\"{version}\"", install)
+
+    def test_prepare_with_single_co_author_adds_trailer(self):
+        repo = make_release_repo(self)
+        add_unreleased_bullet(repo)
+        proc = run_cmd(
+            [
+                PYTHON,
+                repo / "bin" / "ct2-release",
+                "prepare",
+                "patch",
+                "--co-author",
+                "alohays <12345+alohays@users.noreply.github.com>",
+            ],
+            cwd=repo,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        body = run_cmd(["git", "log", "-1", "--format=%B"], cwd=repo).stdout
+        self.assertIn(
+            "Co-Authored-By: alohays <12345+alohays@users.noreply.github.com>",
+            body,
+        )
+        self.assertIn("Scope-risk: narrow", body)
+        scope_idx = body.index("Scope-risk: narrow")
+        coauthor_idx = body.index("Co-Authored-By:")
+        self.assertLess(scope_idx, coauthor_idx)
+
+    def test_prepare_supports_multiple_co_authors_in_order(self):
+        repo = make_release_repo(self)
+        add_unreleased_bullet(repo)
+        proc = run_cmd(
+            [
+                PYTHON,
+                repo / "bin" / "ct2-release",
+                "prepare",
+                "patch",
+                "--co-author",
+                "Alice <alice@example.com>",
+                "--co-author",
+                "Bob <bob@example.com>",
+            ],
+            cwd=repo,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        body = run_cmd(["git", "log", "-1", "--format=%B"], cwd=repo).stdout
+        alice_idx = body.index("Co-Authored-By: Alice <alice@example.com>")
+        bob_idx = body.index("Co-Authored-By: Bob <bob@example.com>")
+        self.assertLess(alice_idx, bob_idx)
+
+    def test_prepare_deduplicates_repeated_co_authors(self):
+        repo = make_release_repo(self)
+        add_unreleased_bullet(repo)
+        proc = run_cmd(
+            [
+                PYTHON,
+                repo / "bin" / "ct2-release",
+                "prepare",
+                "patch",
+                "--co-author",
+                "alohays <12345+alohays@users.noreply.github.com>",
+                "--co-author",
+                "alohays <12345+alohays@users.noreply.github.com>",
+            ],
+            cwd=repo,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        body = run_cmd(["git", "log", "-1", "--format=%B"], cwd=repo).stdout
+        self.assertEqual(
+            body.count("Co-Authored-By: alohays <12345+alohays@users.noreply.github.com>"),
+            1,
+        )
+
+    def test_prepare_rejects_malformed_co_author_without_mutating_version(self):
+        repo = make_release_repo(self)
+        add_unreleased_bullet(repo)
+        original_version = (repo / "VERSION").read_text(encoding="utf-8")
+        for value in ("alohays", "alohays <no-at-sign>", "<only-email@example.com>"):
+            with self.subTest(value=value):
+                proc = run_cmd(
+                    [
+                        PYTHON,
+                        repo / "bin" / "ct2-release",
+                        "prepare",
+                        "patch",
+                        "--co-author",
+                        value,
+                    ],
+                    cwd=repo,
+                )
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("invalid --co-author", proc.stderr)
+        self.assertEqual(original_version, (repo / "VERSION").read_text(encoding="utf-8"))
+
+    def test_prepare_without_co_author_keeps_existing_trailer_block(self):
+        repo = make_release_repo(self)
+        add_unreleased_bullet(repo)
+        proc = run_cmd([PYTHON, repo / "bin" / "ct2-release", "prepare", "patch"], cwd=repo)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        body = run_cmd(["git", "log", "-1", "--format=%B"], cwd=repo).stdout
+        self.assertNotIn("Co-Authored-By:", body)
+        for trailer in (
+            "Constraint: VERSION remains the single source of truth",
+            "Rejected: hand-edit plugin manifests separately | drift risk",
+            "Confidence: high",
+            "Scope-risk: narrow",
+        ):
+            self.assertIn(trailer, body)
 
 
 if __name__ == "__main__":

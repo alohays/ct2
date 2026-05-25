@@ -13,6 +13,9 @@ from pathlib import Path
 from _ct2_version import SemVer, atomic_write_text, read_version, repo_root_from_file, sync_derived_artifacts
 
 
+CO_AUTHOR_RE = re.compile(r"^[^<>]+\s<[^<>\s]+@[^<>\s]+>$")
+
+
 CHANGELOG_HEADINGS = (
     "### Added\n",
     "### Changed\n",
@@ -81,7 +84,25 @@ def ensure_git_repo(repo: Path) -> None:
         raise RuntimeError("ct2-release prepare must run inside a git repository")
 
 
-def ensure_commit(repo: Path, version: SemVer) -> None:
+def normalize_co_authors(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for raw in values:
+        value = raw.strip()
+        if not value:
+            continue
+        if not CO_AUTHOR_RE.fullmatch(value):
+            raise RuntimeError(
+                f"invalid --co-author value {raw!r}; expected 'Name <user@example.com>'"
+            )
+        if value in seen:
+            continue
+        seen.add(value)
+        cleaned.append(value)
+    return cleaned
+
+
+def ensure_commit(repo: Path, version: SemVer, co_authors: list[str] | None = None) -> None:
     status = run(["git", "status", "--short", "--", *RELEASE_FILES], repo)
     if status.returncode != 0:
         raise RuntimeError(status.stderr.strip() or "git status failed")
@@ -90,13 +111,19 @@ def ensure_commit(repo: Path, version: SemVer) -> None:
     add = run(["git", "add", "--", *RELEASE_FILES], repo)
     if add.returncode != 0:
         raise RuntimeError(add.stderr.strip() or "git add failed")
+    trailer_lines = [
+        "Constraint: VERSION remains the single source of truth",
+        "Rejected: hand-edit plugin manifests separately | drift risk",
+        "Confidence: high",
+        "Scope-risk: narrow",
+    ]
+    for value in co_authors or ():
+        trailer_lines.append(f"Co-Authored-By: {value}")
     message = (
         f"chore(release): prepare {version}\n\n"
         "Synchronize release metadata and promote the changelog.\n\n"
-        "Constraint: VERSION remains the single source of truth\n"
-        "Rejected: hand-edit plugin manifests separately | drift risk\n"
-        "Confidence: high\n"
-        "Scope-risk: narrow\n"
+        + "\n".join(trailer_lines)
+        + "\n"
     )
     commit = run(
         [
@@ -128,15 +155,16 @@ def command_sync(repo: Path) -> int:
     return 0
 
 
-def command_prepare(repo: Path, bump: str) -> int:
+def command_prepare(repo: Path, bump: str, co_authors: list[str] | None = None) -> int:
     ensure_git_repo(repo)
     current = read_version(repo)
     next_version = current.bump(bump)
+    cleaned = normalize_co_authors(co_authors or [])
     changelog = promoted_changelog_text(repo, next_version)
     write_version(repo, next_version)
     sync_derived_artifacts(repo)
     atomic_write_text(repo / "CHANGELOG.md", changelog)
-    ensure_commit(repo, next_version)
+    ensure_commit(repo, next_version, cleaned)
     print(f"prepared {next_version}")
     return 0
 
@@ -148,6 +176,17 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("sync", help="Synchronize derived artifacts from VERSION")
     prepare = sub.add_parser("prepare", help="Bump VERSION, promote CHANGELOG, sync manifests, and commit")
     prepare.add_argument("bump", choices=("patch", "minor", "major"))
+    prepare.add_argument(
+        "--co-author",
+        dest="co_authors",
+        action="append",
+        default=[],
+        metavar="NAME <EMAIL>",
+        help=(
+            "Add a Co-Authored-By trailer to the prepared commit. "
+            "May be repeated. Value must match 'Name <user@example.com>'."
+        ),
+    )
     sub.add_parser("version", help="Print the canonical VERSION")
     return parser
 
@@ -160,7 +199,7 @@ def main() -> int:
         if args.command == "sync":
             return command_sync(repo)
         if args.command == "prepare":
-            return command_prepare(repo, args.bump)
+            return command_prepare(repo, args.bump, args.co_authors)
         if args.command == "version":
             print(read_version(repo))
             return 0
