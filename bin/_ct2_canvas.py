@@ -10,9 +10,159 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from typing import Any
 
 PRIORITIES = ["low", "medium", "high", "critical"]
+SCOPE_STATES = ("in", "out", "hold")
+_SMART_QUOTES = "“”‘’"
+
+
+def _excerpt(raw: str, pos: int, window: int = 40) -> str:
+    start = max(0, pos - window)
+    end = min(len(raw), pos + window)
+    rel = pos - start
+    body = raw[start:end].replace("\n", "⏎")
+    return f"{body[:rel]}<<here>>{body[rel:]}"
+
+
+def _diagnose_json(raw: str) -> list[str]:
+    hints = []
+    if any(ch in raw for ch in _SMART_QUOTES):
+        hints.append(
+            "spec contains smart quotes (“ ” ‘ ’) — "
+            "replace with ASCII \" and ' (Claude heredocs sometimes auto-correct)"
+        )
+    if re.search(r",\s*[}\]]", raw):
+        hints.append("possibly a trailing comma before } or ] (JSON forbids them)")
+    if re.search(r"(?m)^\s*//", raw) or "/*" in raw:
+        hints.append("possibly a // or /* comment (JSON has no comment syntax)")
+    return hints
+
+
+def parse_spec(raw: str) -> dict:
+    """Parse a canvas spec JSON string with actionable error context.
+
+    On JSONDecodeError, raises ValueError carrying line/column, an excerpt of
+    the offending region, and named hints for common Claude-emitted mistakes
+    (smart quotes, trailing commas, // comments). Strips a leading BOM.
+    """
+    if raw is None or not raw.strip():
+        raise ValueError("empty spec — expected a JSON object")
+    if raw.startswith("\ufeff"):
+        raw = raw.lstrip("\ufeff")
+    try:
+        obj = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        snippet = _excerpt(raw, exc.pos)
+        hints = _diagnose_json(raw)
+        hint_text = ("\n  hint: " + "; ".join(hints)) if hints else ""
+        raise ValueError(
+            f"spec JSON malformed at line {exc.lineno} col {exc.colno}: {exc.msg}"
+            f"\n  near: {snippet}{hint_text}"
+        ) from exc
+    if not isinstance(obj, dict):
+        raise ValueError("spec must be a JSON object at the top level")
+    return obj
+
+
+def validate_spec(spec: dict) -> list[str]:
+    """Return a list of 'path: message' validation errors. Empty list = valid.
+
+    Catches the shapes the renderer assumes so a malformed spec fails fast at
+    the boundary instead of producing a half-broken canvas where the AI's
+    judgment never surfaces.
+    """
+    errors: list[str] = []
+    if not isinstance(spec, dict):
+        return ["root: must be a JSON object"]
+
+    ticket = spec.get("ticket")
+    if not ticket:
+        errors.append("ticket: required (non-empty string)")
+    elif not isinstance(ticket, str):
+        errors.append("ticket: must be a string")
+
+    canvas = spec.get("canvas")
+    if canvas is None:
+        errors.append("canvas: required (object)")
+        return errors
+    if not isinstance(canvas, dict):
+        errors.append("canvas: must be an object")
+        return errors
+
+    rnd = canvas.get("round", 0)
+    # bool is a subclass of int in Python, so the isinstance(rnd, bool) clause
+    # is load-bearing: it rejects {"round": true/false} which would otherwise pass.
+    if not isinstance(rnd, int) or isinstance(rnd, bool):
+        errors.append("canvas.round: must be an integer")
+
+    interp = canvas.get("interpretation")
+    if interp is not None and not isinstance(interp, dict):
+        errors.append("canvas.interpretation: must be an object")
+
+    scope = canvas.get("scope")
+    if scope is not None:
+        if not isinstance(scope, list):
+            errors.append("canvas.scope: must be a list")
+        else:
+            for i, item in enumerate(scope):
+                if not isinstance(item, dict):
+                    errors.append(f"canvas.scope[{i}]: must be an object")
+                    continue
+                state = item.get("state", "in")
+                if state not in SCOPE_STATES:
+                    errors.append(
+                        f"canvas.scope[{i}].state: must be one of in|out|hold (got {state!r})"
+                    )
+
+    tickets = canvas.get("tickets")
+    if tickets is not None:
+        if not isinstance(tickets, list):
+            errors.append("canvas.tickets: must be a list")
+        else:
+            for i, tk in enumerate(tickets):
+                if not isinstance(tk, dict):
+                    errors.append(f"canvas.tickets[{i}]: must be an object")
+                    continue
+                items = tk.get("items")
+                if items is not None and not isinstance(items, list):
+                    errors.append(f"canvas.tickets[{i}].items: must be a list")
+
+    ac = canvas.get("acceptance_criteria")
+    if ac is not None and not isinstance(ac, list):
+        errors.append("canvas.acceptance_criteria: must be a list")
+
+    priority = canvas.get("priority")
+    if priority is not None and priority not in PRIORITIES:
+        errors.append(
+            f"canvas.priority: must be one of low|medium|high|critical (got {priority!r})"
+        )
+
+    constraints = canvas.get("constraints")
+    if constraints is not None and not isinstance(constraints, list):
+        errors.append("canvas.constraints: must be a list")
+
+    return errors
+
+
+def _safe_json_for_script(obj: Any) -> str:
+    """JSON encoding safe to embed inline in a <script> tag.
+
+    Replaces the characters that let JSON content break out of <script> — `<`,
+    `>`, `&`, plus the line/paragraph separators that some browsers treat as
+    JS line terminators — with their `\\uXXXX` form. The output stays valid
+    JSON (these are all standard `\\uXXXX` escapes) and decodes byte-for-byte
+    back to the input via JSON.parse on the client.
+    """
+    raw = json.dumps(obj, ensure_ascii=False)
+    return (
+        raw.replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace(" ", "\\u2028")
+        .replace(" ", "\\u2029")
+    )
 
 _CSS = """
 :root{--bg:#f6f5f1;--surface:#fffefb;--raised:#fbfaf6;--ink:#1b1a17;--mut:#6e6a61;
@@ -53,10 +203,16 @@ border:1px solid var(--line);border-radius:5px;padding:4px 6px}
 .panel-bd{padding:2px 16px 15px}
 .resolved-tick{color:var(--in);font-weight:700}.open-tick{color:var(--hold);font-weight:700}
 .edit{outline:none;border-radius:5px;padding:2px 5px;margin:-2px -2px;cursor:text;
-transition:background .12s,box-shadow .12s}
+transition:background .12s,box-shadow .12s;
+overflow-wrap:anywhere;word-break:break-word;max-width:100%}
 .edit:hover{background:var(--accent-soft)}
 .edit:focus{background:#fff;box-shadow:0 0 0 2px var(--accent)}
 .edit:empty::before{content:attr(data-ph);color:var(--faint)}
+.chip .lbl{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.t-title,.t-item .it,.ac .txt{overflow-wrap:anywhere;word-break:break-word}
+.render-fail{margin:10px 15px;padding:9px 11px;border:1px solid var(--out);
+background:var(--out-soft);border-radius:8px;font-size:12px;color:var(--out);display:none}
+.render-fail.on{display:block}.render-fail b{display:block;margin-bottom:4px}
 .edithint{font-size:11px;color:var(--faint);margin-top:7px}.edithint b{color:var(--mut)}
 .quote{border-left:2.5px solid var(--accent);background:var(--accent-soft);padding:8px 13px;
 border-radius:0 7px 7px 0;color:#33405e;font-size:13.5px;margin:9px 0}
@@ -322,6 +478,7 @@ def _right_column() -> str:
         '<div class="block advis"><div class="lbl">helm이 확인을 권하는 항목</div>'
         '<ul id="advisList"></ul><p class="hint" id="advisHint"></p></div>'
         '<div class="block"><div class="lbl">결정 레코드 (진실원천)</div>'
+        '<div class="render-fail" id="renderFail" role="alert"></div>'
         '<pre class="json" id="json"></pre></div>'
         '<div class="commit">'
         '<button class="go" id="commitBtn">📋 결정 확정 → helm으로 복사</button>'
@@ -538,7 +695,7 @@ function renderDep(tickets){
 }
 
 var lastJSON="",committed=false;
-function render(){
+function _renderImpl(){
   var s=read(),adv=advisory(s),d=delta(s);
   $('[data-meta="interpret"]').innerHTML = s.misread===null?"확인 권장"
     :s.misread==="ok"?'<span class="resolved-tick">✓ 정확</span>'
@@ -574,6 +731,57 @@ function render(){
   else gm.innerHTML="모든 항목이 정리되었습니다 — 깔끔하게 전달됩니다 ✓";
   try{ localStorage.setItem(SKEY,JSON.stringify(s)); }catch(e){}
 }
+
+// render() guard: if any part of the render pipeline throws (a corrupted
+// localStorage payload, a contenteditable in an unexpected state, a browser
+// API gap), surface the error visibly instead of leaving the right-hand AI
+// judgment panel blank. The decision token can still be copied — the data
+// model in read() is independent of the right-panel preview.
+function render(){
+  var fail=$('#renderFail');
+  try{
+    _renderImpl();
+    if(fail){ fail.classList.remove('on'); fail.innerHTML=''; }
+  }catch(e){
+    lastJSON='';
+    var msg=(e&&(e.message||e.toString()))||'unknown render error';
+    if(fail){
+      fail.classList.add('on');
+      fail.innerHTML='<b>⚠ 캔버스 표시 오류</b>'+esc(msg)
+        +'<br><span style="color:var(--mut);font-size:11px">'
+        +'결정 토큰 복사는 계속 동작합니다 — 위 버튼을 사용하세요.</span>';
+    }
+    try{ if(window.console&&console.error) console.error('canvas render failed',e); }catch(_){}
+  }
+}
+
+// Paste safety: contenteditable cells accept plain text only. Pasted rich
+// HTML (Notion, Slack, web pages) can inject markup that breaks the canvas
+// layout. Strip formatting on paste and collapse newlines for single-line
+// fields so chip labels and ticket titles stay one row tall.
+document.addEventListener('paste',function(e){
+  var t=e.target;
+  if(!t||!t.classList||!t.classList.contains('edit')) return;
+  var data=e.clipboardData||window.clipboardData;
+  if(!data) return;
+  var text=data.getData('text/plain')||'';
+  if(t.tagName!=='TEXTAREA') text=text.replace(/[\r\n\t]+/g,' ');
+  e.preventDefault();
+  // execCommand is deprecated by MDN but still universally supported and is the
+  // only way to land a contenteditable paste in the browser's undo stack. The
+  // Selection-API branch below is the long-term fallback.
+  if(document.queryCommandSupported&&document.queryCommandSupported('insertText')){
+    document.execCommand('insertText',false,text);
+  } else {
+    var sel=window.getSelection();
+    if(sel&&sel.rangeCount){
+      var r=sel.getRangeAt(0); r.deleteContents();
+      r.insertNode(document.createTextNode(text));
+      r.collapse(false); sel.removeAllRanges(); sel.addRange(r);
+    } else { t.textContent=(t.textContent||'')+text; }
+  }
+  committed=false; render();
+});
 
 $('.askrow').addEventListener('click',function(e){
   var b=e.target.closest('.pick'); if(!b) return;
@@ -706,14 +914,13 @@ render();
 def render(record: dict) -> str:
     """Render a decision record into a self-contained canvas HTML string."""
     canvas = record.get("canvas") or {}
-    config = json.dumps(
+    config = _safe_json_for_script(
         {
             "decision": record.get("id"),
             "ticket": record.get("ticket"),
             "round": canvas.get("round", 0),
             "nonce": record.get("nonce"),
-        },
-        ensure_ascii=False,
+        }
     )
     return (
         "<!DOCTYPE html>\n"
@@ -740,7 +947,12 @@ def render(record: dict) -> str:
 
 
 def parse_token(text: str) -> dict:
-    """Parse a 'CT2-DECISION {json}' token into a dict. Raises ValueError."""
+    """Parse a 'CT2-DECISION {json}' token into a dict.
+
+    Raises ValueError with line/column, an excerpt of the offending region,
+    and hints for common paste-time corruption (smart quotes, trailing commas,
+    truncated tokens).
+    """
     text = (text or "").strip()
     prefix = "CT2-DECISION"
     if text.startswith(prefix):
@@ -750,7 +962,15 @@ def parse_token(text: str) -> dict:
     try:
         obj = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"malformed decision token: {exc}") from exc
+        snippet = _excerpt(text, exc.pos)
+        hints = _diagnose_json(text)
+        if text.count("{") > text.count("}") or text.count("[") > text.count("]"):
+            hints.append("token looks truncated — braces/brackets do not balance")
+        hint_text = ("\n  hint: " + "; ".join(hints)) if hints else ""
+        raise ValueError(
+            f"malformed decision token at line {exc.lineno} col {exc.colno}: {exc.msg}"
+            f"\n  near: {snippet}{hint_text}"
+        ) from exc
     if not isinstance(obj, dict):
         raise ValueError("decision token must be a JSON object")
     return obj

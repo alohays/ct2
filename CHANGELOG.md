@@ -8,7 +8,26 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Added spec ingest and render-side guardrails for the helm canvas. New
+  helpers `parse_spec` and `validate_spec` in `bin/_ct2_canvas.py` give
+  malformed canvas specs an actionable error (line/column, an excerpt of
+  the offending region, named hints for smart quotes, trailing commas,
+  and `//` or `/*` comments). The inline `window.CANVAS` config and any
+  user-pasted content are now safe against `</script>`, comment-marker,
+  and rich-HTML injection; a JS render error surfaces a visible banner
+  next to the JSON preview instead of silently blanking the AI judgment
+  panel.
+
 ### Changed
+
+- `ct2-helm-canvas generate` now validates the spec shape at the
+  boundary; specs with an unknown `priority`, out-of-enum scope state,
+  or wrong types for list-shaped fields (`scope`, `tickets`,
+  `acceptance_criteria`, `constraints`) are rejected with line-level
+  errors instead of producing a half-broken canvas. This is intentional
+  tightening — any helm session that was emitting non-canonical
+  priorities or scope states will need to align with the documented
+  enums.
 
 ### Fixed
 
