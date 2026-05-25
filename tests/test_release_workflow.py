@@ -344,6 +344,39 @@ class ReleaseWorkflowTest(unittest.TestCase):
         ):
             self.assertIn(trailer, body)
 
+    def test_prepare_emits_co_author_as_parseable_git_trailer(self):
+        repo = make_release_repo(self)
+        add_unreleased_bullet(repo)
+        proc = run_cmd(
+            [
+                PYTHON,
+                repo / "bin" / "ct2-release",
+                "prepare",
+                "patch",
+                "--co-author",
+                "Alice <alice@example.com>",
+                "--co-author",
+                "Bob <bob@example.com>",
+            ],
+            cwd=repo,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        trailers = run_cmd(
+            [
+                "git",
+                "log",
+                "-1",
+                "--format=%(trailers:key=Co-authored-by,valueonly,unfold)",
+            ],
+            cwd=repo,
+        )
+        self.assertEqual(trailers.returncode, 0, trailers.stderr)
+        values = [line for line in trailers.stdout.splitlines() if line.strip()]
+        self.assertEqual(
+            values,
+            ["Alice <alice@example.com>", "Bob <bob@example.com>"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
