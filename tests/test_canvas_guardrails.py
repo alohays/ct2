@@ -233,12 +233,17 @@ class RenderHTMLSafetyTest(unittest.TestCase):
         self.assertNotIn("<script>x()</script>", html)
         self.assertIn("&lt;script&gt;x()&lt;/script&gt;", html)
 
-    def test_render_failure_banner_present(self):
+    def test_render_failure_banner_present_and_hidden_by_default(self):
         # The visible recovery banner exists in the rendered HTML so a JS
         # render error has a place to surface — without it, a thrown error
-        # would silently blank the AI-judgment panel.
+        # would silently blank the AI-judgment panel. It must also be hidden
+        # by default (no 'on' class pre-applied, CSS sets display:none).
         html = self._render()
         self.assertIn('id="renderFail"', html)
+        self.assertNotIn("render-fail on", html)
+        # The CSS rule that hides the banner by default must also be present.
+        self.assertIn(".render-fail{", html)
+        self.assertIn("display:none", html)
 
     def test_paste_handler_installed(self):
         html = self._render()

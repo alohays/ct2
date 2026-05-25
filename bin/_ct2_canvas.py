@@ -34,9 +34,9 @@ def _diagnose_json(raw: str) -> list[str]:
             "replace with ASCII \" and ' (Claude heredocs sometimes auto-correct)"
         )
     if re.search(r",\s*[}\]]", raw):
-        hints.append("trailing comma before } or ] — JSON forbids trailing commas")
+        hints.append("possibly a trailing comma before } or ] (JSON forbids them)")
     if re.search(r"(?m)^\s*//", raw) or "/*" in raw:
-        hints.append("spec appears to contain a // or /* comment — JSON has no comment syntax")
+        hints.append("possibly a // or /* comment (JSON has no comment syntax)")
     return hints
 
 
@@ -49,8 +49,8 @@ def parse_spec(raw: str) -> dict:
     """
     if raw is None or not raw.strip():
         raise ValueError("empty spec — expected a JSON object")
-    if raw.startswith("﻿"):
-        raw = raw.lstrip("﻿")
+    if raw.startswith("\ufeff"):
+        raw = raw.lstrip("\ufeff")
     try:
         obj = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -92,6 +92,8 @@ def validate_spec(spec: dict) -> list[str]:
         return errors
 
     rnd = canvas.get("round", 0)
+    # bool is a subclass of int in Python, so the isinstance(rnd, bool) clause
+    # is load-bearing: it rejects {"round": true/false} which would otherwise pass.
     if not isinstance(rnd, int) or isinstance(rnd, bool):
         errors.append("canvas.round: must be an integer")
 
@@ -206,7 +208,7 @@ overflow-wrap:anywhere;word-break:break-word;max-width:100%}
 .edit:hover{background:var(--accent-soft)}
 .edit:focus{background:#fff;box-shadow:0 0 0 2px var(--accent)}
 .edit:empty::before{content:attr(data-ph);color:var(--faint)}
-.chip .lbl{max-width:340px}
+.chip .lbl{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .t-title,.t-item .it,.ac .txt{overflow-wrap:anywhere;word-break:break-word}
 .render-fail{margin:10px 15px;padding:9px 11px;border:1px solid var(--out);
 background:var(--out-soft);border-radius:8px;font-size:12px;color:var(--out);display:none}
@@ -741,6 +743,7 @@ function render(){
     _renderImpl();
     if(fail){ fail.classList.remove('on'); fail.innerHTML=''; }
   }catch(e){
+    lastJSON='';
     var msg=(e&&(e.message||e.toString()))||'unknown render error';
     if(fail){
       fail.classList.add('on');
@@ -764,6 +767,9 @@ document.addEventListener('paste',function(e){
   var text=data.getData('text/plain')||'';
   if(t.tagName!=='TEXTAREA') text=text.replace(/[\r\n\t]+/g,' ');
   e.preventDefault();
+  // execCommand is deprecated by MDN but still universally supported and is the
+  // only way to land a contenteditable paste in the browser's undo stack. The
+  // Selection-API branch below is the long-term fallback.
   if(document.queryCommandSupported&&document.queryCommandSupported('insertText')){
     document.execCommand('insertText',false,text);
   } else {
