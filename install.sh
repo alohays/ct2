@@ -15,7 +15,7 @@ set -euo pipefail
 
 CT2_REPO_URL="https://github.com/alohays/ct2"
 CT2_HOME="${HOME}/.ct2"
-CT2_INSTALL_VERSION="0.2.0"
+CT2_INSTALL_VERSION="0.3.0"
 SKILLS_SRC="${CT2_HOME}/claude-plugin/skills"
 SKILLS_DST="${HOME}/.claude/skills"
 CODEX_SKILLS_SRC="${CT2_HOME}/codex-plugin/skills"

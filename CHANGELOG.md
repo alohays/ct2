@@ -8,6 +8,20 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Deprecated
+
+### Removed
+
+### Security
+
+## [0.3.0] - 2026-05-25
+
+### Added
+
 - Added the Protocol Surface catalog, compatibility audit, protocol marker,
   and forward migration helper framework. New specs: `spec/PROTOCOL.md` and
   `spec/protocol-surface.md`.

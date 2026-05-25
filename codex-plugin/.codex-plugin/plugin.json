@@ -1,6 +1,6 @@
 {
   "name": "ct2",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "CT2 Codex role skills for a file-backed multi-agent code operations protocol with dual independent review.",
   "author": {
     "name": "CT2"
