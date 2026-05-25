@@ -21,6 +21,9 @@ on:
 permissions:
   contents: write
 
+env:
+  PYTHONDONTWRITEBYTECODE: "1"
+
 defaults:
   run:
     shell: bash
