@@ -265,16 +265,28 @@ Codex metadata output, and plugin/skill contract shape.
 
 ## Host-Repo Cleanliness
 
-Fresh CT2 projects default to host-clean branches and PR bodies. The policy is
-specified in [`spec/host-repo-cleanliness.md`](spec/host-repo-cleanliness.md)
-and enforced with:
+Fresh CT2 projects keep host-visible git artifacts clean by default. Branches
+derive from ticket titles (`feat/parse-nested-config`), PR bodies omit visible
+`.ct2/` paths, role footers, and emoji, and the only CT2 mapping in a PR body
+is a hidden HTML comment used by automation. The full policy is specified in
+[`spec/host-repo-cleanliness.md`](spec/host-repo-cleanliness.md) and the
+`trace_hygiene` config block in `config/harness.yaml`.
+
+Existing projects whose copied `.ct2/config/harness.yaml` has no
+`trace_hygiene` block retain the legacy-branded behavior. Switch presets with:
+
+```bash
+ct2-trace-hygiene-migrate --preset clean
+ct2-trace-hygiene-migrate --preset legacy-branded
+```
+
+Audit a host repo for CT2 leakage with `ct2-trace-lint`:
 
 ```bash
 ct2-trace-lint --strict
 ct2-trace-lint origin/main..HEAD --json
 ct2-trace-lint --pr 123 --fix-suggest
 ct2-trace-lint --baseline legacy-trace-baseline.json
-ct2-init --repair --install-trace-hook
 ```
 
 Example legacy finding:
@@ -285,13 +297,20 @@ Example legacy finding:
 [warn] branch-name-ticket-id  feat/017-ticket  017-t
 ```
 
-After switching to clean defaults with `ct2-trace-hygiene-migrate --preset
-clean`, a title-derived branch such as `feat/parse-nested-config` and a PR body
-with only a hidden mapping comment verify cleanly:
+After switching to clean defaults a title-derived branch such as
+`feat/parse-nested-config` and a PR body with only a hidden mapping comment
+verify cleanly:
 
 ```text
 ct2-trace-lint v1 - host-repo cleanliness audit
 No CT2 trace findings.
+```
+
+Optional local enforcement via a git pre-push hook:
+
+```bash
+ct2-init --repair --install-trace-hook
+ct2-init --repair --uninstall-trace-hook
 ```
 
 ## GitHub Issue Mirror
@@ -378,23 +397,6 @@ If the marker is missing, CT2 treats the project as protocol `0.1`. Migration
 helpers create `.ct2/.migrations/<timestamp>-<from>-to-<to>.tar.gz` backups and
 logs before any protocol stamp is advanced.
 
-## Host-Repo Cleanliness
-
-Fresh CT2 projects keep host-visible git artifacts clean by default. Branches
-derive from ticket titles (`feat/parse-nested-config`), PR bodies omit visible
-`.ct2/` paths and role footers, and the only CT2 mapping in a PR body is a
-hidden HTML comment used by automation.
-
-Existing projects whose copied `.ct2/config/harness.yaml` has no
-`trace_hygiene` block retain the legacy-branded behavior. Add
-`trace_hygiene: { preset: legacy-branded }` explicitly if you want visible CT2
-ticket paths and role footers in host PRs.
-
-```bash
-ct2-trace-hygiene-migrate --preset clean
-ct2-trace-hygiene-migrate --preset legacy-branded
-```
-
 ## Agent Skills
 
 | Skill | Role | Loop | Description |
@@ -450,6 +452,7 @@ Full protocol specifications are in [`spec/`](spec/):
 | [`spec/codex-runtime-contract.md`](spec/codex-runtime-contract.md) | Technical contract for Codex CLI, `/goal`, app-server, skills, MCP, and request-input integration |
 | [`spec/versioning.md`](spec/versioning.md) | SemVer, pre-1.0 compatibility rules, release flow, and installer pinning |
 | [`spec/protocol-surface.md`](spec/protocol-surface.md) | Versioned compatibility surface and migration expectations |
+| [`spec/host-repo-cleanliness.md`](spec/host-repo-cleanliness.md) | Host-repo cleanliness contract, `trace_hygiene` config, and `ct2-trace-lint` JSON surface |
 
 ## Product Planning
 
