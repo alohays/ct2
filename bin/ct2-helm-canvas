@@ -63,14 +63,17 @@ def cmd_generate(args: argparse.Namespace) -> int:
     ct2_dir = ensure_ct2(project_dir)
     raw = sys.stdin.read() if args.spec == "-" else Path(args.spec).read_text(encoding="utf-8")
     try:
-        spec = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        print(f"ct2-helm-canvas: malformed spec JSON: {exc}", file=sys.stderr)
+        spec = _ct2_canvas.parse_spec(raw)
+    except ValueError as exc:
+        print(f"ct2-helm-canvas: {exc}", file=sys.stderr)
         return 1
-    ticket = spec.get("ticket")
-    if not ticket:
-        print("ct2-helm-canvas: spec must include a 'ticket' field", file=sys.stderr)
+    errors = _ct2_canvas.validate_spec(spec)
+    if errors:
+        print("ct2-helm-canvas: spec validation failed:", file=sys.stderr)
+        for err in errors:
+            print(f"  - {err}", file=sys.stderr)
         return 1
+    ticket = spec["ticket"]
     canvas = _normalize_canvas(dict(spec.get("canvas") or {}))
     round_n = int(canvas.get("round", 0))
     canvas["round"] = round_n
