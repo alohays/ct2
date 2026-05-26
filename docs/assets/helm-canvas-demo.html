@@ -1,20 +1,20 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Helm Canvas — 티켓 #42 OAuth 로그인 계획</title>
+<title>Helm Canvas — Ticket #42 OAuth login plan</title>
 <!--
-  CT2 Helm Canvas — 데모 / 참조 구현
-  설계 원칙:
-   P1 캔버스는 결정 레코드를 렌더한 것이다 — 우측 JSON이 곧 진실원천의 미러
-   P2 모든 결정은 비용을 보여준다 — 토글하면 계획 요약이 즉시 바뀐다
-   P3 helm과 다른 선택은 증거다 — 변경 delta를 추적한다
-   P4 캔버스는 안내하되 가두지 않는다 — copy는 절대 막지 않는다.
-      미해결 항목은 토큰에 정직하게 실려 helm이 이어받는다.
-   P5 캔버스는 양식이 아니라 제안서다 — 모든 텍스트는 자유 편집/추가/삭제 가능
-  자기완결: 외부 CDN·폰트·스크립트 0. file:// 에서 완전 동작.
-  관련 계획서: docs/ct2-helm-canvas-plan-2026-05.md
+  CT2 Helm Canvas — demo / reference implementation
+  Design principles:
+   P1 The canvas is a rendering of the decision record — the JSON on the right mirrors the source of truth
+   P2 Every decision shows its cost — toggling instantly updates the plan summary
+   P3 Diverging from helm is evidence — track the change delta
+   P4 The canvas guides but never gates — copy is never blocked.
+      Open items ride along on the token honestly so helm can pick them back up.
+   P5 The canvas is a proposal, not a form — every piece of text can be freely edited/added/removed
+  Self-contained: 0 external CDNs, fonts, or scripts. Fully works from file://.
+  Related plan: docs/ct2-helm-canvas-plan-2026-05.md
 -->
 <style>
   :root {
@@ -47,7 +47,7 @@
     border-radius:5px;font-size:11px;color:var(--mut)}
   .cstate code b{color:var(--accent);font-weight:700}
 
-  /* ── 5단계 워크플로 스테퍼 ── */
+  /* ── 5-step workflow stepper ── */
   .flow{display:flex;margin:16px 0 20px;border:1px solid var(--line);border-radius:10px;
     overflow:hidden;background:var(--surface);box-shadow:var(--shadow)}
   .step{flex:1;padding:9px 12px;border-right:1px solid var(--line)}
@@ -76,7 +76,7 @@
   .resolved-tick{color:var(--in);font-weight:700}
   .open-tick{color:var(--hold);font-weight:700}
 
-  /* editable text — 자유 편집 (P5) */
+  /* editable text — free editing (P5) */
   .edit{outline:none;border-radius:5px;padding:2px 5px;margin:-2px -2px;
     transition:background .12s,box-shadow .12s;cursor:text}
   .edit:hover{background:var(--accent-soft)}
@@ -227,23 +227,23 @@
 <div class="wrap">
 
   <header class="top">
-    <span class="eyebrow">Helm Canvas · 결정 레코드 dec-0007</span>
-    <h1>티켓 #42 — OAuth 소셜 로그인 계획</h1>
-    <p class="lede">helm이 <b>제안</b>한 계획안입니다 — 양식이 아닙니다. 어떤 텍스트든 직접 고치고, 항목을 더하거나 빼세요. helm이 확인을 권하는 항목이 남아 있어도 <b>언제든 복사할 수 있습니다</b> — 미해결 항목은 토큰에 함께 실려 helm이 이어서 확인합니다.</p>
+    <span class="eyebrow">Helm Canvas · Decision record dec-0007</span>
+    <h1>Ticket #42 — OAuth social login plan</h1>
+    <p class="lede">This is the plan helm <b>proposed</b> — not a form. Edit any text directly, add or remove items. Even if items helm flagged for review are still open, <b>you can copy at any time</b> — open items ride along on the token so helm can follow up.</p>
     <div class="cstate" id="cstate">
-      <span>이 캔버스 파일:</span>
+      <span>This canvas file:</span>
       <code id="cstatePath">.ct2/plans/canvas/<b>open</b>/42-oauth-login-r0.canvas.html</code>
-      <span id="cstateNote">— 결정 대기 상태 · 복사하면 <code>answered/</code> 로 이동</span>
+      <span id="cstateNote">— Awaiting decision · moves to <code>answered/</code> on copy</span>
     </div>
   </header>
 
-  <!-- helm 워크플로 5단계 — 이 캔버스는 S3 -->
+  <!-- helm workflow 5 steps — this canvas is S3 -->
   <div class="flow" id="flow">
-    <div class="step done"><div class="s">S1 ✓</div><div class="t">유저 ↔ helm 대화로 계획</div></div>
-    <div class="step done"><div class="s">S2 ✓</div><div class="t">helm이 캔버스 HTML 생성</div></div>
-    <div class="step now"  data-step="3"><div class="s">S3 ●</div><div class="t">지금 — 결정하고 복사</div></div>
-    <div class="step"      data-step="4"><div class="s">S4</div><div class="t">helm이 토큰 회수 → md 티켓 작성</div></div>
-    <div class="step"      data-step="5"><div class="s">S5</div><div class="t">backlog에 forge용 티켓 생성</div></div>
+    <div class="step done"><div class="s">S1 ✓</div><div class="t">Plan via user ↔ helm dialogue</div></div>
+    <div class="step done"><div class="s">S2 ✓</div><div class="t">helm generates the canvas HTML</div></div>
+    <div class="step now"  data-step="3"><div class="s">S3 ●</div><div class="t">Now — decide and copy</div></div>
+    <div class="step"      data-step="4"><div class="s">S4</div><div class="t">helm reclaims token → writes md ticket</div></div>
+    <div class="step"      data-step="5"><div class="s">S5</div><div class="t">Create forge-bound ticket in backlog</div></div>
   </div>
 
   <div class="grid">
@@ -251,106 +251,106 @@
     <!-- ════ LEFT ════ -->
     <div class="left">
 
-      <!-- 01 해석 -->
+      <!-- 01 Interpretation -->
       <section class="panel" data-panel="interpret" id="p-interpret">
-        <div class="panel-hd"><span class="num">01</span><h2>helm의 해석</h2>
-          <span class="meta" data-meta="interpret">확인 권장</span></div>
+        <div class="panel-hd"><span class="num">01</span><h2>helm's interpretation</h2>
+          <span class="meta" data-meta="interpret">Review suggested</span></div>
         <div class="panel-bd">
-          <p>helm은 의도를 이렇게 읽었습니다 — <b>구글·깃허브 OAuth 로그인을 추가</b>하되 기존 이메일/비밀번호 로그인은 그대로 둡니다.</p>
-          <div class="quote">"소셜 로그인 좀 붙여줘. 구글이랑 깃허브. 기존 로그인은 그대로 두고."</div>
+          <p>helm read the intent as — <b>add Google and GitHub OAuth login</b> while leaving the existing email/password login as-is.</p>
+          <div class="quote">"Add social login. Google and GitHub. Leave the existing login alone."</div>
           <div class="askrow">
-            <button class="pick" data-misread="ok" aria-pressed="false">정확합니다<small>이대로 진행</small></button>
-            <button class="pick warn" data-misread="wrong" aria-pressed="false">고칠 부분이 있습니다<small>아래에 적어주세요</small></button>
+            <button class="pick" data-misread="ok" aria-pressed="false">Looks right<small>Proceed as-is</small></button>
+            <button class="pick warn" data-misread="wrong" aria-pressed="false">Needs correction<small>Write it below</small></button>
           </div>
-          <textarea class="free" id="misreadNote" style="display:none" placeholder="helm이 어떻게 이해해야 하나요? 자유롭게 적으세요."></textarea>
+          <textarea class="free" id="misreadNote" style="display:none" placeholder="How should helm read this? Write freely."></textarea>
         </div>
       </section>
 
-      <!-- 02 범위 -->
+      <!-- 02 Scope -->
       <section class="panel" data-panel="scope" id="p-scope">
-        <div class="panel-hd"><span class="num">02</span><h2>범위</h2>
-          <span class="meta" data-meta="scope">보류 항목 확인 권장</span></div>
+        <div class="panel-hd"><span class="num">02</span><h2>Scope</h2>
+          <span class="meta" data-meta="scope">Review held items</span></div>
         <div class="panel-bd">
           <div class="chips" id="scope">
-            <span class="chip" data-s="in" data-key="google"><span class="dot"></span><span class="lbl edit" contenteditable="true">구글 OAuth</span><span class="st" role="button" tabindex="0">IN</span><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></span>
-            <span class="chip" data-s="in" data-key="github"><span class="dot"></span><span class="lbl edit" contenteditable="true">깃허브 OAuth</span><span class="st" role="button" tabindex="0">IN</span><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></span>
-            <span class="chip" data-s="in" data-key="keep-email"><span class="dot"></span><span class="lbl edit" contenteditable="true">기존 이메일 로그인 유지</span><span class="st" role="button" tabindex="0">IN</span><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></span>
-            <span class="chip" data-s="hold" data-key="linking"><span class="dot"></span><span class="lbl edit" contenteditable="true">계정 연결(account linking)</span><span class="st" role="button" tabindex="0">HOLD</span><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></span>
-            <span class="chip" data-s="out" data-key="kakao"><span class="dot"></span><span class="lbl edit" contenteditable="true">카카오/네이버</span><span class="st" role="button" tabindex="0">OUT</span><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></span>
-            <span class="chip" data-s="out" data-key="2fa"><span class="dot"></span><span class="lbl edit" contenteditable="true">2단계 인증</span><span class="st" role="button" tabindex="0">OUT</span><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></span>
+            <span class="chip" data-s="in" data-key="google"><span class="dot"></span><span class="lbl edit" contenteditable="true">Google OAuth</span><span class="st" role="button" tabindex="0">IN</span><span class="x" role="button" tabindex="0" aria-label="Delete">✕</span></span>
+            <span class="chip" data-s="in" data-key="github"><span class="dot"></span><span class="lbl edit" contenteditable="true">GitHub OAuth</span><span class="st" role="button" tabindex="0">IN</span><span class="x" role="button" tabindex="0" aria-label="Delete">✕</span></span>
+            <span class="chip" data-s="in" data-key="keep-email"><span class="dot"></span><span class="lbl edit" contenteditable="true">Keep existing email login</span><span class="st" role="button" tabindex="0">IN</span><span class="x" role="button" tabindex="0" aria-label="Delete">✕</span></span>
+            <span class="chip" data-s="hold" data-key="linking"><span class="dot"></span><span class="lbl edit" contenteditable="true">Account linking</span><span class="st" role="button" tabindex="0">HOLD</span><span class="x" role="button" tabindex="0" aria-label="Delete">✕</span></span>
+            <span class="chip" data-s="out" data-key="kakao"><span class="dot"></span><span class="lbl edit" contenteditable="true">Kakao/Naver</span><span class="st" role="button" tabindex="0">OUT</span><span class="x" role="button" tabindex="0" aria-label="Delete">✕</span></span>
+            <span class="chip" data-s="out" data-key="2fa"><span class="dot"></span><span class="lbl edit" contenteditable="true">Two-factor auth</span><span class="st" role="button" tabindex="0">OUT</span><span class="x" role="button" tabindex="0" aria-label="Delete">✕</span></span>
           </div>
-          <button class="addbtn" id="addScope">+ 범위 항목 추가</button>
-          <p class="edithint">칩 라벨은 <b>직접 편집</b> 가능 · <b>IN/OUT/HOLD</b> 배지를 눌러 상태 순환 · ✕로 삭제</p>
+          <button class="addbtn" id="addScope">+ Add scope item</button>
+          <p class="edithint">Chip labels are <b>directly editable</b> · click the <b>IN/OUT/HOLD</b> badge to cycle state · ✕ to delete</p>
         </div>
       </section>
 
-      <!-- 03 티켓 분할 -->
+      <!-- 03 Ticket split -->
       <section class="panel" data-panel="split" id="p-split">
-        <div class="panel-hd"><span class="num">03</span><h2>티켓 분할</h2><span class="meta">PR 단위로 자유롭게</span></div>
+        <div class="panel-hd"><span class="num">03</span><h2>Ticket split</h2><span class="meta">Freely sliced by PR</span></div>
         <div class="panel-bd">
           <div class="cards" id="cards">
             <div class="tcard">
               <div class="tcard-top">
-                <h3 class="t-title edit" contenteditable="true">#42a · OAuth 인프라 + 구글</h3>
-                <span class="x" role="button" tabindex="0" aria-label="티켓 삭제">✕</span>
+                <h3 class="t-title edit" contenteditable="true">#42a · OAuth infra + Google</h3>
+                <span class="x" role="button" tabindex="0" aria-label="Delete ticket">✕</span>
               </div>
-              <span class="t-size edit" contenteditable="true">medium · ~2일</span>
+              <span class="t-size edit" contenteditable="true">medium · ~2 days</span>
               <ul class="t-items">
-                <li class="t-item"><span class="it edit" contenteditable="true">콜백 라우트·세션 토큰</span><span class="li-x" role="button" tabindex="0">✕</span></li>
-                <li class="t-item"><span class="it edit" contenteditable="true">구글 provider</span><span class="li-x" role="button" tabindex="0">✕</span></li>
-                <li class="t-item"><span class="it edit" contenteditable="true">로그인 화면 버튼</span><span class="li-x" role="button" tabindex="0">✕</span></li>
+                <li class="t-item"><span class="it edit" contenteditable="true">Callback route · session token</span><span class="li-x" role="button" tabindex="0">✕</span></li>
+                <li class="t-item"><span class="it edit" contenteditable="true">Google provider</span><span class="li-x" role="button" tabindex="0">✕</span></li>
+                <li class="t-item"><span class="it edit" contenteditable="true">Login screen buttons</span><span class="li-x" role="button" tabindex="0">✕</span></li>
               </ul>
-              <button class="addbtn mini add-item" type="button">+ 항목</button>
+              <button class="addbtn mini add-item" type="button">+ item</button>
             </div>
             <div class="tcard">
               <div class="tcard-top">
-                <h3 class="t-title edit" contenteditable="true">#42b · 깃허브 provider</h3>
-                <span class="x" role="button" tabindex="0" aria-label="티켓 삭제">✕</span>
+                <h3 class="t-title edit" contenteditable="true">#42b · GitHub provider</h3>
+                <span class="x" role="button" tabindex="0" aria-label="Delete ticket">✕</span>
               </div>
-              <span class="t-size edit" contenteditable="true">small · ~1일</span>
+              <span class="t-size edit" contenteditable="true">small · ~1 day</span>
               <ul class="t-items">
-                <li class="t-item"><span class="it edit" contenteditable="true">깃허브 provider</span><span class="li-x" role="button" tabindex="0">✕</span></li>
-                <li class="t-item"><span class="it edit" contenteditable="true">#42a 인프라 재사용</span><span class="li-x" role="button" tabindex="0">✕</span></li>
+                <li class="t-item"><span class="it edit" contenteditable="true">GitHub provider</span><span class="li-x" role="button" tabindex="0">✕</span></li>
+                <li class="t-item"><span class="it edit" contenteditable="true">Reuse infra from #42a</span><span class="li-x" role="button" tabindex="0">✕</span></li>
               </ul>
-              <button class="addbtn mini add-item" type="button">+ 항목</button>
+              <button class="addbtn mini add-item" type="button">+ item</button>
             </div>
           </div>
-          <button class="addbtn" id="addTicket" type="button">+ 티켓 추가</button>
-          <p class="edithint">helm은 인프라와 provider를 분리해 2건으로 제안했습니다 — 그러나 <b>전부 당신의 것</b>입니다. 제목·규모·세부 항목을 직접 고치고, ✕로 티켓·항목을 빼고, 필요하면 더 쪼개거나 합치세요.</p>
+          <button class="addbtn" id="addTicket" type="button">+ Add ticket</button>
+          <p class="edithint">helm proposed splitting infra and provider into 2 tickets — but <b>it's all yours</b>. Edit titles, sizes, and items directly; ✕ to drop tickets or items; split or merge as needed.</p>
         </div>
       </section>
 
-      <!-- 04 인수 기준 -->
+      <!-- 04 Acceptance criteria -->
       <section class="panel" data-panel="ac" id="p-ac">
-        <div class="panel-hd"><span class="num">04</span><h2>인수 기준</h2>
-          <span class="meta" data-meta="ac">검증 가능하게</span></div>
+        <div class="panel-hd"><span class="num">04</span><h2>Acceptance criteria</h2>
+          <span class="meta" data-meta="ac">Make it verifiable</span></div>
         <div class="panel-bd">
           <div id="aclist">
-            <div class="ac" data-id="a1" data-orig="구글 로그인 시 세션이 생성되고 메인으로 리다이렉트된다">
+            <div class="ac" data-id="a1" data-orig="Google login creates a session and redirects to the home page">
               <input type="checkbox" checked>
-              <span class="txt edit" contenteditable="true">구글 로그인 시 세션이 생성되고 메인으로 리다이렉트된다</span>
-              <button class="flag" type="button">⚑ 모호</button><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></div>
-            <div class="ac" data-id="a2" data-orig="깃허브 로그인이 동일하게 동작한다">
+              <span class="txt edit" contenteditable="true">Google login creates a session and redirects to the home page</span>
+              <button class="flag" type="button">⚑ Ambiguous</button><span class="x" role="button" tabindex="0" aria-label="Delete">✕</span></div>
+            <div class="ac" data-id="a2" data-orig="GitHub login behaves identically">
               <input type="checkbox" checked>
-              <span class="txt edit" contenteditable="true">깃허브 로그인이 동일하게 동작한다</span>
-              <button class="flag" type="button">⚑ 모호</button><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></div>
-            <div class="ac" data-id="a3" data-orig="기존 이메일 로그인이 회귀 없이 동작한다 (회귀 테스트 포함)">
+              <span class="txt edit" contenteditable="true">GitHub login behaves identically</span>
+              <button class="flag" type="button">⚑ Ambiguous</button><span class="x" role="button" tabindex="0" aria-label="Delete">✕</span></div>
+            <div class="ac" data-id="a3" data-orig="Existing email login works with no regressions (regression test included)">
               <input type="checkbox" checked>
-              <span class="txt edit" contenteditable="true">기존 이메일 로그인이 회귀 없이 동작한다 (회귀 테스트 포함)</span>
-              <button class="flag" type="button">⚑ 모호</button><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></div>
-            <div class="ac" data-id="a4" data-orig="로그인 UX가 자연스럽다">
+              <span class="txt edit" contenteditable="true">Existing email login works with no regressions (regression test included)</span>
+              <button class="flag" type="button">⚑ Ambiguous</button><span class="x" role="button" tabindex="0" aria-label="Delete">✕</span></div>
+            <div class="ac" data-id="a4" data-orig="Login UX feels natural">
               <input type="checkbox" checked>
-              <span class="txt edit" contenteditable="true">로그인 UX가 "자연스럽다"</span>
-              <button class="flag on" type="button">⚑ 모호</button><span class="x" role="button" tabindex="0" aria-label="삭제">✕</span></div>
+              <span class="txt edit" contenteditable="true">Login UX "feels natural"</span>
+              <button class="flag on" type="button">⚑ Ambiguous</button><span class="x" role="button" tabindex="0" aria-label="Delete">✕</span></div>
           </div>
-          <button class="addbtn" id="addAC" style="margin-top:10px">+ 인수 기준 추가</button>
-          <p class="edithint"><b>⚑ 모호</b>는 helm이 "검증 기준이 흐릿하다"고 본 항목입니다. 문구를 <b>직접 구체적으로 고치고</b> ⚑를 해제하거나, ✕로 빼거나, 그대로 두셔도 됩니다 — 결정은 당신 몫입니다.</p>
+          <button class="addbtn" id="addAC" style="margin-top:10px">+ Add acceptance criterion</button>
+          <p class="edithint"><b>⚑ Ambiguous</b> marks items helm considered "hard to verify". <b>Rewrite the wording concretely</b> and clear the ⚑, or ✕ to drop it, or leave it as-is — your call.</p>
         </div>
       </section>
 
-      <!-- 05 우선순위 -->
+      <!-- 05 Priority -->
       <section class="panel" data-panel="prio">
-        <div class="panel-hd"><span class="num">05</span><h2>우선순위 &amp; 의존성</h2><span class="meta">백로그 위치</span></div>
+        <div class="panel-hd"><span class="num">05</span><h2>Priority &amp; dependencies</h2><span class="meta">Backlog position</span></div>
         <div class="panel-bd">
           <div class="prio">
             <span style="font-size:12px;color:var(--mut)">low</span>
@@ -358,7 +358,7 @@
             <span style="font-size:12px;color:var(--mut)">critical</span>
             <span class="prio-val" id="prioVal">high</span>
           </div>
-          <svg class="depgraph" width="100%" height="56" viewBox="0 0 320 56" role="img" aria-label="#42a 다음에 #42b">
+          <svg class="depgraph" width="100%" height="56" viewBox="0 0 320 56" role="img" aria-label="#42a then #42b">
             <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
               <path d="M0,0 L6,3 L0,6 Z" fill="#6e6a61"/></marker></defs>
             <line x1="108" y1="28" x2="196" y2="28" stroke="#6e6a61" stroke-width="1.5" marker-end="url(#ar)"/>
@@ -368,33 +368,33 @@
             <text x="247" y="32" font-size="12" font-family="ui-monospace,monospace" fill="#6e6a61" text-anchor="middle">#42b</text>
           </svg>
           <div class="depedit">
-            <span class="k">의존성</span>
-            <span class="v edit" id="depText" contenteditable="true">선행 차단 티켓 없음 · #42b는 #42a 완료 후 착수</span>
+            <span class="k">Dependencies</span>
+            <span class="v edit" id="depText" contenteditable="true">No upstream blockers · #42b starts after #42a lands</span>
           </div>
-          <p class="edithint">의존 관계는 자유롭게 적으세요 — 위 그래프는 참고용이고, Phase 3에서 의존선을 직접 연결하게 됩니다.</p>
+          <p class="edithint">Describe dependencies however you like — the graph above is just illustrative; in Phase 3 you'll wire the dependency edges yourself.</p>
         </div>
       </section>
 
-      <!-- 06 제약 -->
+      <!-- 06 Constraints -->
       <section class="panel" data-panel="con" id="p-con">
-        <div class="panel-hd"><span class="num">06</span><h2>제약 &amp; 엣지케이스</h2><span class="meta">helm 추정 · 자유 편집</span></div>
+        <div class="panel-hd"><span class="num">06</span><h2>Constraints &amp; edge cases</h2><span class="meta">helm's guess · free to edit</span></div>
         <div class="panel-bd">
           <div id="conlist">
-            <div class="con"><span class="k edit" contenteditable="true">기술</span><span class="v edit" contenteditable="true">OAuth client secret은 환경변수로만 — 저장소 커밋 금지</span><span class="x" role="button" tabindex="0">✕</span></div>
-            <div class="con"><span class="k edit" contenteditable="true">엣지</span><span class="v edit" contenteditable="true">같은 이메일로 이미 가입된 계정에 소셜 로그인 시 충돌 → "계정 연결" 범위 결정에 종속</span><span class="x" role="button" tabindex="0">✕</span></div>
-            <div class="con"><span class="k edit" contenteditable="true">호환</span><span class="v edit" contenteditable="true">기존 세션 쿠키 포맷 유지 — 진행 중 사용자 세션 무효화 금지</span><span class="x" role="button" tabindex="0">✕</span></div>
+            <div class="con"><span class="k edit" contenteditable="true">Tech</span><span class="v edit" contenteditable="true">OAuth client secret via env vars only — never commit to the repo</span><span class="x" role="button" tabindex="0">✕</span></div>
+            <div class="con"><span class="k edit" contenteditable="true">Edge</span><span class="v edit" contenteditable="true">Social login with an email that already has an account → collision; depends on the "account linking" scope decision</span><span class="x" role="button" tabindex="0">✕</span></div>
+            <div class="con"><span class="k edit" contenteditable="true">Compat</span><span class="v edit" contenteditable="true">Keep the existing session cookie format — do not invalidate in-flight user sessions</span><span class="x" role="button" tabindex="0">✕</span></div>
           </div>
-          <button class="addbtn" id="addCon" type="button" style="margin-top:9px">+ 제약 추가</button>
-          <p class="edithint">분류 라벨과 내용 모두 편집 가능 · helm이 놓친 제약은 직접 추가하세요.</p>
+          <button class="addbtn" id="addCon" type="button" style="margin-top:9px">+ Add constraint</button>
+          <p class="edithint">Both the category label and the body are editable · add any constraint helm missed.</p>
         </div>
       </section>
 
-      <!-- 07 자유 메모 -->
+      <!-- 07 Free notes -->
       <section class="panel" data-panel="note">
-        <div class="panel-hd"><span class="num">07</span><h2>helm에게 — 자유 메모</h2><span class="meta">선택</span></div>
+        <div class="panel-hd"><span class="num">07</span><h2>To helm — free notes</h2><span class="meta">Optional</span></div>
         <div class="panel-bd">
-          <p style="font-size:13px;color:var(--mut)">패널에 안 들어가는 어떤 말이든 — 우려, 맥락, 바꾸고 싶은 방향. 그대로 토큰에 실려 helm에게 전달됩니다.</p>
-          <textarea class="free" id="freeNote" placeholder="예: 2FA는 이번엔 빼지만 다음 분기엔 꼭 필요해요. 깃허브 OAuth는 엔터프라이즈 계정도 고려해줘요."></textarea>
+          <p style="font-size:13px;color:var(--mut)">Anything that doesn't fit in a panel — concerns, context, direction you want to change. Rides along on the token, delivered as-is to helm.</p>
+          <textarea class="free" id="freeNote" placeholder="e.g. Skipping 2FA this round but we'll need it next quarter. For GitHub OAuth, please consider enterprise accounts too."></textarea>
         </div>
       </section>
 
@@ -403,37 +403,37 @@
     <!-- ════ RIGHT ════ -->
     <div class="right">
       <div class="summary">
-        <div class="hd">이 계획 한눈에</div>
+        <div class="hd">This plan at a glance</div>
         <div class="stats">
-          <div class="stat"><div class="v" id="stTickets">2</div><div class="l">티켓 (PR)</div></div>
-          <div class="stat"><div class="v" id="stDays">~3일</div><div class="l">예상 작업량</div></div>
-          <div class="stat"><div class="v" id="stScope">3</div><div class="l">In-scope 항목</div></div>
-          <div class="stat"><div class="v adv" id="stAdv">3</div><div class="l">helm 확인 권장</div></div>
+          <div class="stat"><div class="v" id="stTickets">2</div><div class="l">Tickets (PRs)</div></div>
+          <div class="stat"><div class="v" id="stDays">~3 days</div><div class="l">Estimated effort</div></div>
+          <div class="stat"><div class="v" id="stScope">3</div><div class="l">In-scope items</div></div>
+          <div class="stat"><div class="v adv" id="stAdv">3</div><div class="l">helm review suggested</div></div>
         </div>
 
         <div class="block delta">
-          <div class="lbl">helm 제안 → 내 결정</div>
-          <ul id="deltaList"><li class="none">아직 helm 제안과 동일합니다</li></ul>
+          <div class="lbl">helm proposal → your decision</div>
+          <ul id="deltaList"><li class="none">Still matches helm's proposal</li></ul>
         </div>
 
         <div class="block advis">
-          <div class="lbl">helm이 확인을 권하는 항목</div>
+          <div class="lbl">Items helm suggests reviewing</div>
           <ul id="advisList"></ul>
           <p class="hint" id="advisHint"></p>
         </div>
 
         <details class="record">
-          <summary><span class="tw">▸</span> 결정 레코드 (이게 진실원천입니다)
+          <summary><span class="tw">▸</span> Decision record (this is the source of truth)
             <span class="path">.ct2/decisions/</span></summary>
           <pre class="json" id="json"></pre>
         </details>
 
         <div class="commit">
-          <button class="go" id="commitBtn">📋 결정 확정 → helm으로 복사</button>
+          <button class="go" id="commitBtn">📋 Confirm decision → copy to helm</button>
           <div class="gatemsg" id="gateMsg"></div>
           <div class="donebox" id="doneBox">
             <textarea id="token" readonly></textarea>
-            <span class="copied" id="copiedMsg">✓ 클립보드에 복사됨</span>
+            <span class="copied" id="copiedMsg">✓ Copied to clipboard</span>
           </div>
         </div>
       </div>
@@ -442,15 +442,15 @@
   </div>
 
   <footer class="note">
-    CT2 Helm Canvas 데모 · 자기완결 HTML(외부 의존성 0) · 결정 레코드 <code>dec-0007</code>의 provider format(html) 렌더<br>
-    계획서: docs/ct2-helm-canvas-plan-2026-05.md — copy는 막지 않습니다(P4). 모든 텍스트는 편집 가능합니다(P5).
+    CT2 Helm Canvas demo · self-contained HTML (0 external dependencies) · provider format(html) render of decision record <code>dec-0007</code><br>
+    Plan: docs/ct2-helm-canvas-plan-2026-05.md — copy is never blocked (P4). Every piece of text is editable (P5).
   </footer>
 </div>
 
 <script>
 "use strict";
 
-/* helm 원안 — 변경 delta는 이 baseline 대비로 계산 */
+/* helm's original — change delta is computed against this baseline */
 var BASELINE = {
   scope:{ google:"in", github:"in", "keep-email":"in", linking:"hold", kakao:"out", "2fa":"out" },
   priority:"high"
@@ -465,7 +465,7 @@ var $=function(s,r){return (r||document).querySelector(s)};
 var $$=function(s,r){return [].slice.call((r||document).querySelectorAll(s))};
 var txt=function(el){return (el.textContent||"").trim()};
 
-/* ── DOM → 상태 ── */
+/* ── DOM → state ── */
 function read(){
   var mr=$('.pick[aria-pressed="true"]');
   return {
@@ -488,7 +488,7 @@ function read(){
   };
 }
 
-/* 초기 DOM = helm 원안. 티켓/제약/의존성 baseline을 캡처해 delta 비교에 사용 */
+/* Initial DOM = helm's original. Capture tickets/constraints/dependency baselines for delta comparison */
 (function(){
   var b=read();
   BASELINE.ticketsSig=JSON.stringify(b.tickets);
@@ -496,53 +496,53 @@ function read(){
   BASELINE.dependency=b.dependency;
 })();
 
-/* ── helm이 확인을 권하는 항목 (advisory — 막지 않음) ── */
+/* ── Items helm suggests reviewing (advisory — never blocks) ── */
 function advisory(s){
   var a=[];
   if(s.misread===null)
-    a.push({ t:"helm의 해석이 맞는지 아직 확인 안 됨", jump:"#p-interpret" });
+    a.push({ t:"helm's interpretation not yet confirmed", jump:"#p-interpret" });
   if(s.misread==="wrong" && !s.misreadNote)
-    a.push({ t:"고칠 부분을 골랐지만 내용이 비어 있음", jump:"#p-interpret" });
+    a.push({ t:"Marked needs correction but the note is empty", jump:"#p-interpret" });
   s.scope.filter(function(x){return x.state==="hold"}).forEach(function(x){
-    a.push({ t:"범위 '"+x.label+"' 가 보류 상태 (IN/OUT 미결)", jump:"#p-scope" }); });
+    a.push({ t:"Scope '"+x.label+"' is on hold (IN/OUT undecided)", jump:"#p-scope" }); });
   s.ac.filter(function(x){return x.accepted&&x.flagged}).forEach(function(x){
-    a.push({ t:"인수 기준 '"+x.text.slice(0,20)+"…' 가 ⚑ 모호 표시됨", jump:"#p-ac" }); });
+    a.push({ t:"Acceptance criterion '"+x.text.slice(0,20)+"…' is ⚑ Ambiguous", jump:"#p-ac" }); });
   return a;
 }
 
-/* ── helm 제안 대비 변경 ── */
+/* ── Changes vs helm's proposal ── */
 function delta(s){
   var d=[];
-  if(s.misread==="wrong") d.push({f:"해석", t:"helm 해석을 수정"+(s.misreadNote?"":" (내용 비어 있음)")});
+  if(s.misread==="wrong") d.push({f:"Interpretation", t:"Corrected helm's interpretation"+(s.misreadNote?"":" (note empty)")});
   s.scope.forEach(function(x){
     var base=BASELINE.scope[x.key];
     if(base&&base!==x.state){
-      var nm={in:"포함",out:"제외",hold:"보류"};
-      d.push({f:"범위", t:"'"+x.label+"' "+nm[base]+"→"+nm[x.state]});
+      var nm={in:"IN",out:"OUT",hold:"HOLD"};
+      d.push({f:"Scope", t:"'"+x.label+"' "+nm[base]+"→"+nm[x.state]});
     } else if(!x.key){
-      d.push({f:"범위", t:"'"+(x.label||"(빈 항목)")+"' 추가"});
+      d.push({f:"Scope", t:"Added '"+(x.label||"(empty item)")+"'"});
     }
   });
-  if(s.priority!==BASELINE.priority) d.push({f:"우선순위", t:BASELINE.priority+" → "+s.priority});
+  if(s.priority!==BASELINE.priority) d.push({f:"Priority", t:BASELINE.priority+" → "+s.priority});
   var seen={};
   s.ac.forEach(function(x){
     seen[x.id]=1;
-    if(!x.orig){ d.push({f:"인수기준", t:"'"+(x.text.slice(0,20)||"(빈 항목)")+"…' 추가"}); return; }
-    if(!x.accepted){ d.push({f:"인수기준", t:"'"+x.text.slice(0,20)+"…' 제외"}); return; }
-    if(x.text!==x.orig) d.push({f:"인수기준", t:"'"+x.orig.slice(0,18)+"…' 문구 수정"});
+    if(!x.orig){ d.push({f:"AC", t:"Added '"+(x.text.slice(0,20)||"(empty item)")+"…'"}); return; }
+    if(!x.accepted){ d.push({f:"AC", t:"Dropped '"+x.text.slice(0,20)+"…'"}); return; }
+    if(x.text!==x.orig) d.push({f:"AC", t:"Reworded '"+x.orig.slice(0,18)+"…'"});
   });
-  ORIG_AC.forEach(function(id){ if(!seen[id]) d.push({f:"인수기준", t:id+" 항목 삭제"}); });
+  ORIG_AC.forEach(function(id){ if(!seen[id]) d.push({f:"AC", t:"Removed item "+id}); });
   if(JSON.stringify(s.tickets)!==BASELINE.ticketsSig)
-    d.push({f:"티켓", t:"분할안 수정 (총 "+s.tickets.length+"건)"});
+    d.push({f:"Tickets", t:"Edited the split ("+s.tickets.length+" total)"});
   if(JSON.stringify(s.constraints)!==BASELINE.conSig)
-    d.push({f:"제약", t:"제약 목록 수정 (총 "+s.constraints.length+"건)"});
+    d.push({f:"Constraints", t:"Edited the constraint list ("+s.constraints.length+" total)"});
   if(s.dependency!==BASELINE.dependency)
-    d.push({f:"의존성", t:"의존성 기술 수정"});
-  if(s.note) d.push({f:"메모", t:"자유 메모 작성"});
+    d.push({f:"Dependencies", t:"Edited dependency description"});
+  if(s.note) d.push({f:"Notes", t:"Free note added"});
   return d;
 }
 
-/* ── 결정 레코드 (= .ct2/decisions/answered/ 페이로드) ── */
+/* ── Decision record (= .ct2/decisions/answered/ payload) ── */
 function recordObj(s){
   var adv=advisory(s);
   return {
@@ -562,8 +562,8 @@ function recordObj(s){
       note: s.note||null
     },
     overrides: delta(s).map(function(x){return x.f+": "+x.t}),
-    open_items: adv.map(function(x){return x.t}),   /* 정직하게: 미해결을 숨기지 않는다 */
-    answered_at:"<확정 시각>"
+    open_items: adv.map(function(x){return x.t}),   /* honest: never hide open items */
+    answered_at:"<confirmation time>"
   };
 }
 function colorJSON(obj){
@@ -575,26 +575,26 @@ function colorJSON(obj){
     .replace(/: (-?\d+)/g,': <span class="n">$1</span>');
 }
 
-/* ── 렌더 ── */
+/* ── Render ── */
 var lastJSON="", committed=false;
 function render(){
   var s=read(), adv=advisory(s), d=delta(s);
 
-  /* 패널 메타 */
-  $('[data-meta="interpret"]').innerHTML = s.misread===null ? "확인 권장"
-    : s.misread==="ok" ? '<span class="resolved-tick">✓ 정확</span>'
-    : '<span class="open-tick">✎ 수정 요청</span>';
+  /* Panel meta */
+  $('[data-meta="interpret"]').innerHTML = s.misread===null ? "Review suggested"
+    : s.misread==="ok" ? '<span class="resolved-tick">✓ Looks right</span>'
+    : '<span class="open-tick">✎ Correction requested</span>';
   var holds=s.scope.filter(function(x){return x.state==="hold"}).length;
   $('[data-meta="scope"]').innerHTML = holds
-    ? '<span class="open-tick">보류 '+holds+'건</span>' : '<span class="resolved-tick">✓ 모두 결정</span>';
+    ? '<span class="open-tick">'+holds+' on hold</span>' : '<span class="resolved-tick">✓ All decided</span>';
   var fl=s.ac.filter(function(x){return x.accepted&&x.flagged}).length;
   $('[data-meta="ac"]').innerHTML = fl
-    ? '<span class="open-tick">⚑ '+fl+'건</span>' : '<span class="resolved-tick">✓ 모두 명확</span>';
+    ? '<span class="open-tick">⚑ '+fl+'</span>' : '<span class="resolved-tick">✓ All clear</span>';
 
-  /* 통계 */
+  /* Stats */
   var inN=s.scope.filter(function(x){return x.state==="in"}).length;
   $('#stTickets').textContent=s.tickets.length;
-  $('#stDays').textContent= inN>=5?"~4일":"~3일";
+  $('#stDays').textContent= inN>=5?"~4 days":"~3 days";
   $('#stScope').textContent=inN;
   var sa=$('#stAdv'); sa.textContent=adv.length;
   sa.className="v "+(adv.length?"adv":"adv0");
@@ -602,42 +602,42 @@ function render(){
   /* delta */
   $('#deltaList').innerHTML = d.length
     ? d.map(function(x){return '<li><span class="f">'+x.f+'</span><span>'+esc(x.t)+'</span></li>'}).join("")
-    : '<li class="none">아직 helm 제안과 동일합니다</li>';
+    : '<li class="none">Still matches helm\'s proposal</li>';
 
-  /* advisory — 막지 않고 안내만 */
+  /* advisory — never blocks, only informs */
   var al=$('#advisList'), ah=$('#advisHint');
   if(adv.length){
     al.innerHTML = adv.map(function(x){
       return '<li data-jump="'+x.jump+'"><span class="ic">⚑</span><span>'+esc(x.t)
-        +'</span><span class="jump">패널 보기 ›</span></li>'; }).join("");
-    ah.textContent="이 항목들은 복사를 막지 않습니다. 그대로 두면 토큰의 open_items 에 실려 helm이 이어서 확인합니다.";
+        +'</span><span class="jump">Open panel ›</span></li>'; }).join("");
+    ah.textContent="These items do not block copy. If left as-is they ride in the token's open_items and helm follows up.";
   } else {
-    al.innerHTML='<li class="none">helm이 확인을 권하는 항목이 없습니다 ✓</li>';
+    al.innerHTML='<li class="none">No items helm wants reviewed ✓</li>';
     ah.textContent="";
   }
 
-  /* JSON 미러 */
+  /* JSON mirror */
   var pre=$('#json'), nj=JSON.stringify(recordObj(s));
   pre.innerHTML=colorJSON(recordObj(s));
   if(nj!==lastJSON && lastJSON!==""){ pre.classList.add('flash');
     setTimeout(function(){pre.classList.remove('flash')},420); }
   lastJSON=nj;
 
-  /* 확정 — 절대 막지 않는다 */
+  /* Confirm — never blocked */
   var gm=$('#gateMsg');
   if(committed){
     gm.innerHTML="";
   } else if(adv.length){
-    gm.innerHTML="복사하면 <b>"+adv.length+"건의 확인 권장 항목</b>도 함께 helm에 전달됩니다";
+    gm.innerHTML="Copying will also send <b>"+adv.length+" review-suggested item(s)</b> to helm";
   } else {
-    gm.innerHTML="모든 항목이 정리되었습니다 — 깔끔하게 전달됩니다 ✓";
+    gm.innerHTML="Everything tidied up — delivered cleanly ✓";
   }
 
   try{ localStorage.setItem(STKEY,nj); }catch(e){}
 }
 function esc(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;")}
 
-/* ── 이벤트 ── */
+/* ── Events ── */
 $('.askrow').addEventListener('click',function(e){
   var b=e.target.closest('.pick'); if(!b) return;
   var on=b.getAttribute('aria-pressed')==="true";
@@ -650,7 +650,7 @@ $('.askrow').addEventListener('click',function(e){
 $('#misreadNote').addEventListener('input',function(){committed=false;render()});
 $('#freeNote').addEventListener('input',function(){committed=false;render()});
 
-/* 범위: 상태 배지 / 삭제 / 라벨 편집 */
+/* Scope: state badge / delete / label edit */
 $('#scope').addEventListener('click',function(e){
   var chip=e.target.closest('.chip'); if(!chip) return;
   if(e.target.classList.contains('st')){
@@ -664,15 +664,15 @@ $('#scope').addEventListener('click',function(e){
 $('#addScope').addEventListener('click',function(){
   var c=document.createElement('span');
   c.className='chip'; c.dataset.s='in';
-  c.innerHTML='<span class="dot"></span><span class="lbl edit" contenteditable="true" data-ph="새 범위 항목…"></span>'
+  c.innerHTML='<span class="dot"></span><span class="lbl edit" contenteditable="true" data-ph="New scope item…"></span>'
     +'<span class="st" role="button" tabindex="0">IN</span>'
-    +'<span class="x" role="button" tabindex="0" aria-label="삭제">✕</span>';
+    +'<span class="x" role="button" tabindex="0" aria-label="Delete">✕</span>';
   $('#scope').appendChild(c);
   $('.lbl',c).focus();
   committed=false; render();
 });
 
-/* AC: 체크 / ⚑ / 삭제 / 텍스트 편집 */
+/* AC: check / ⚑ / delete / text edit */
 var aclist=$('#aclist');
 aclist.addEventListener('click',function(e){
   var row=e.target.closest('.ac'); if(!row) return;
@@ -687,22 +687,22 @@ $('#addAC').addEventListener('click',function(){
   var row=document.createElement('div');
   row.className='ac'; row.dataset.id='new'+(++acSeq);
   row.innerHTML='<input type="checkbox" checked>'
-    +'<span class="txt edit" contenteditable="true" data-ph="새 인수 기준 — 검증 가능하게 적으세요…"></span>'
-    +'<button class="flag" type="button">⚑ 모호</button>'
-    +'<span class="x" role="button" tabindex="0" aria-label="삭제">✕</span>';
+    +'<span class="txt edit" contenteditable="true" data-ph="New acceptance criterion — write it verifiably…"></span>'
+    +'<button class="flag" type="button">⚑ Ambiguous</button>'
+    +'<span class="x" role="button" tabindex="0" aria-label="Delete">✕</span>';
   aclist.appendChild(row);
   $('.txt',row).focus();
   committed=false; render();
 });
 
-/* 모든 contenteditable(.edit) 편집 — 한 handler로 — 범위·AC·티켓·제약·의존성 전부 */
+/* All contenteditable(.edit) edits — one handler — scope/AC/tickets/constraints/dependency */
 document.addEventListener('input',function(e){
   if(e.target.classList && e.target.classList.contains('edit')){
     committed=false; render();
   }
 });
 
-/* 티켓: 카드 삭제 / 항목 삭제 / 항목 추가 */
+/* Tickets: delete card / delete item / add item */
 $('#cards').addEventListener('click',function(e){
   var card=e.target.closest('.tcard'); if(!card) return;
   if(e.target.classList.contains('x')){
@@ -712,7 +712,7 @@ $('#cards').addEventListener('click',function(e){
   } else if(e.target.classList.contains('add-item')){
     var li=document.createElement('li');
     li.className='t-item';
-    li.innerHTML='<span class="it edit" contenteditable="true" data-ph="세부 항목…"></span>'
+    li.innerHTML='<span class="it edit" contenteditable="true" data-ph="Sub-item…"></span>'
       +'<span class="li-x" role="button" tabindex="0">✕</span>';
     $('.t-items',card).appendChild(li);
     $('.it',li).focus();
@@ -723,17 +723,17 @@ $('#addTicket').addEventListener('click',function(){
   var c=document.createElement('div');
   c.className='tcard';
   c.innerHTML='<div class="tcard-top">'
-    +'<h3 class="t-title edit" contenteditable="true" data-ph="새 티켓 제목…"></h3>'
-    +'<span class="x" role="button" tabindex="0" aria-label="티켓 삭제">✕</span></div>'
-    +'<span class="t-size edit" contenteditable="true" data-ph="규모·기간 (예: small · ~1일)"></span>'
+    +'<h3 class="t-title edit" contenteditable="true" data-ph="New ticket title…"></h3>'
+    +'<span class="x" role="button" tabindex="0" aria-label="Delete ticket">✕</span></div>'
+    +'<span class="t-size edit" contenteditable="true" data-ph="Size · duration (e.g. small · ~1 day)"></span>'
     +'<ul class="t-items"></ul>'
-    +'<button class="addbtn mini add-item" type="button">+ 항목</button>';
+    +'<button class="addbtn mini add-item" type="button">+ item</button>';
   $('#cards').appendChild(c);
   $('.t-title',c).focus();
   committed=false; render();
 });
 
-/* 제약: 줄 삭제 / 줄 추가 */
+/* Constraints: delete row / add row */
 $('#conlist').addEventListener('click',function(e){
   if(e.target.classList.contains('x')){
     e.target.closest('.con').remove(); committed=false; render();
@@ -742,8 +742,8 @@ $('#conlist').addEventListener('click',function(e){
 $('#addCon').addEventListener('click',function(){
   var row=document.createElement('div');
   row.className='con';
-  row.innerHTML='<span class="k edit" contenteditable="true">기타</span>'
-    +'<span class="v edit" contenteditable="true" data-ph="제약·엣지케이스 내용…"></span>'
+  row.innerHTML='<span class="k edit" contenteditable="true">Other</span>'
+    +'<span class="v edit" contenteditable="true" data-ph="Constraint / edge case…"></span>'
     +'<span class="x" role="button" tabindex="0">✕</span>';
   $('#conlist').appendChild(row);
   $('.v',row).focus();
@@ -754,7 +754,7 @@ var prio=$('#prio');
 prio.addEventListener('input',function(){
   $('#prioVal').textContent=PRIO[+prio.value]; committed=false; render(); });
 
-/* advisory 클릭 → 해당 패널로 스크롤 */
+/* Advisory click → scroll to its panel */
 $('#advisList').addEventListener('click',function(e){
   var li=e.target.closest('li[data-jump]'); if(!li) return;
   var el=$(li.dataset.jump);
@@ -763,7 +763,7 @@ $('#advisList').addEventListener('click',function(e){
     setTimeout(function(){el.style.boxShadow=''},900); }
 });
 
-/* 확정 — 언제나 동작 */
+/* Confirm — always works */
 $('#commitBtn').addEventListener('click',function(){
   var s=read(), adv=advisory(s);
   var rec=recordObj(s); rec.answered_at=new Date().toISOString();
@@ -771,19 +771,19 @@ $('#commitBtn').addEventListener('click',function(){
   $('#token').value=token;
   $('#doneBox').style.display="block";
   $('#copiedMsg').innerHTML = (adv.length
-    ? "✓ 복사됨 — <code>open_items</code> "+adv.length+"건 포함. "
-    : "✓ 복사됨. ")
-    + "helm 대화창에 붙여넣고 <b>\"md 티켓으로 만들어줘\"</b>라고 하세요 (S4).";
+    ? "✓ Copied — includes "+adv.length+" <code>open_items</code>. "
+    : "✓ Copied. ")
+    + "Paste into the helm chat and say <b>\"turn this into an md ticket\"</b> (S4).";
   try{ navigator.clipboard.writeText(token); }catch(e){ $('#token').select(); }
   committed=true;
-  this.textContent="✓ 복사됨 — 다시 복사하려면 클릭";
+  this.textContent="✓ Copied — click to copy again";
 
-  /* 워크플로 진행: S3 완료 → S4로 (캔버스도 open/ → answered/ 이동) */
+  /* Workflow progress: S3 done → S4 (canvas also moves open/ → answered/) */
   var s3=$('#flow .step[data-step="3"]'), s4=$('#flow .step[data-step="4"]');
   s3.className="step done"; $('.s',s3).textContent="S3 ✓";
   s4.className="step now";  $('.s',s4).textContent="S4 ●";
   $('#cstatePath').innerHTML=".ct2/plans/canvas/<b>answered</b>/42-oauth-login-r0.canvas.html";
-  $('#cstateNote').innerHTML="— helm이 회수 완료 · seal되면 <code>sealed/</code> 로 이동";
+  $('#cstateNote').innerHTML="— helm has reclaimed it · moves to <code>sealed/</code> once sealed";
   render();
 });
 

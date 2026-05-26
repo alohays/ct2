@@ -1,39 +1,39 @@
 # CT2 Agent Platform Feature Radar
 
-조사 기준일: 2026-05-10 KST / 2026-05-09 US
-대상: OpenAI Codex CLI/App/App Server, Anthropic Claude Code/Agent SDK/Desktop/Web
-목적: Codex와 Claude Code의 최신 릴리스, 공식 문서, 로컬 설치 상태를 근거로 CT2의 다음 제품 방향을 제안한다.
+Survey date: 2026-05-10 KST / 2026-05-09 US
+Target: OpenAI Codex CLI/App/App Server, Anthropic Claude Code/Agent SDK/Desktop/Web
+Purpose: Propose CT2's next product direction based on the latest releases, official documentation, and local install state of Codex and Claude Code.
 
-문서 세트 안에서의 역할: 이 문서는 **Verified Autonomy OS의 vendor-surface map**이다. 즉 "무엇이 가능한가", "어떤 기능이 안정/실험/미성숙인가", "CT2 protocol kernel로 흡수할 때 어떤 guardrail이 필요한가"를 정리한다. 실행 순서와 최종 제품 전략은 `docs/ct2-verified-autonomy-os-strategy-2026-05.md`가 canonical로 잡고, 본 문서는 그 전략의 증거 지도와 후보 backlog 역할을 한다.
+Role within the document set: This document is the **vendor-surface map for Verified Autonomy OS**. That is, it organizes "what is possible," "which features are stable/experimental/immature," and "what guardrails are needed when absorbing into the CT2 protocol kernel." The execution order and final product strategy are set canonically by `docs/ct2-verified-autonomy-os-strategy-2026-05.md`; this document serves as the evidence map and candidate backlog for that strategy.
 
 ## Executive Summary
 
-CT2는 이미 Codex 0.128.0의 `/goal`, app-server, request-input, plugin/skill 표면을 상당히 흡수했다. 이번 조사 기준으로 로컬 Codex는 `codex-cli 0.130.0`이고 최신 안정 릴리스도 0.130.0이다. GitHub에는 0.131.0-alpha 프리릴리스가 보이지만 CT2 기준선으로 삼을 안정 릴리스는 아니다. 로컬 Claude Code는 업데이트 후 `2.1.138`이며 공식 changelog 최신과 일치한다. 이로써 Claude Code의 worktree 기준점, hook effort 입력, subagent skill discovery fixes, AskUserQuestion multi-select, CronList, MCP/connector 안정성, OTel survey, auto-mode hard deny, Remote Control CLI 표면을 CT2가 바로 기준선으로 삼을 수 있다.
+CT2 has already absorbed a significant portion of Codex 0.128.0's `/goal`, app-server, request-input, and plugin/skill surfaces. As of this survey, local Codex is `codex-cli 0.130.0`, and the latest stable release is also 0.130.0. GitHub shows a 0.131.0-alpha pre-release, but it is not a stable release to anchor CT2 baselines on. Local Claude Code, after updating, is `2.1.138` and matches the latest official changelog. With this, CT2 can directly take Claude Code's worktree baseline, hook effort input, subagent skill discovery fixes, AskUserQuestion multi-select, CronList, MCP/connector stability, OTel survey, auto-mode hard deny, and Remote Control CLI surfaces as its baseline.
 
-가장 큰 제품 기회는 세 가지다.
+There are three main product opportunities.
 
-1. **CT2를 파일 기반 kanban에서 runtime-aware control plane으로 확장**한다. `.ct2/`는 계속 source of truth로 유지하되, Codex app-server/remote-control과 Claude Agent SDK/Remote Control/Channels를 CT2가 관찰하고 재개할 수 있는 런타임 계층으로 모델링한다.
-2. **질문, 승인, 스케줄, 모니터링을 CT2 프로토콜로 정규화**한다. Codex `item/tool/requestUserInput`, Claude `AskUserQuestion`, Claude `CronCreate/CronList/CronDelete`, Claude Monitor, Codex app Automations를 모두 `.ct2/decisions/`, `.ct2/watchers/`, `.ct2/runtime/`으로 흡수한다.
-3. **리뷰 독립성과 안전성을 hook/package 레벨에서 강제**한다. Codex hooks와 Claude hooks가 모두 안정적/문서화된 표면을 갖고 있으므로, "lens가 상대 sidecar를 먼저 읽지 않는다", "state transition은 `mv`만 쓴다", "reviewer는 source를 쓰지 않는다"를 텍스트 지침이 아니라 실행 전후 검증으로 끌어올릴 수 있다.
+1. **Expand CT2 from a file-based kanban into a runtime-aware control plane.** Keep `.ct2/` as the source of truth, while modeling Codex app-server/remote-control and Claude Agent SDK/Remote Control/Channels as a runtime layer that CT2 can observe and resume.
+2. **Normalize questions, approvals, scheduling, and monitoring into the CT2 protocol.** Absorb Codex `item/tool/requestUserInput`, Claude `AskUserQuestion`, Claude `CronCreate/CronList/CronDelete`, Claude Monitor, and Codex app Automations all into `.ct2/decisions/`, `.ct2/watchers/`, and `.ct2/runtime/`.
+3. **Enforce review independence and safety at the hook/package level.** Both Codex hooks and Claude hooks now have stable, documented surfaces, so invariants like "lens does not read the partner sidecar first," "state transitions use only `mv`," and "reviewers do not write source" can be lifted from textual guidance to pre/post-execution validation.
 
-더 큰 제품 thesis는 이것이다. **CT2는 agent orchestration tool이 아니라 Verified Autonomy OS가 되어야 한다.** 단, 여기서 OS는 보편적 agent OS가 아니라 CT2의 file-first dual-review workflow를 보호하는 **protocol kernel**이다. Claude와 Codex가 각자 더 강력한 runtime, scheduler, UI, cloud delegation을 갖게 될수록 CT2의 가치는 "실행" 자체가 아니라 "실행이 신뢰 가능한 증거와 상태 전이로 귀결되게 하는 kernel"에 있다.
+The larger product thesis is this. **CT2 should not be an agent orchestration tool but should become a Verified Autonomy OS.** Here, OS does not mean a universal agent OS; it means a **protocol kernel** that protects CT2's file-first dual-review workflow. As Claude and Codex each gain more powerful runtimes, schedulers, UIs, and cloud delegation, CT2's value lies not in "execution" itself, but in being the kernel that ensures execution culminates in trustworthy evidence and state transitions.
 
-본 문서만 놓고 보면 권장 순서는 P0 Capability Registry, P0 Decision Bridge, P0 Hook Guardrails, P0 Runtime Twin, P1 Watch/Monitor Plane, P1 App-Server/SDK Driver Hardening, P1 Evidence Graph, P1 Dual Plugin Distribution, P2 Multimodal Evidence, P2 Cloud/Remote Delegation이다. 최종 통합 전략에서는 이를 한 단계 더 좁혀 **Registry+Baseline -> Role Contracts -> Plan Evidence -> Role Evals -> Ambient Advisory Bridge -> Native Mirror** 순서로 실행한다.
+Looking at this document alone, the recommended order is P0 Capability Registry, P0 Decision Bridge, P0 Hook Guardrails, P0 Runtime Twin, P1 Watch/Monitor Plane, P1 App-Server/SDK Driver Hardening, P1 Evidence Graph, P1 Dual Plugin Distribution, P2 Multimodal Evidence, P2 Cloud/Remote Delegation. The final integrated strategy narrows this further to execute in the order **Registry+Baseline -> Role Contracts -> Plan Evidence -> Role Evals -> Ambient Advisory Bridge -> Native Mirror**.
 
 ## Evidence Base
 
-로컬 확인:
+Local verification:
 
-| 항목 | 결과 | 제품적 의미 |
+| Item | Result | Product implication |
 |---|---:|---|
-| `codex --version` | `codex-cli 0.130.0` | 현재 CT2 Codex 기준을 0.128.0에서 0.130.0으로 재검토해야 한다. |
-| `codex features list` | `apps`, `browser_use`, `computer_use`, `hooks`, `image_generation`, `multi_agent`, `plugins`, `tool_search`, `tool_suggest`, `tool_call_mcp_elicitation`, `unified_exec` stable enabled. `goals` experimental enabled. `default_mode_request_user_input` under development disabled. | goal은 사용 가능하지만 request-input은 여전히 profile/preflight gate가 필요하다. hooks와 multi_agent는 CT2가 더 적극적으로 활용할 수 있다. |
-| `codex app-server generate-json-schema --experimental` | `thread/goal/*`, `thread/turns/list`, `hooks/list`, `plugin/read`, `fs/watch`, `model/list`, `experimentalFeature/list`, `item/tool/requestUserInput`, `remoteControl/status/changed`, image input/generation/view schema 확인. | CT2 app-driver의 역할을 "turn 실행"에서 "runtime inventory + event subscription + filesystem watch"로 확장할 근거가 있다. |
-| `claude --version` | `2.1.138 (Claude Code)` | 로컬 Claude가 공식 최신 changelog와 일치한다. CT2 Claude 기준선을 최신 scheduler/hook/remote-control fixes 이후로 올릴 수 있다. |
-| `claude --help` | `--agent`, `--agents`, `--worktree`, `--tmux`, `--json-schema`, `--max-budget-usd`, `--remote-control`, `--remote-control-session-name-prefix`, `--include-hook-events`, `agents`, `auto-mode`, `plugin`, `ultrareview` 확인. | CT2 Claude roles도 native subagent/worktree/headless JSON/remote control 표면을 활용할 수 있다. |
-| `claude mcp list` | Google Drive, PDF Viewer, Gmail, Slack, Notion, Context7, Discord connected. | CT2가 "available connectors"를 status/preflight에 노출하고 role별 MCP policy를 만들 수 있다. |
+| `codex --version` | `codex-cli 0.130.0` | The current CT2 Codex baseline needs to be reviewed from 0.128.0 up to 0.130.0. |
+| `codex features list` | `apps`, `browser_use`, `computer_use`, `hooks`, `image_generation`, `multi_agent`, `plugins`, `tool_search`, `tool_suggest`, `tool_call_mcp_elicitation`, `unified_exec` stable enabled. `goals` experimental enabled. `default_mode_request_user_input` under development disabled. | `goal` is usable, but request-input still needs a profile/preflight gate. Hooks and multi_agent can be used more aggressively by CT2. |
+| `codex app-server generate-json-schema --experimental` | Confirmed `thread/goal/*`, `thread/turns/list`, `hooks/list`, `plugin/read`, `fs/watch`, `model/list`, `experimentalFeature/list`, `item/tool/requestUserInput`, `remoteControl/status/changed`, and image input/generation/view schemas. | There is a basis to expand the role of the CT2 app-driver from "turn execution" to "runtime inventory + event subscription + filesystem watch." |
+| `claude --version` | `2.1.138 (Claude Code)` | Local Claude matches the latest official changelog. The CT2 Claude baseline can be raised to after the latest scheduler/hook/remote-control fixes. |
+| `claude --help` | Confirmed `--agent`, `--agents`, `--worktree`, `--tmux`, `--json-schema`, `--max-budget-usd`, `--remote-control`, `--remote-control-session-name-prefix`, `--include-hook-events`, `agents`, `auto-mode`, `plugin`, `ultrareview`. | CT2 Claude roles can also leverage native subagent/worktree/headless JSON/remote control surfaces. |
+| `claude mcp list` | Google Drive, PDF Viewer, Gmail, Slack, Notion, Context7, Discord connected. | CT2 can expose "available connectors" in status/preflight and define per-role MCP policy. |
 
-공식 출처:
+Official sources:
 
 - OpenAI Codex docs index: https://developers.openai.com/codex/llms.txt
 - OpenAI Codex changelog: https://developers.openai.com/codex/changelog
@@ -53,7 +53,7 @@ CT2는 이미 Codex 0.128.0의 `/goal`, app-server, request-input, plugin/skill 
 - Claude Code subagents: https://code.claude.com/docs/en/sub-agents
 - Claude Code hooks: https://code.claude.com/docs/en/hooks
 
-문서 상태:
+Documentation status:
 
 | Product | Official docs shape | Freshness signal | CT2 interpretation |
 |---|---|---|---|
@@ -63,44 +63,44 @@ CT2는 이미 Codex 0.128.0의 `/goal`, app-server, request-input, plugin/skill 
 
 ## Current CT2 Baseline
 
-이미 구현/문서화된 것:
+Already implemented/documented:
 
-- `spec/codex-full-support-prd.md`와 `spec/codex-runtime-contract.md`가 Codex `/goal`, app-server, request-input, skills/plugins, preflight, subagent guardrail을 정의한다.
-- `ct2-codex-doctor`가 Codex version, features, app-server schema, request-input, MCP, skills를 점검한다.
-- `ct2-codex-goal`이 CT2-local goal metadata와 scope/audit를 만든다.
-- `ct2-codex-app-driver`가 app-server stdio thread/goal/turn/request-input 일부를 다룬다.
-- Codex skills는 `ct2-helm`, `ct2-forge`, `ct2-lens-cx`, `ct2-helm-auto-cx`, `ct2-status`로 이미 나뉘어 있다.
-- `ct2-lens-cx-tui`는 visible Codex reviewer loop를 제공하고, `ct2-lens-cx-daemon`은 headless fallback을 제공한다.
+- `spec/codex-full-support-prd.md` and `spec/codex-runtime-contract.md` define Codex `/goal`, app-server, request-input, skills/plugins, preflight, and subagent guardrails.
+- `ct2-codex-doctor` inspects Codex version, features, app-server schema, request-input, MCP, and skills.
+- `ct2-codex-goal` creates CT2-local goal metadata and scope/audit.
+- `ct2-codex-app-driver` handles part of the app-server stdio thread/goal/turn/request-input flow.
+- Codex skills are already split into `ct2-helm`, `ct2-forge`, `ct2-lens-cx`, `ct2-helm-auto-cx`, and `ct2-status`.
+- `ct2-lens-cx-tui` provides a visible Codex reviewer loop, and `ct2-lens-cx-daemon` provides a headless fallback.
 
-아직 약한 부분:
+Weak areas:
 
-- Claude Code의 최신 native scheduler, Monitor, AskUserQuestion, channels, OTel, Remote Control, subagent worktree isolation을 CT2 protocol로 흡수하지 못했다.
-- Codex 0.130.0의 `remote-control`, `thread/turns/list`, `fs/watch`, `plugin/read`, hook metadata를 CT2 app-driver가 충분히 활용하지 않는다.
-- Hook 기반 enforcement가 없다. 현재 reviewer independence와 atomic transition은 주로 역할 지침과 script convention에 의존한다.
-- `.ct2/`에는 runtime feature/capability registry가 없어서 "이 프로젝트에서 어떤 agent runtime 기능을 안전하게 쓸 수 있는가"가 매번 암묵적이다.
-- 스케줄/모니터링은 `ct2-lens-cx-tui`의 tmux scheduler가 중심이고, provider-native scheduled tasks와 event channels는 미통합이다.
+- Claude Code's latest native scheduler, Monitor, AskUserQuestion, channels, OTel, Remote Control, and subagent worktree isolation have not yet been absorbed into the CT2 protocol.
+- The CT2 app-driver does not fully leverage Codex 0.130.0's `remote-control`, `thread/turns/list`, `fs/watch`, `plugin/read`, and hook metadata.
+- There is no hook-based enforcement. Currently, reviewer independence and atomic transitions rely mostly on role instructions and script conventions.
+- `.ct2/` has no runtime feature/capability registry, so the question of "which agent runtime features can be safely used in this project" is implicit every time.
+- Scheduling/monitoring centers on the tmux scheduler of `ct2-lens-cx-tui`, while provider-native scheduled tasks and event channels are not integrated.
 
 ## Product Thesis
 
-CT2의 차별점은 "agent가 알아서 한다"가 아니라 "agent work가 검증 가능한 protocol로 남는다"이다. 따라서 새로운 Codex/Claude 기능은 CT2 내부 상태를 대체하면 안 된다. 대신 다음 네 가지 계층으로 흡수해야 한다.
+CT2's differentiator is not "the agent figures it out on its own" but "agent work leaves a verifiable protocol behind." Therefore, new Codex/Claude features must not replace CT2's internal state. Instead, they should be absorbed into the following four layers.
 
-| 계층 | CT2 역할 | 흡수할 vendor 기능 |
+| Layer | CT2 role | Vendor features to absorb |
 |---|---|---|
-| State plane | ticket, sidecar, inbox, ledger의 authoritative state | 유지. vendor runtime state는 advisory. |
+| State plane | Authoritative state of tickets, sidecars, inbox, ledger | Keep as-is. Vendor runtime state is advisory. |
 | Runtime plane | session/thread/agent/worktree/goal/schedule/monitor metadata | Codex app-server/remote-control, Claude Agent SDK/session/remote-control/worktree. |
-| Decision plane | human clarification, approvals, policy block, escalation | Codex requestUserInput, Claude AskUserQuestion, approval callbacks/hooks. |
+| Decision plane | human clarification, approvals, policy blocks, escalation | Codex requestUserInput, Claude AskUserQuestion, approval callbacks/hooks. |
 | Observation plane | heartbeat, OTel, logs, filesystem watch, PR/CI status | Claude Monitor/Cron/OTel/Channels, Codex fs/watch/OTel/Automations. |
 
-통합 전략과의 합의:
+Agreement with the integrated strategy:
 
-- **Authority:** `.ct2/` ticket, sidecar, inbox, ledger가 state authority다. Vendor runtime은 advisory signal만 제공한다.
-- **Scope:** Verified Autonomy OS는 protocol kernel이다. 보편적 cloud agent OS, SaaS orchestration, Jira/Linear 대체재가 아니다.
-- **Measurement:** 단일 north star 대신 balanced scorecard를 쓴다: Trust, Evidence, Autonomy, Cost/Latency.
-- **Execution:** 본 문서의 feature radar는 backlog 후보를 넓게 유지하되, 실제 6주 실행은 Capability Registry와 baseline 측정으로 시작한다.
+- **Authority:** `.ct2/` ticket, sidecar, inbox, and ledger are the state authority. Vendor runtimes provide only advisory signals.
+- **Scope:** Verified Autonomy OS is a protocol kernel. It is not a universal cloud agent OS, SaaS orchestration, or a Jira/Linear replacement.
+- **Measurement:** Use a balanced scorecard instead of a single north star: Trust, Evidence, Autonomy, Cost/Latency.
+- **Execution:** This document's feature radar keeps the backlog candidates broad, but the actual 6-week execution begins with the Capability Registry and baseline measurement.
 
 ## North Star: Verified Autonomy OS
 
-CT2의 장기 제품 형태는 "여러 에이전트를 띄우는 도구"가 아니라 "에이전트 실행을 운영체제처럼 관리하는 검증 계층"이다. OS 비유를 쓰면 다음처럼 정리된다.
+CT2's long-term product form is not "a tool that spins up many agents" but "a verification layer that manages agent execution like an operating system." Using the OS analogy, it can be organized as follows.
 
 | OS primitive | CT2 equivalent | Vendor features to bind |
 |---|---|---|
@@ -112,19 +112,19 @@ CT2의 장기 제품 형태는 "여러 에이전트를 띄우는 도구"가 아�
 | Flight recorder | telemetry ledger and evidence graph | Claude/Codex OTel, stream-json, app-server events, hook events |
 | Device drivers | provider-specific runtime drivers | Codex app-server/remote-control, Claude Agent SDK/CLI/Remote Control |
 
-이 관점에서 CT2의 product promise는 다음 한 문장으로 압축된다.
+From this perspective, CT2's product promise compresses into the following single sentence.
 
 > "Any agent can act, but only verified evidence can move state."
 
 ## Second-Order Insights
 
-1. **질문 기능은 UX가 아니라 state transition blocker다.** Codex requestUserInput과 Claude AskUserQuestion은 "대화 편의"가 아니라 불명확한 요구사항을 CT2 state machine 안에서 멈추고, 답변을 audit trail로 남기게 하는 decision primitive다.
-2. **스케줄러는 polling 대체재가 아니라 autonomy budget manager다.** `/loop`, Cron, Monitor, Automations는 반복 실행 자체보다 "언제 더 돈을 써도 되는가", "언제 조용히 있어야 하는가", "언제 인간에게 escalate해야 하는가"를 표현해야 한다.
-3. **Hooks는 policy enforcement와 product analytics가 만나는 지점이다.** 단순히 위험 명령을 막는 것을 넘어, 왜 role이 멈췄는지, 어떤 invariant가 자주 위반되는지, 어느 ticket type이 review churn을 만드는지 측정할 수 있다.
-4. **Subagents는 CT2 roles가 아니다.** Subagent는 role 안에서 쓰는 CPU core에 가깝다. CT2 role이 state write를 소유하고, subagent는 bounded read/patch/evidence만 반환해야 한다.
-5. **Images/browser/computer use는 "UI evidence pipeline"이 될 때만 CT2에 중요하다.** 이미지 생성 자체보다 before/after screenshot, viewport matrix, visual diff, reviewer annotation이 sidecar와 연결되는 것이 핵심이다.
-6. **Remote/cloud runtimes는 state authority를 더 위험하게 만든다.** remote control, web sessions, routines, Codex cloud는 강력하지만 `.ct2/` 밖에서 일이 벌어진다. CT2는 remote executor를 받아들이되, remote output을 ticket/PR/inbox/evidence로 재수렴시키는 re-entry protocol이 필요하다.
-7. **최고의 CT2 UX는 dashboard가 아니라 "불안 제거"다.** 사용자는 agent가 많이 돈다는 사실보다, 무엇이 막혔고 무엇이 검증됐고 무엇이 아직 위험한지 즉시 알고 싶다.
+1. **The question feature is not UX but a state transition blocker.** Codex requestUserInput and Claude AskUserQuestion are not "conversational convenience" but decision primitives that pause unclear requirements inside the CT2 state machine and persist the answers as an audit trail.
+2. **The scheduler is not a polling replacement but an autonomy budget manager.** `/loop`, Cron, Monitor, and Automations should express not the recurrence itself but rather "when is it acceptable to spend more money," "when should it stay quiet," and "when should it escalate to a human."
+3. **Hooks are where policy enforcement meets product analytics.** Beyond simply blocking dangerous commands, they let us measure why a role stopped, which invariants are violated most often, and which ticket types create review churn.
+4. **Subagents are not CT2 roles.** A subagent is closer to a CPU core used within a role. The CT2 role owns state writes, and the subagent should return only bounded reads/patches/evidence.
+5. **Image/browser/computer use matters to CT2 only when it becomes a "UI evidence pipeline."** What matters more than image generation itself is linking before/after screenshots, viewport matrices, visual diffs, and reviewer annotations into sidecars.
+6. **Remote/cloud runtimes make state authority more dangerous.** Remote control, web sessions, routines, and Codex cloud are powerful but cause work to happen outside `.ct2/`. CT2 should accept remote executors, but it needs a re-entry protocol that reconverges remote output into ticket/PR/inbox/evidence.
+7. **The best CT2 UX is not a dashboard but "anxiety removal."** Users care less about how many agents are running than about immediately knowing what is blocked, what has been verified, and what is still risky.
 
 ## Codex Feature Radar
 
