@@ -1,98 +1,98 @@
 # CT2 Verified Autonomy OS Strategy
 
-조사 기준일: 2026-05-10 KST / 2026-05-09 US
-통합 작성 기준: `docs/agent-platform-feature-radar-2026-05.md`, `docs/ct2-product-strategy-2026-05.md`, 사용자 인터뷰 합의
-대상 런타임: Codex CLI 0.130.0, Claude Code 2.1.138
+Survey date: 2026-05-10 KST / 2026-05-09 US
+Synthesis sources: `docs/agent-platform-feature-radar-2026-05.md`, `docs/ct2-product-strategy-2026-05.md`, user interview agreement
+Target runtimes: Codex CLI 0.130.0, Claude Code 2.1.138
 
 ## 0. Executive Decision
 
-CT2의 다음 제품 정체성은 **Verified Autonomy OS**다.
+CT2's next product identity is **Verified Autonomy OS**.
 
-단, 여기서 OS는 보편적 agent OS가 아니다. CT2는 Cursor, Devin, AutoGen, Jira/Linear, cloud SaaS orchestrator가 되지 않는다. CT2가 지향하는 것은 **file-first dual-review engineering workflow를 위한 protocol kernel**이다. `.ct2/`의 ticket, sidecar, inbox, ledger, evidence, runtime mirror가 권위이고, Claude/Codex runtime은 driver, observer, advisor, executor로만 참여한다.
+However, the OS here is not a universal agent OS. CT2 does not become Cursor, Devin, AutoGen, Jira/Linear, or a cloud SaaS orchestrator. What CT2 aims for is a **protocol kernel for a file-first dual-review engineering workflow**. The tickets, sidecars, inbox, ledger, evidence, and runtime mirror under `.ct2/` are the authority, and the Claude/Codex runtimes participate only as drivers, observers, advisors, and executors.
 
-한 문장으로 요약하면:
+In one sentence:
 
 > Any agent can act, but only verified evidence can move state.
 
-이번 통합 전략의 핵심 결정은 다음 여섯 가지다.
+The core decisions of this integrated strategy are the following six.
 
-| 결정 | 합의 |
+| Decision | Agreement |
 |---|---|
 | Canonical name | Verified Autonomy OS |
-| 범위 | File-first dual-review workflow를 위한 protocol kernel |
-| 문서 구조 | Feature Radar는 vendor-surface map, Product Strategy는 bet/risk 문서, 본 문서는 canonical strategy |
-| 측정 | 단일 north star가 아니라 Trust, Evidence, Autonomy, Cost/Latency balanced scorecard |
-| 첫 실행 | Capability Registry + empirical baseline이 Bet 1보다 먼저 |
-| Runtime 권한 | Native scheduler, task, cloud, remote-control은 advisory-only |
+| Scope | Protocol kernel for a file-first dual-review workflow |
+| Document structure | Feature Radar is a vendor-surface map, Product Strategy is the bet/risk document, this document is the canonical strategy |
+| Measurement | Not a single north star but a Trust, Evidence, Autonomy, Cost/Latency balanced scorecard |
+| First execution | Capability Registry + empirical baseline comes before Bet 1 |
+| Runtime authority | Native scheduler, task, cloud, and remote-control are advisory-only |
 
 ## 1. Document Set
 
-세 문서는 역할이 다르다.
+The three documents have different roles.
 
-| 문서 | 역할 | 유지 이유 |
+| Document | Role | Reason to keep |
 |---|---|---|
-| `agent-platform-feature-radar-2026-05.md` | Vendor-surface map | Codex/Claude의 최신 기능, 안정도, 흡수 후보를 넓게 추적한다. |
-| `ct2-product-strategy-2026-05.md` | Bet/risk strategy | 무엇을 먼저 하고, 무엇을 하지 않으며, 어떤 조건에서 멈출지 결정한다. |
-| `ct2-verified-autonomy-os-strategy-2026-05.md` | Canonical integrated plan | 두 문서와 인터뷰 합의를 합쳐 최종 제품 방향, scorecard, release train을 정한다. |
+| `agent-platform-feature-radar-2026-05.md` | Vendor-surface map | Tracks the latest features, stability, and adoption candidates of Codex/Claude broadly. |
+| `ct2-product-strategy-2026-05.md` | Bet/risk strategy | Decides what to do first, what not to do, and under what conditions to stop. |
+| `ct2-verified-autonomy-os-strategy-2026-05.md` | Canonical integrated plan | Combines the two documents and the interview agreement to set the final product direction, scorecard, and release train. |
 
-읽는 순서:
+Reading order:
 
-1. 본 문서 §0-§5로 최종 방향을 잡는다.
-2. Feature Radar에서 vendor evidence와 capability 세부를 확인한다.
-3. Product Strategy에서 bet별 risk, kill criteria, implementation sketch를 확인한다.
-4. 코드나 spec 변경은 본 문서의 release train과 기존 `spec/` 권위 원칙을 따른다.
+1. Use §0-§5 of this document to set the final direction.
+2. Check vendor evidence and capability details in the Feature Radar.
+3. Check per-bet risk, kill criteria, and implementation sketch in the Product Strategy.
+4. Code or spec changes follow the release train of this document and the existing `spec/` authority principle.
 
 ## 2. Product Identity
 
 ### 2.1 What CT2 Is
 
-CT2는 agent 실행을 더 많이 만드는 도구가 아니라, agent 실행이 **검증 가능한 상태 전이**로 귀결되도록 하는 protocol kernel이다.
+CT2 is not a tool for producing more agent executions; it is a protocol kernel that ensures agent execution culminates in **verifiable state transitions**.
 
-CT2의 제품 약속:
+CT2's product promise:
 
-- agent work는 ticket과 acceptance criteria에서 출발한다.
-- 실행 결과는 sidecar, command evidence, verifier output, review verdict로 남는다.
-- state transition은 atomic `mv`로만 발생한다.
-- reviewer independence는 편의보다 우선한다.
-- vendor runtime state는 `.ct2/` state를 대체하지 않는다.
+- Agent work starts from a ticket and acceptance criteria.
+- Execution results are recorded as sidecars, command evidence, verifier output, and review verdicts.
+- State transitions occur only through atomic `mv`.
+- Reviewer independence takes priority over convenience.
+- Vendor runtime state does not replace `.ct2/` state.
 
 ### 2.2 What CT2 Is Not
 
-| 아님 | 이유 |
+| Not | Reason |
 |---|---|
-| 보편적 agent OS | 범위가 넓어지면 `.ct2/` authority와 dual-review invariant가 흐려진다. |
-| Cloud SaaS orchestrator | CT2의 핵심은 local file authority와 git-adjacent evidence다. |
-| Jira/Linear 대체재 | ticket은 코드 옆에 있어야 하며, PM database가 권위가 되면 안 된다. |
-| 단일 LLM framework | Claude와 Codex의 독립 검토가 차별점이다. |
-| 자동 LLM router | 정적 role contract가 안정되기 전에는 변동성을 키운다. |
+| Universal agent OS | If the scope broadens, the `.ct2/` authority and dual-review invariant become blurred. |
+| Cloud SaaS orchestrator | CT2's core is local file authority and git-adjacent evidence. |
+| Jira/Linear replacement | Tickets must live next to the code; a PM database must not become the authority. |
+| Single LLM framework | Independent review by Claude and Codex is the differentiator. |
+| Automatic LLM router | It increases variance before static role contracts have stabilized. |
 
-### 2.3 Reliability Platform과의 관계
+### 2.3 Relationship with Reliability Platform
 
-`Reliability Platform`은 폐기하지 않는다. 다만 canonical 이름은 아니다.
+`Reliability Platform` is not discarded. It is simply not the canonical name.
 
-정리하면:
+In summary:
 
-- **Verified Autonomy OS**: 제품 정체성.
-- **Protocol kernel**: 구현 범위.
-- **Reliability platform**: 사용자가 체감하는 운영 가치.
+- **Verified Autonomy OS**: product identity.
+- **Protocol kernel**: implementation scope.
+- **Reliability platform**: operational value as users perceive it.
 
-즉 CT2는 Verified Autonomy OS이고, 그 결과 multi-agent engineering reliability를 제공한다.
+That is, CT2 is a Verified Autonomy OS, and as a result it delivers multi-agent engineering reliability.
 
 ## 3. OS Primitives
 
-Verified Autonomy OS는 기존 CT2 primitive를 운영체제 관점으로 재정렬한다.
+Verified Autonomy OS realigns existing CT2 primitives from an operating-system perspective.
 
-| OS primitive | CT2 equivalent | 6-12주 내 제품화 |
+| OS primitive | CT2 equivalent | Productization within 6-12 weeks |
 |---|---|---|
-| Filesystem | `.ct2/` ticket, sidecar, inbox, ledger, artifacts | 기존 authority 유지, evidence/artifact path 명확화 |
-| Commit/syscall | `ct2-seal`, `ct2-revise`, `ct2-status`, reconciler, atomic `mv` | decision bridge와 policy compiler로 강화 |
-| Process table | active roles, Codex threads, Claude sessions, tmux, goals | runtime twin과 capability registry |
-| Scheduler | reviewer loops, watchers, monitor/cron adapters | advisory watcher plane |
-| Permission model | role ownership, hook guardrails, sandbox/approval policy | provider hook package + script-level enforcement |
-| Flight recorder | command logs, sidecars, hook events, OTel correlation | evidence graph + observability ledger |
-| Device drivers | Codex app-server/remote-control, Claude CLI/SDK/remote-control | runtime driver hardening |
+| Filesystem | `.ct2/` ticket, sidecar, inbox, ledger, artifacts | Maintain existing authority, clarify evidence/artifact paths |
+| Commit/syscall | `ct2-seal`, `ct2-revise`, `ct2-status`, reconciler, atomic `mv` | Strengthened with decision bridge and policy compiler |
+| Process table | active roles, Codex threads, Claude sessions, tmux, goals | Runtime twin and capability registry |
+| Scheduler | reviewer loops, watchers, monitor/cron adapters | Advisory watcher plane |
+| Permission model | role ownership, hook guardrails, sandbox/approval policy | Provider hook package + script-level enforcement |
+| Flight recorder | command logs, sidecars, hook events, OTel correlation | Evidence graph + observability ledger |
+| Device drivers | Codex app-server/remote-control, Claude CLI/SDK/remote-control | Runtime driver hardening |
 
-권위는 항상 아래로 흐른다.
+Authority always flows downward.
 
 ```text
 Vendor runtime events
@@ -102,40 +102,40 @@ Vendor runtime events
   -> atomic state transition
 ```
 
-반대로 native task, scheduler, remote-control, Slack/Discord command가 직접 ticket state를 바꾸는 흐름은 금지한다.
+Conversely, flows where native tasks, the scheduler, remote-control, or Slack/Discord commands directly change ticket state are forbidden.
 
 ## 4. Balanced Scorecard
 
-단일 north star는 쓰지 않는다. Verified Autonomy OS는 네 축이 동시에 건강해야 한다.
+A single north star is not used. Verified Autonomy OS requires all four axes to be healthy at the same time.
 
-| 축 | 90일 목표 | 실패 신호 |
+| Axis | 90-day goal | Failure signal |
 |---|---:|---|
-| Trust | Trust ratio ≥ 0.92; first-pass approval baseline +15pp | done 이후 revise/revert/reopen 증가 |
-| Evidence | Evidence coverage ≥ 0.90; uncited verifier 0건 | sidecar가 prose만 있고 command/evidence id가 없음 |
-| Autonomy | lens latency p95 ≤ 90초; blocked->unblocked p95 baseline -70%; stale runtime twin 0건 | watcher는 있는데 stale role을 못 깨움 |
-| Cost/Latency | $/ticket p50 baseline -30%; p50 ticket latency baseline 이하 | 비용은 줄었지만 trust/evidence가 하락 |
+| Trust | Trust ratio ≥ 0.92; first-pass approval baseline +15pp | revise/revert/reopen increases after done |
+| Evidence | Evidence coverage ≥ 0.90; 0 uncited verifiers | sidecar contains only prose, with no command/evidence ids |
+| Autonomy | lens latency p95 ≤ 90s; blocked->unblocked p95 baseline -70%; 0 stale runtime twins | watcher exists but fails to wake a stale role |
+| Cost/Latency | $/ticket p50 baseline -30%; p50 ticket latency at or below baseline | cost dropped but trust/evidence fell |
 
-Baseline 없이 목표를 주장하지 않는다. Phase 0의 첫 산출물은 `ct2-baseline`과 `.ct2/telemetry/baseline-2026-05.json`이다.
+We do not claim targets without a baseline. The first deliverable of Phase 0 is `ct2-baseline` and `.ct2/telemetry/baseline-2026-05.json`.
 
-필수 baseline:
+Required baselines:
 
-| Baseline | 수집 방법 | 최소 표본 |
+| Baseline | Collection method | Minimum sample |
 |---|---|---:|
-| Trust ratio | `done/` 도달 후 revise/revert/reopen 여부 | 20 done tickets |
-| First-pass approval | review round 0 sidecar verdict | 20 review events |
-| Evidence coverage | done 전이별 sidecar/evidence/verifier 연결 여부 | 20 done tickets |
-| Ticket latency | sealed -> done 시간 | 20 tickets |
+| Trust ratio | Whether revise/revert/reopen occurs after reaching `done/` | 20 done tickets |
+| First-pass approval | Round 0 review sidecar verdict | 20 review events |
+| Evidence coverage | Whether each done transition links sidecar/evidence/verifier | 20 done tickets |
+| Ticket latency | sealed -> done time | 20 tickets |
 | Review latency | in-review entry -> reconciler verdict | 20 reviews |
 | Blocked latency | blocked inbox -> answer/retry | 5 events |
-| Cost | 신규 telemetry sink에서 수집 시작 | sprint 전수 |
+| Cost | Start collection from the new telemetry sink | full sprint |
 
-표본이 부족하면 숫자를 과장하지 않는다. 해당 metric은 "measurement started"로 표시하고 6주 후 sprint data로 갱신한다.
+If samples are insufficient, do not inflate numbers. Mark that metric as "measurement started" and refresh with sprint data after six weeks.
 
 ## 5. Release Train
 
 ### 5.1 Sequence
 
-실행 순서는 다음으로 고정한다.
+The execution order is fixed as follows.
 
 ```text
 Phase 0: Registry + Baseline
@@ -146,39 +146,39 @@ Phase 0: Registry + Baseline
   -> Bet 5: Native Task Graph Mirror (advisory spike only)
 ```
 
-이 순서의 이유:
+Reasoning for this order:
 
-- Registry+Baseline은 모든 bet의 admission gate다.
-- Cost contracts는 비용/지연을 측정 가능하게 만든다.
-- Plan evidence는 trust와 evidence coverage를 직접 올린다.
-- Eval harness는 role/prompt 변경 회귀를 막는다.
-- Ambient bridge는 UX 효과가 크지만 external channel 위험이 있어 뒤로 둔다.
-- Native task mirror는 가장 매혹적이지만 state authority 분기 위험이 커서 마지막이다.
+- Registry+Baseline is the admission gate for every bet.
+- Cost contracts make cost/latency measurable.
+- Plan evidence directly raises trust and evidence coverage.
+- The eval harness prevents regressions in role/prompt changes.
+- The ambient bridge has a large UX impact but carries external-channel risk, so it comes later.
+- The native task mirror is the most enticing but has the highest state-authority forking risk, so it comes last.
 
 ### 5.2 Six-week Plan
 
-| 주차 | 산출물 | Exit criteria |
+| Week | Deliverable | Exit criteria |
 |---|---|---|
-| 0-1 | `ct2-runtime-doctor`, `ct2-baseline`, capability schema | Codex/Claude capability와 scorecard baseline 기록; state mutation 없음 |
-| 1 | Codex flag 실측, role contract draft | 5개 role contract 초안; config surface 확인 |
-| 2 | `ct2-role-run`, `ct2-cost`, telemetry sink | real ticket 실행에서 cost.jsonl 기록 |
-| 3 | `.ct2/plans/`, plan-evidence rule, forge flow | 5개 ticket에서 plan-first 처리와 review 비교 |
-| 4 | `.ct2/evals/` role eval baseline | role MD 의도적 회귀 1건을 eval이 잡음 |
-| 5 | `ct2-bridge` notify-only pilot | 외부 알림 5건; ticket 직접 수정 0건 |
-| 6 | retro, scorecard report, Bet 5 spike report | scorecard 갱신; native mirror는 advisory feasibility만 판단 |
+| 0-1 | `ct2-runtime-doctor`, `ct2-baseline`, capability schema | Codex/Claude capabilities and scorecard baselines recorded; no state mutation |
+| 1 | Codex flag empirical check, role contract draft | Drafts of 5 role contracts; config surface confirmed |
+| 2 | `ct2-role-run`, `ct2-cost`, telemetry sink | cost.jsonl recorded from real ticket runs |
+| 3 | `.ct2/plans/`, plan-evidence rule, forge flow | Plan-first handling on 5 tickets with review comparison |
+| 4 | `.ct2/evals/` role eval baseline | Eval catches 1 intentional role MD regression |
+| 5 | `ct2-bridge` notify-only pilot | 5 external notifications; 0 direct ticket edits |
+| 6 | Retro, scorecard report, Bet 5 spike report | Scorecard refreshed; native mirror judged for advisory feasibility only |
 
 ### 5.3 First Seven Days
 
-| Day | 작업 | 결과물 |
+| Day | Task | Output |
 |---|---|---|
-| 1 | capability probe 설계 | `ct2-runtime-doctor` spec/ticket draft |
-| 1 | baseline script 설계 | `bin/ct2-baseline` draft |
+| 1 | Design capability probe | `ct2-runtime-doctor` spec/ticket draft |
+| 1 | Design baseline script | `bin/ct2-baseline` draft |
 | 2 | Codex/Claude runtime capability schema | `.ct2/runtime/capabilities.json` schema draft |
-| 3 | scorecard baseline dry run | `.ct2/telemetry/baseline-2026-05.json` sample |
+| 3 | Scorecard baseline dry run | `.ct2/telemetry/baseline-2026-05.json` sample |
 | 4 | Codex config surface spike | `.ct2/runtime/codex-flags-actual.md` |
-| 5 | role contract spec PR draft | `spec/role-contracts.md` proposal |
-| 6 | cost telemetry wrapper sketch 검증 | sample `cost.jsonl` |
-| 7 | go/no-go review | Phase 0 report and Bet 1 readiness decision |
+| 5 | Role contract spec PR draft | `spec/role-contracts.md` proposal |
+| 6 | Validate cost telemetry wrapper sketch | sample `cost.jsonl` |
+| 7 | Go/no-go review | Phase 0 report and Bet 1 readiness decision |
 
 ## 6. Workstreams
 

@@ -179,7 +179,7 @@ steps:
    ```
    Tell the user to open the printed `.ct2/plans/canvas/open/*.canvas.html`
    path in a browser.
-3. **User decides** — the user edits the panels and clicks "결정 확정"; the
+3. **User decides** — the user edits the panels and clicks "Confirm decision"; the
    canvas copies a `CT2-DECISION ...` token to their clipboard (or downloads a
    `decision-*.json` file).
 4. **Recover the token** — when the user pastes it back:

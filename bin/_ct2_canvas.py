@@ -336,12 +336,12 @@ def _panel_interpret(canvas: dict) -> str:
         f'<p>{esc(interp.get("summary"))}</p>'
         f'<div class="quote">{esc(interp.get("quote"))}</div>'
         '<div class="askrow">'
-        '<button class="pick" data-misread="ok" aria-pressed="false">정확합니다<small>이대로 진행</small></button>'
-        '<button class="pick warn" data-misread="wrong" aria-pressed="false">고칠 부분이 있습니다<small>아래에 적어주세요</small></button>'
+        '<button class="pick" data-misread="ok" aria-pressed="false">Looks right<small>Proceed as-is</small></button>'
+        '<button class="pick warn" data-misread="wrong" aria-pressed="false">Needs correction<small>Write below</small></button>'
         '</div>'
         '<textarea class="free" id="misreadNote" style="display:none" '
-        'placeholder="helm이 어떻게 이해해야 하나요? 자유롭게 적으세요."></textarea>')
-    return _panel("01", "helm의 해석", "interpret", "확인 권장", body)
+        'placeholder="How should helm interpret this? Write freely."></textarea>')
+    return _panel("01", "helm's interpretation", "interpret", "Review suggested", body)
 
 
 def _panel_scope(canvas: dict) -> str:
@@ -352,11 +352,11 @@ def _panel_scope(canvas: dict) -> str:
             f'<span class="chip" data-s="{esc(state)}" data-key="{esc(item.get("key",""))}">'
             f'<span class="dot"></span><span class="lbl edit" contenteditable="true">{esc(item.get("label"))}</span>'
             f'<span class="st" role="button" tabindex="0">{esc(state.upper())}</span>'
-            f'<span class="x" role="button" tabindex="0" aria-label="삭제">&#10005;</span></span>')
+            f'<span class="x" role="button" tabindex="0" aria-label="Delete">&#10005;</span></span>')
     body = (f'<div class="chips" id="scope">{"".join(chips)}</div>'
-            '<button class="addbtn" id="addScope" type="button">+ 범위 항목 추가</button>'
-            '<p class="edithint">칩 라벨은 <b>직접 편집</b> · <b>IN/OUT/HOLD</b> 배지로 상태 순환 · &#10005;로 삭제</p>')
-    return _panel("02", "범위", "scope", "보류 항목 확인 권장", body)
+            '<button class="addbtn" id="addScope" type="button">+ Add scope item</button>'
+            '<p class="edithint">Chip labels are <b>directly editable</b> · cycle state via the <b>IN/OUT/HOLD</b> badge · &#10005; to delete</p>')
+    return _panel("02", "Scope", "scope", "Review HOLD items", body)
 
 
 def _panel_split(canvas: dict) -> str:
@@ -369,15 +369,15 @@ def _panel_split(canvas: dict) -> str:
         cards.append(
             '<div class="tcard"><div class="tcard-top">'
             f'<h3 class="t-title edit" contenteditable="true">{esc(tk.get("title"))}</h3>'
-            '<span class="x" role="button" tabindex="0" aria-label="티켓 삭제">&#10005;</span></div>'
+            '<span class="x" role="button" tabindex="0" aria-label="Delete ticket">&#10005;</span></div>'
             f'<span class="t-size edit" contenteditable="true">{esc(tk.get("size"))}</span>'
             f'<ul class="t-items">{items}</ul>'
-            '<button class="addbtn mini add-item" type="button">+ 항목</button></div>')
+            '<button class="addbtn mini add-item" type="button">+ Item</button></div>')
     body = (f'<div class="cards" id="cards">{"".join(cards)}</div>'
-            '<button class="addbtn" id="addTicket" type="button">+ 티켓 추가</button>'
-            '<p class="edithint">제목·규모·세부 항목 모두 <b>직접 편집</b> · &#10005;로 티켓·항목 삭제 · '
-            '필요하면 더 쪼개거나 합치세요</p>')
-    return _panel("03", "티켓 분할", "split", "PR 단위로 자유롭게", body)
+            '<button class="addbtn" id="addTicket" type="button">+ Add ticket</button>'
+            '<p class="edithint">Title, size, and items are all <b>directly editable</b> · &#10005; to delete tickets or items · '
+            'split or merge as you see fit</p>')
+    return _panel("03", "Ticket split", "split", "Free shape — one PR each", body)
 
 
 def _panel_ac(canvas: dict) -> str:
@@ -390,13 +390,13 @@ def _panel_ac(canvas: dict) -> str:
             f'<div class="ac" data-id="{esc(ac_id)}" data-orig="{esc(ac.get("text"))}">'
             f'<input type="checkbox"{checked}>'
             f'<span class="txt edit" contenteditable="true">{esc(ac.get("text"))}</span>'
-            f'<button class="flag{flag_on}" type="button">&#9873; 모호</button>'
-            '<span class="x" role="button" tabindex="0" aria-label="삭제">&#10005;</span></div>')
+            f'<button class="flag{flag_on}" type="button">&#9873; Ambiguous</button>'
+            '<span class="x" role="button" tabindex="0" aria-label="Delete">&#10005;</span></div>')
     body = (f'<div id="aclist">{"".join(rows)}</div>'
-            '<button class="addbtn" id="addAC" type="button" style="margin-top:10px">+ 인수 기준 추가</button>'
-            '<p class="edithint"><b>&#9873; 모호</b>는 helm이 검증 기준이 흐릿하다고 본 항목입니다. '
-            '문구를 직접 고치고 모호를 해제하거나, &#10005;로 빼거나, 그대로 두셔도 됩니다.</p>')
-    return _panel("04", "인수 기준", "ac", "검증 가능하게", body)
+            '<button class="addbtn" id="addAC" type="button" style="margin-top:10px">+ Add acceptance criterion</button>'
+            '<p class="edithint"><b>&#9873; Ambiguous</b> marks criteria helm found vague to verify. '
+            'Edit the wording and clear the flag, &#10005; to drop, or leave it as-is.</p>')
+    return _panel("04", "Acceptance criteria", "ac", "Make them verifiable", body)
 
 
 def _panel_prio(canvas: dict) -> str:
@@ -408,10 +408,10 @@ def _panel_prio(canvas: dict) -> str:
         '<span style="font-size:12px;color:var(--mut)">critical</span>'
         f'<span class="prio-val" id="prioVal">{esc(priority)}</span></div>'
         '<div class="depgraph" id="depGraph"></div>'
-        '<div class="depedit"><span class="k">의존성</span>'
+        '<div class="depedit"><span class="k">Dependencies</span>'
         f'<span class="v edit" id="depText" contenteditable="true">{esc(canvas.get("dependency"))}</span></div>'
-        '<p class="edithint">의존 관계는 자유롭게 적으세요.</p>')
-    return _panel("05", "우선순위 &amp; 의존성", "prio", "백로그 위치", body)
+        '<p class="edithint">Describe dependencies freely.</p>')
+    return _panel("05", "Priority &amp; dependencies", "prio", "Backlog position", body)
 
 
 def _panel_con(canvas: dict) -> str:
@@ -423,37 +423,37 @@ def _panel_con(canvas: dict) -> str:
             f'<span class="v edit" contenteditable="true">{esc(con.get("text"))}</span>'
             '<span class="x" role="button" tabindex="0">&#10005;</span></div>')
     body = (f'<div id="conlist">{"".join(rows)}</div>'
-            '<button class="addbtn" id="addCon" type="button" style="margin-top:9px">+ 제약 추가</button>'
-            '<p class="edithint">분류 라벨과 내용 모두 편집 가능 · helm이 놓친 제약은 직접 추가하세요.</p>')
-    return _panel("06", "제약 &amp; 엣지케이스", "con", "helm 추정 · 자유 편집", body)
+            '<button class="addbtn" id="addCon" type="button" style="margin-top:9px">+ Add constraint</button>'
+            '<p class="edithint">Both category label and content are editable · add any constraints helm missed.</p>')
+    return _panel("06", "Constraints &amp; edge cases", "con", "helm guesses · edit freely", body)
 
 
 def _panel_note() -> str:
-    body = ('<p style="font-size:13px;color:var(--mut)">패널에 안 들어가는 어떤 말이든 — '
-            '우려, 맥락, 바꾸고 싶은 방향. 그대로 토큰에 실려 helm에게 전달됩니다.</p>'
-            '<textarea class="free" id="freeNote" placeholder="helm에게 하고 싶은 말을 자유롭게 적으세요."></textarea>')
-    return _panel("07", "helm에게 — 자유 메모", "note", "선택", body)
+    body = ('<p style="font-size:13px;color:var(--mut)">Anything that does not fit the panels — '
+            'concerns, context, direction you want to change. Rides along in the token straight to helm.</p>'
+            '<textarea class="free" id="freeNote" placeholder="Anything you want to tell helm — write freely."></textarea>')
+    return _panel("07", "To helm — free notes", "note", "Optional", body)
 
 
 def _header(record: dict, canvas: dict) -> str:
     ticket = record.get("ticket") or "ticket"
     rnd = canvas.get("round", 0)
     return (
-        f'<div class="eyebrow">Helm Canvas · 결정 레코드 {esc(record.get("id"))}</div>'
+        f'<div class="eyebrow">Helm Canvas · Decision record {esc(record.get("id"))}</div>'
         f'<h1 class="title">{esc(canvas.get("title") or ticket)}</h1>'
-        '<p class="lede">helm이 <b>제안</b>한 계획안입니다 — 양식이 아닙니다. 어떤 텍스트든 직접 고치고, '
-        '항목을 더하거나 빼세요. 확인 권장 항목이 남아 있어도 <b>언제든 확정·복사할 수 있습니다</b>.</p>'
-        '<div class="cstate">이 캔버스 파일: '
+        '<p class="lede">A plan helm <b>proposed</b> — not a form. Edit any text directly and '
+        'add or remove items. Even with review-suggested items still open, you can <b>confirm and copy at any time</b>.</p>'
+        '<div class="cstate">This canvas file: '
         f'<code id="cstatePath">.ct2/plans/canvas/<b>open</b>/{esc(ticket)}-r{esc(rnd)}.canvas.html</code></div>')
 
 
 def _flow() -> str:
     steps = [
-        ("done", "S1 ✓", "유저 ↔ helm 대화로 계획"),
-        ("done", "S2 ✓", "helm이 캔버스 HTML 생성"),
-        ("now", "S3 ●", "지금 — 결정하고 복사"),
-        ("", "S4", "helm이 토큰 회수 → md 티켓"),
-        ("", "S5", "backlog에 forge용 티켓"),
+        ("done", "S1 ✓", "User ↔ helm conversation drafts the plan"),
+        ("done", "S2 ✓", "helm generates the canvas HTML"),
+        ("now", "S3 ●", "Now — decide and copy"),
+        ("", "S4", "helm reclaims the token → md ticket"),
+        ("", "S5", "Ticket lands in the backlog for forge"),
     ]
     out = ['<div class="flow" id="flow">']
     for idx, (cls, label, text) in enumerate(steps, start=1):
@@ -466,23 +466,23 @@ def _flow() -> str:
 def _right_column() -> str:
     return (
         '<div class="right"><div class="summary">'
-        '<div class="hd">이 계획 한눈에</div>'
+        '<div class="hd">Plan at a glance</div>'
         '<div class="stats">'
-        '<div class="stat"><div class="v" id="stTickets">0</div><div class="l">티켓 (PR)</div></div>'
-        '<div class="stat"><div class="v" id="stScope">0</div><div class="l">In-scope 항목</div></div>'
-        '<div class="stat"><div class="v" id="stAC">0</div><div class="l">인수 기준</div></div>'
-        '<div class="stat"><div class="v adv" id="stAdv">0</div><div class="l">helm 확인 권장</div></div>'
+        '<div class="stat"><div class="v" id="stTickets">0</div><div class="l">Tickets (PRs)</div></div>'
+        '<div class="stat"><div class="v" id="stScope">0</div><div class="l">In-scope items</div></div>'
+        '<div class="stat"><div class="v" id="stAC">0</div><div class="l">Acceptance criteria</div></div>'
+        '<div class="stat"><div class="v adv" id="stAdv">0</div><div class="l">helm review suggested</div></div>'
         '</div>'
-        '<div class="block delta"><div class="lbl">helm 제안 → 내 결정</div>'
+        '<div class="block delta"><div class="lbl">helm proposal → your decision</div>'
         '<ul id="deltaList"></ul></div>'
-        '<div class="block advis"><div class="lbl">helm이 확인을 권하는 항목</div>'
+        '<div class="block advis"><div class="lbl">Items helm suggests reviewing</div>'
         '<ul id="advisList"></ul><p class="hint" id="advisHint"></p></div>'
-        '<div class="block"><div class="lbl">결정 레코드 (진실원천)</div>'
+        '<div class="block"><div class="lbl">Decision record (source of truth)</div>'
         '<div class="render-fail" id="renderFail" role="alert"></div>'
         '<pre class="json" id="json"></pre></div>'
         '<div class="commit">'
-        '<button class="go" id="commitBtn">📋 결정 확정 → helm으로 복사</button>'
-        '<button class="dl" id="dlBtn">또는 decision.json 파일로 다운로드</button>'
+        '<button class="go" id="commitBtn">📋 Confirm decision → copy to helm</button>'
+        '<button class="dl" id="dlBtn">Or download as decision.json</button>'
         '<div class="gatemsg" id="gateMsg"></div>'
         '<div class="donebox" id="doneBox"><textarea id="token" readonly></textarea>'
         '<span class="copied" id="copiedMsg"></span></div>'
@@ -540,15 +540,15 @@ function chipNode(item){
   c.className='chip'; c.dataset.s=item.state||'in';
   if(item.key) c.dataset.key=item.key;
   c.innerHTML='<span class="dot"></span>'
-    +'<span class="lbl edit" contenteditable="true" data-ph="새 범위 항목…"></span>'
+    +'<span class="lbl edit" contenteditable="true" data-ph="New scope item…"></span>'
     +'<span class="st" role="button" tabindex="0">'+((item.state||'in').toUpperCase())+'</span>'
-    +'<span class="x" role="button" tabindex="0" aria-label="삭제">✕</span>';
+    +'<span class="x" role="button" tabindex="0" aria-label="Delete">✕</span>';
   $('.lbl',c).textContent=item.label||'';
   return c;
 }
 function itemNode(text){
   var li=document.createElement('li'); li.className='t-item';
-  li.innerHTML='<span class="it edit" contenteditable="true" data-ph="세부 항목…"></span>'
+  li.innerHTML='<span class="it edit" contenteditable="true" data-ph="Sub-item…"></span>'
     +'<span class="li-x" role="button" tabindex="0">✕</span>';
   $('.it',li).textContent=text||'';
   return li;
@@ -556,10 +556,10 @@ function itemNode(text){
 function ticketNode(tk){
   var c=document.createElement('div'); c.className='tcard';
   c.innerHTML='<div class="tcard-top">'
-    +'<h3 class="t-title edit" contenteditable="true" data-ph="새 티켓 제목…"></h3>'
-    +'<span class="x" role="button" tabindex="0" aria-label="티켓 삭제">✕</span></div>'
-    +'<span class="t-size edit" contenteditable="true" data-ph="규모·기간 (예: small · ~1일)"></span>'
-    +'<ul class="t-items"></ul><button class="addbtn mini add-item" type="button">+ 항목</button>';
+    +'<h3 class="t-title edit" contenteditable="true" data-ph="New ticket title…"></h3>'
+    +'<span class="x" role="button" tabindex="0" aria-label="Delete ticket">✕</span></div>'
+    +'<span class="t-size edit" contenteditable="true" data-ph="Size · duration (e.g. small · ~1 day)"></span>'
+    +'<ul class="t-items"></ul><button class="addbtn mini add-item" type="button">+ Item</button>';
   $('.t-title',c).textContent=(tk&&tk.title)||'';
   $('.t-size',c).textContent=(tk&&tk.size)||'';
   var ul=$('.t-items',c);
@@ -571,16 +571,16 @@ function acNode(ac){
   row.dataset.id=ac.id||('new-'+Date.now()+'-'+Math.random().toString(16).slice(2,6));
   if(ac.orig!=null) row.dataset.orig=ac.orig;
   row.innerHTML='<input type="checkbox"'+(ac.accepted!==false?' checked':'')+'>'
-    +'<span class="txt edit" contenteditable="true" data-ph="새 인수 기준 — 검증 가능하게…"></span>'
-    +'<button class="flag'+(ac.flagged?' on':'')+'" type="button">⚑ 모호</button>'
-    +'<span class="x" role="button" tabindex="0" aria-label="삭제">✕</span>';
+    +'<span class="txt edit" contenteditable="true" data-ph="New acceptance criterion — make it verifiable…"></span>'
+    +'<button class="flag'+(ac.flagged?' on':'')+'" type="button">⚑ Ambiguous</button>'
+    +'<span class="x" role="button" tabindex="0" aria-label="Delete">✕</span>';
   $('.txt',row).textContent=ac.text||'';
   return row;
 }
 function conNode(con){
   var row=document.createElement('div'); row.className='con';
-  row.innerHTML='<span class="k edit" contenteditable="true" data-ph="분류"></span>'
-    +'<span class="v edit" contenteditable="true" data-ph="제약·엣지케이스 내용…"></span>'
+  row.innerHTML='<span class="k edit" contenteditable="true" data-ph="Category"></span>'
+    +'<span class="v edit" contenteditable="true" data-ph="Constraint or edge case…"></span>'
     +'<span class="x" role="button" tabindex="0">✕</span>';
   $('.k',row).textContent=(con&&con.label)||'';
   $('.v',row).textContent=(con&&con.text)||'';
@@ -609,37 +609,37 @@ function applyState(s){
 
 function advisory(s){
   var a=[];
-  if(s.misread===null) a.push({t:"helm의 해석이 맞는지 아직 확인 안 됨",jump:"#p-interpret"});
-  if(s.misread==="wrong"&&!s.misreadNote) a.push({t:"고칠 부분을 골랐지만 내용이 비어 있음",jump:"#p-interpret"});
+  if(s.misread===null) a.push({t:"helm's interpretation not yet confirmed",jump:"#p-interpret"});
+  if(s.misread==="wrong"&&!s.misreadNote) a.push({t:"Marked needs-correction but the note is empty",jump:"#p-interpret"});
   s.scope.filter(function(x){return x.state==="hold"}).forEach(function(x){
-    a.push({t:"범위 '"+x.label+"' 가 보류 상태",jump:"#p-scope"}); });
+    a.push({t:"Scope '"+x.label+"' is on HOLD",jump:"#p-scope"}); });
   s.ac.filter(function(x){return x.accepted&&x.flagged}).forEach(function(x){
-    a.push({t:"인수 기준 '"+x.text.slice(0,20)+"…' 가 모호 표시됨",jump:"#p-ac"}); });
+    a.push({t:"Acceptance criterion '"+x.text.slice(0,20)+"…' flagged ambiguous",jump:"#p-ac"}); });
   return a;
 }
 
 function delta(s){
-  var d=[],nm={in:"포함",out:"제외",hold:"보류"};
-  if(s.misread==="wrong") d.push({f:"해석",t:"helm 해석을 수정"+(s.misreadNote?"":" (내용 비어 있음)")});
+  var d=[],nm={in:"IN",out:"OUT",hold:"HOLD"};
+  if(s.misread==="wrong") d.push({f:"Interpretation",t:"Corrected helm's interpretation"+(s.misreadNote?"":" (note empty)")});
   s.scope.forEach(function(x){
     var k=x.key||x.label,base=BASELINE.scope[k];
-    if(base===undefined){ d.push({f:"범위",t:"'"+(x.label||"(빈 항목)")+"' 추가"}); }
-    else if(base!==x.state){ d.push({f:"범위",t:"'"+x.label+"' "+nm[base]+"→"+nm[x.state]}); }
+    if(base===undefined){ d.push({f:"Scope",t:"Added '"+(x.label||"(empty)")+"'"}); }
+    else if(base!==x.state){ d.push({f:"Scope",t:"'"+x.label+"' "+nm[base]+"→"+nm[x.state]}); }
   });
-  if(s.priority!==BASELINE.priority) d.push({f:"우선순위",t:BASELINE.priority+" → "+s.priority});
+  if(s.priority!==BASELINE.priority) d.push({f:"Priority",t:BASELINE.priority+" → "+s.priority});
   var seen={};
   s.ac.forEach(function(x){
     seen[x.id]=1;
-    if(x.orig===null){ d.push({f:"인수기준",t:"'"+(x.text.slice(0,20)||"(빈 항목)")+"…' 추가"}); return; }
-    if(!x.accepted){ d.push({f:"인수기준",t:"'"+x.orig.slice(0,18)+"…' 제외"}); return; }
-    if(x.text!==x.orig){ d.push({f:"인수기준",t:"'"+x.orig.slice(0,18)+"…' 문구 수정"}); }
-    else if(x.flagged!==BASELINE.acFlags[x.id]){ d.push({f:"인수기준",t:"'"+x.text.slice(0,16)+"…' "+(x.flagged?"모호 표시":"명확화")}); }
+    if(x.orig===null){ d.push({f:"AC",t:"Added '"+(x.text.slice(0,20)||"(empty)")+"…'"}); return; }
+    if(!x.accepted){ d.push({f:"AC",t:"Dropped '"+x.orig.slice(0,18)+"…'"}); return; }
+    if(x.text!==x.orig){ d.push({f:"AC",t:"Reworded '"+x.orig.slice(0,18)+"…'"}); }
+    else if(x.flagged!==BASELINE.acFlags[x.id]){ d.push({f:"AC",t:"'"+x.text.slice(0,16)+"…' "+(x.flagged?"flagged ambiguous":"clarified")}); }
   });
-  BASELINE.origAC.forEach(function(id){ if(!seen[id]) d.push({f:"인수기준",t:id+" 항목 삭제"}); });
-  if(JSON.stringify(s.tickets)!==BASELINE.ticketsSig) d.push({f:"티켓",t:"분할안 수정 (총 "+s.tickets.length+"건)"});
-  if(JSON.stringify(s.constraints)!==BASELINE.conSig) d.push({f:"제약",t:"제약 목록 수정 (총 "+s.constraints.length+"건)"});
-  if(s.dependency!==BASELINE.dependency) d.push({f:"의존성",t:"의존성 기술 수정"});
-  if(s.note) d.push({f:"메모",t:"자유 메모 작성"});
+  BASELINE.origAC.forEach(function(id){ if(!seen[id]) d.push({f:"AC",t:"Removed "+id}); });
+  if(JSON.stringify(s.tickets)!==BASELINE.ticketsSig) d.push({f:"Tickets",t:"Edited split ("+s.tickets.length+" total)"});
+  if(JSON.stringify(s.constraints)!==BASELINE.conSig) d.push({f:"Constraints",t:"Edited list ("+s.constraints.length+" total)"});
+  if(s.dependency!==BASELINE.dependency) d.push({f:"Dependencies",t:"Edited dependency notes"});
+  if(s.note) d.push({f:"Note",t:"Added free note"});
   return d;
 }
 
@@ -661,7 +661,7 @@ function recordObj(s){
     },
     overrides: delta(s).map(function(x){return x.f+": "+x.t}),
     open_items: adv.map(function(x){return x.t}),
-    answered_at:"<확정 시각>"
+    answered_at:"<decision timestamp>"
   };
 }
 
@@ -679,7 +679,7 @@ function renderDep(tickets){
   var n=tickets.length;
   if(!n){ el.innerHTML=''; return; }
   var bw=118,gap=34,h=54,W=n*(bw+gap)-gap+8;
-  var svg='<svg width="'+W+'" height="'+h+'" viewBox="0 0 '+W+' '+h+'" role="img" aria-label="티켓 순서">';
+  var svg='<svg width="'+W+'" height="'+h+'" viewBox="0 0 '+W+' '+h+'" role="img" aria-label="Ticket order">';
   for(var i=0;i<n;i++){
     var x=i*(bw+gap)+4;
     if(i>0){
@@ -697,28 +697,28 @@ function renderDep(tickets){
 var lastJSON="",committed=false;
 function _renderImpl(){
   var s=read(),adv=advisory(s),d=delta(s);
-  $('[data-meta="interpret"]').innerHTML = s.misread===null?"확인 권장"
-    :s.misread==="ok"?'<span class="resolved-tick">✓ 정확</span>'
-    :'<span class="open-tick">✎ 수정 요청</span>';
+  $('[data-meta="interpret"]').innerHTML = s.misread===null?"Review suggested"
+    :s.misread==="ok"?'<span class="resolved-tick">✓ Confirmed</span>'
+    :'<span class="open-tick">✎ Correction requested</span>';
   var holds=s.scope.filter(function(x){return x.state==="hold"}).length;
-  $('[data-meta="scope"]').innerHTML = holds?'<span class="open-tick">보류 '+holds+'건</span>'
-    :'<span class="resolved-tick">✓ 모두 결정</span>';
+  $('[data-meta="scope"]').innerHTML = holds?'<span class="open-tick">'+holds+' on hold</span>'
+    :'<span class="resolved-tick">✓ All decided</span>';
   var fl=s.ac.filter(function(x){return x.accepted&&x.flagged}).length;
-  $('[data-meta="ac"]').innerHTML = fl?'<span class="open-tick">⚑ '+fl+'건</span>'
-    :'<span class="resolved-tick">✓ 모두 명확</span>';
+  $('[data-meta="ac"]').innerHTML = fl?'<span class="open-tick">⚑ '+fl+' ambiguous</span>'
+    :'<span class="resolved-tick">✓ All clear</span>';
   $('#stTickets').textContent=s.tickets.length;
   $('#stScope').textContent=s.scope.filter(function(x){return x.state==="in"}).length;
   $('#stAC').textContent=s.ac.filter(function(a){return a.accepted}).length;
   var sa=$('#stAdv'); sa.textContent=adv.length; sa.className="v "+(adv.length?"adv":"adv0");
   $('#deltaList').innerHTML = d.length
     ? d.map(function(x){return '<li><span class="f">'+x.f+'</span><span>'+esc(x.t)+'</span></li>'}).join("")
-    : '<li class="none">아직 helm 제안과 동일합니다</li>';
+    : '<li class="none">Still matches helm\'s proposal</li>';
   var al=$('#advisList'),ah=$('#advisHint');
   if(adv.length){
     al.innerHTML=adv.map(function(x){
       return '<li data-jump="'+x.jump+'"><span class="ic">⚑</span><span>'+esc(x.t)+'</span></li>'; }).join("");
-    ah.textContent="이 항목들은 복사를 막지 않습니다. 그대로 두면 토큰의 open_items 에 실려 helm이 이어서 확인합니다.";
-  } else { al.innerHTML='<li class="none">helm이 확인을 권하는 항목이 없습니다 ✓</li>'; ah.textContent=""; }
+    ah.textContent="These do not block copying. Leave them as-is and they ride along in the token's open_items for helm to follow up on.";
+  } else { al.innerHTML='<li class="none">No review-suggested items from helm ✓</li>'; ah.textContent=""; }
   renderDep(s.tickets);
   var pre=$('#json'),nj=JSON.stringify(recordObj(s));
   pre.innerHTML=colorJSON(recordObj(s));
@@ -727,8 +727,8 @@ function _renderImpl(){
   lastJSON=nj;
   var gm=$('#gateMsg');
   if(committed) gm.innerHTML="";
-  else if(adv.length) gm.innerHTML="복사하면 <b>"+adv.length+"건의 확인 권장 항목</b>도 함께 helm에 전달됩니다";
-  else gm.innerHTML="모든 항목이 정리되었습니다 — 깔끔하게 전달됩니다 ✓";
+  else if(adv.length) gm.innerHTML="Copying will also send <b>"+adv.length+" review-suggested item(s)</b> along to helm";
+  else gm.innerHTML="Everything is tidy — ready for a clean handoff ✓";
   try{ localStorage.setItem(SKEY,JSON.stringify(s)); }catch(e){}
 }
 
@@ -747,9 +747,9 @@ function render(){
     var msg=(e&&(e.message||e.toString()))||'unknown render error';
     if(fail){
       fail.classList.add('on');
-      fail.innerHTML='<b>⚠ 캔버스 표시 오류</b>'+esc(msg)
+      fail.innerHTML='<b>⚠ Canvas render error</b>'+esc(msg)
         +'<br><span style="color:var(--mut);font-size:11px">'
-        +'결정 토큰 복사는 계속 동작합니다 — 위 버튼을 사용하세요.</span>';
+        +'Decision-token copy still works — use the button above.</span>';
     }
     try{ if(window.console&&console.error) console.error('canvas render failed',e); }catch(_){}
   }
@@ -839,7 +839,7 @@ $('#conlist').addEventListener('click',function(e){
   if(e.target.classList.contains('x')){ e.target.closest('.con').remove(); committed=false; render(); }
 });
 $('#addCon').addEventListener('click',function(){
-  var row=conNode({label:'기타'});
+  var row=conNode({label:'Other'});
   $('#conlist').appendChild(row); $('.v',row).focus(); committed=false; render();
 });
 
@@ -877,11 +877,11 @@ $('#commitBtn').addEventListener('click',function(){
   $('#doneBox').style.display="block";
   var adv=advisory(read());
   $('#copiedMsg').innerHTML=(adv.length
-    ? "✓ 복사됨 — open_items "+adv.length+"건 포함. "
-    : "✓ 복사됨. ")+"helm 대화창에 붙여넣고 'md 티켓으로 만들어줘'라고 하세요.";
+    ? "✓ Copied — includes "+adv.length+" open_items. "
+    : "✓ Copied. ")+"Paste into the helm chat and ask helm to 'turn this into an md ticket.'";
   try{ navigator.clipboard.writeText(token); }catch(e){ $('#token').select(); }
   committed=true;
-  this.textContent="✓ 복사됨 — 다시 복사하려면 클릭";
+  this.textContent="✓ Copied — click again to re-copy";
   var s3=$('#flow .step[data-step="3"]'),s4=$('#flow .step[data-step="4"]');
   if(s3){ s3.className="step done"; $('.s',s3).textContent="S3 ✓"; }
   if(s4){ s4.className="step now"; $('.s',s4).textContent="S4 ●"; }
@@ -924,7 +924,7 @@ def render(record: dict) -> str:
     )
     return (
         "<!DOCTYPE html>\n"
-        '<html lang="ko"><head><meta charset="UTF-8">'
+        '<html lang="en"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
         f"<title>Helm Canvas — {esc(canvas.get('title') or record.get('ticket'))}</title>"
         f"<style>{_CSS}</style></head><body>"
@@ -937,7 +937,7 @@ def render(record: dict) -> str:
         "</div>"
         f"{_right_column()}"
         "</div>"
-        '<footer class="note">CT2 Helm Canvas · 자기완결 HTML(외부 의존성 0) · '
+        '<footer class="note">CT2 Helm Canvas · self-contained HTML (zero external deps) · '
         f"provider format(html) — spec/helm-canvas.md</footer>"
         "</div>"
         f"<script>window.CANVAS={config};</script>"

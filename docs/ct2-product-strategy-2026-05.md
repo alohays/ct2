@@ -1,60 +1,60 @@
 # CT2 Product Strategy — From Kanban Harness to Verified Autonomy OS
 
-조사 기준일: 2026-05-10 KST / 2026-05-09 US
-대상 런타임: Codex CLI 0.130.0 (실측), Claude Code 2.1.138 (실측, 최신)
-작성 의도: `docs/agent-platform-feature-radar-2026-05.md`(이하 "Feature Radar")와 **나란히 읽히는 자매 문서**. Feature Radar가 vendor 표면을 카탈로그화하고 흡수 프로토콜을 정규화한다면, 본 문서는 **Verified Autonomy OS라는 제품 정체성 아래 앞으로 6–12주 동안 무엇을 하지 *않고*, 무엇에 *베팅*할지**를 결정한다. 최종 canonical 계획은 `docs/ct2-verified-autonomy-os-strategy-2026-05.md`로 수렴한다.
+Survey date: 2026-05-10 KST / 2026-05-09 US
+Target runtimes: Codex CLI 0.130.0 (measured), Claude Code 2.1.138 (measured, latest)
+Authoring intent: A **companion document read side-by-side with** `docs/agent-platform-feature-radar-2026-05.md` (hereafter "Feature Radar"). Where Feature Radar catalogs vendor surfaces and normalizes the adoption protocol, this document decides **what we will *not* do and what we will *bet* on for the next 6–12 weeks under the product identity of Verified Autonomy OS**. The final canonical plan converges in `docs/ct2-verified-autonomy-os-strategy-2026-05.md`.
 
-## 0. 한 페이지 요약
+## 0. One-page summary
 
-### 0.1 Feature Radar와의 차이를 한눈에
+### 0.1 Difference from Feature Radar at a glance
 
-| 축 | Feature Radar | 본 문서 |
+| Axis | Feature Radar | This document |
 |---|---|---|
-| 본질 | **카탈로그** — 모든 표면을 빠짐없이 매핑 | **결심** — Verified Autonomy OS를 위한 5개 베팅 + 6개 anti-bet |
-| 권고 형태 | P0/P1/P2 메뉴(9개) | Registry+Baseline 이후 sequenced bets (5개, 죽일 조건 포함) |
-| 측정 | OTel/Observability Ledger 인프라 제안 | Trust, Evidence, Autonomy, Cost/Latency balanced scorecard |
-| 비용 | 부수적 언급 | Bet 1로 *제품의 1번 lever*로 격상 |
-| 사용자 경험 | "검증가능성" 강조 | "검증가능성 + 자고 일어나도 OK" 까지 확장 (Bet 3) |
-| Plan-mode | 미언급 | Bet 2의 핵심 (workflow 재정렬) |
-| 회귀 방어 | hook guardrails | Bet 4 eval harness로 보강 (role MD 자체를 코드처럼) |
-| 경쟁 | 미다룸 | §10.5에서 8+ 인접 시스템과 명시적 대조 |
-| 구체 산출물 | 8개 ticket 후보 | spec PR list + 7-day plan + 실 wrapper sketch (부록 C/D/E) |
-| 권위 분기 | Native task/scheduler 흡수 시 위험 인식 | *5번째* 베팅으로 의도적 후순위 (가장 매혹적이고 가장 위험) |
+| Essence | **Catalog** — maps every surface exhaustively | **Decision** — 5 bets + 6 anti-bets for Verified Autonomy OS |
+| Recommendation form | P0/P1/P2 menu (9 items) | Sequenced bets after Registry+Baseline (5 bets, with kill criteria) |
+| Measurement | OTel/Observability Ledger infrastructure proposal | Trust, Evidence, Autonomy, Cost/Latency balanced scorecard |
+| Cost | Mentioned in passing | Elevated to *the product's #1 lever* via Bet 1 |
+| User experience | Emphasizes "verifiability" | Extends to "verifiability + still-OK-when-you-wake-up" (Bet 3) |
+| Plan-mode | Not mentioned | Core of Bet 2 (workflow rearrangement) |
+| Regression defense | hook guardrails | Reinforced by Bet 4 eval harness (treats the role MD itself like code) |
+| Competition | Not addressed | Explicit comparison against 8+ adjacent systems in §10.5 |
+| Concrete deliverables | 8 candidate tickets | spec PR list + 7-day plan + actual wrapper sketches (Appendices C/D/E) |
+| Authority divergence | Recognizes risk when absorbing native task/scheduler | Deliberately last as the *5th* bet (most seductive, most dangerous) |
 
-읽는 순서 권고: **최종 통합 문서 §0–§5 먼저(canonical direction) → Feature Radar §1–§3(evidence base) → 본 문서 §4–§6(bets/anti-bets) → Feature Radar §4(P0/P1/P2)** — 세 문서를 single review 묶음으로.
+Recommended reading order: **the final integrated document §0–§5 first (canonical direction) → Feature Radar §1–§3 (evidence base) → this document §4–§6 (bets/anti-bets) → Feature Radar §4 (P0/P1/P2)** — all three documents reviewed as a single bundle.
 
-### 0.2 결심
+### 0.2 Decision
 
-**결론.** CT2의 다음 진화는 새 기능을 더 흡수하는 것이 아니라 *제품 정체성*을 한 단계 끌어올리는 것이다. 지금까지 CT2는 "atomic `mv` kanban + dual-review"라는 protocol harness였다. 다음 라운드에서 CT2는 **Verified Autonomy OS** — 즉 여러 agent runtime 위에서 `.ct2/` state, review independence, evidence, budget, schedule, permission을 운영체제 primitive처럼 관리하는 file-first protocol kernel — 이 되어야 한다.
+**Conclusion.** The next evolution of CT2 is not to absorb more new features but to raise its *product identity* one level. Until now CT2 has been a protocol harness — "atomic `mv` kanban + dual-review." In the next round, CT2 must become **Verified Autonomy OS** — i.e., a file-first protocol kernel that manages `.ct2/` state, review independence, evidence, budget, schedule, and permissions as OS primitives across multiple agent runtimes.
 
-이 framing은 다섯 가지 product bet을 자연스럽게 따라오게 한다:
+This framing makes five product bets follow naturally:
 
-1. **Cost-aware role contracts** — `--max-budget-usd`, `--effort`, `enable_request_compression`, `fast_mode`, `personality` 같은 "지금 vendor가 stable로 내놓았지만 CT2가 거의 손대지 않은" 표면을 SLO/error-budget 형태로 묶어, 역할별 비용·지연·품질을 *측정 가능한 contract*로 만든다.
-2. **Plan-mode-first forge** — Claude `EnterPlanMode/ExitPlanMode`와 Codex `goals` + `tool_search`를 결합해, forge가 *항상 plan을 먼저 sealing*하고 그 plan이 ticket의 일부로 sidecar에 남는 구조로 전환한다.
-3. **Ambient CT2 over async channels** — Discord/Slack/MCP channels + `PushNotification`/`RemoteTrigger`를 통해 CT2를 "터미널을 열어야 시작되는 도구"에서 "이메일처럼 알아서 들어오고, 위임할 수 있는 always-on 백그라운드 동료"로 끌어올린다.
-4. **Eval harness for roles** — `skill-creator`의 evals 패턴 + `claude --json-schema` + `/ultrareview`를 활용해, 역할 정의(skill MD, role MD, prompt) 자체를 회귀 테스트 가능한 코드로 만든다.
-5. **Native task graph mirror (advisory)** — Claude `TaskCreate`/`TaskUpdate`(의존성 `blockedBy` 포함)와 Codex `multi_agent`를 CT2 ticket과 *일대일이 아닌 일대N으로* 거울처럼 비춰, runtime 가시성을 끌어올리되 `.ct2/`의 권위는 유지한다.
+1. **Cost-aware role contracts** — bundle the surfaces "vendors shipped as stable but CT2 has barely touched," like `--max-budget-usd`, `--effort`, `enable_request_compression`, `fast_mode`, and `personality`, into SLO/error-budget form to make per-role cost, latency, and quality a *measurable contract*.
+2. **Plan-mode-first forge** — combine Claude `EnterPlanMode/ExitPlanMode` with Codex `goals` + `tool_search` to flip the structure so that forge *always seals a plan first* and that plan lives as part of the ticket sidecar.
+3. **Ambient CT2 over async channels** — using Discord/Slack/MCP channels + `PushNotification`/`RemoteTrigger`, lift CT2 from "a tool that starts only when you open a terminal" to "an always-on background colleague that flows in like email and can be delegated to."
+4. **Eval harness for roles** — using `skill-creator`'s evals pattern + `claude --json-schema` + `/ultrareview`, treat role definitions (skill MD, role MD, prompt) themselves as regression-testable code.
+5. **Native task graph mirror (advisory)** — mirror Claude `TaskCreate`/`TaskUpdate` (with `blockedBy` dependencies) and Codex `multi_agent` against CT2 tickets *not one-to-one but one-to-N*, lifting runtime visibility while preserving the authority of `.ct2/`.
 
-**우선 순위.** Phase 0 Registry+Baseline → Bet 1 → Bet 2 → Bet 4 → Bet 3 → Bet 5. Bet 5는 의도적으로 마지막. 가장 *반짝거리지만 가장 위험한* 베팅이라서다(자세한 이유는 §5에서).
+**Priority order.** Phase 0 Registry+Baseline → Bet 1 → Bet 2 → Bet 4 → Bet 3 → Bet 5. Bet 5 is deliberately last — it is the *shiniest and most dangerous* bet (detailed rationale in §5).
 
-**버리는 것.** §6에서 6개 anti-bet을 명시한다 — 화려해 보이지만 CT2의 검증가능성을 깨뜨리는 시도들(클라우드 라우팅에 ticket lifecycle을 위임, 이미지를 단독 evidence로 채택, vendor scheduler에 done 권한 위임 등).
+**What we drop.** §6 names 6 anti-bets — attempts that look glamorous but break CT2's verifiability (delegating ticket lifecycle to cloud routing, adopting images as sole evidence, handing over done authority to a vendor scheduler, etc.).
 
-**Feature Radar와의 차이.** Feature Radar는 **포괄성**(Capability Registry, Decision Bridge, Hook Guardrails, Watch Plane, Plugin Distribution …)을 우선했다. 본 문서는 **결심**(어디에 베팅하고 어디에 안 하는지)을 우선한다. 두 문서를 함께 채택하면 Feature Radar의 "P0 Capability Registry / Decision Bridge / Hook Guardrails"는 본 문서의 다섯 bet의 *기반 인프라*로 합류한다 — 부정하는 것이 아니라 그 위에 결심을 올린다.
+**Difference from Feature Radar.** Feature Radar prioritized **comprehensiveness** (Capability Registry, Decision Bridge, Hook Guardrails, Watch Plane, Plugin Distribution …). This document prioritizes **decisions** (where to bet and where not to). Adopt both and Feature Radar's "P0 Capability Registry / Decision Bridge / Hook Guardrails" join as the *foundational infrastructure* of this document's five bets — not negated, layered under.
 
-## 1. Scorecard와 First Principles
+## 1. Scorecard and first principles
 
 ### 1.1 Balanced scorecard
 
-CT2는 단일 north star만으로 운영하면 위험하다. Trust만 보면 비용과 지연이 폭증할 수 있고, cost만 보면 검토 품질이 떨어질 수 있으며, autonomy만 보면 잘못된 자동화가 조용히 state authority를 침식할 수 있다. 따라서 Verified Autonomy OS의 성공은 다음 네 축을 함께 본다.
+It is risky to operate CT2 against a single north star. Looking only at Trust can explode cost and latency; looking only at cost can degrade review quality; and looking only at autonomy can quietly erode state authority via misguided automation. Hence Verified Autonomy OS's success looks at the following four axes together.
 
-| 축 | 핵심 metric | 의미 |
+| Axis | Key metric | Meaning |
 |---|---|---|
-| **Trust** | `done` 후 90일 내 revise/revert/reopen 없는 비율, first-pass approval | 한 번 done 된 결과가 다시 깨지지 않는가 |
-| **Evidence** | state transition 중 evidence id와 verifier를 가진 비율 | 왜 approved/done 됐는지 사후 재구성 가능한가 |
-| **Autonomy** | heartbeat freshness, blocked->unblocked latency, review latency p95 | 자율 실행이 멈추거나 조용히 stale되지 않는가 |
-| **Cost/Latency** | $/ticket p50, ticket latency p50/p95, budget violation | 신뢰성을 유지한 채 비용과 시간을 통제하는가 |
+| **Trust** | Ratio of `done` tickets with no revise/revert/reopen within 90 days, first-pass approval | Does what is done once stay done? |
+| **Evidence** | Ratio of state transitions carrying an evidence id and verifier | Can we reconstruct after the fact why approved/done was granted? |
+| **Autonomy** | Heartbeat freshness, blocked→unblocked latency, review latency p95 | Does autonomous execution avoid stalling or going quietly stale? |
+| **Cost/Latency** | $/ticket p50, ticket latency p50/p95, budget violations | Does it control cost and time while preserving reliability? |
 
-Trust ratio는 scorecard의 첫 축이지만 유일한 north star는 아니다. 정의:
+Trust ratio is the first axis on the scorecard but not the sole north star. Definition:
 
 ```
 Trust ratio (90d rolling) =
@@ -63,45 +63,45 @@ Trust ratio (90d rolling) =
   count(tickets that reached `done` in window)
 ```
 
-초기 목표는 Trust ratio ≥ 0.92, Evidence coverage ≥ 0.90, autonomy SLA violation 0건, $/ticket p50 baseline -30%다. 네 축이 같이 좋아지거나 최소한 한 축의 개선이 다른 축의 붕괴를 만들지 않을 때만 제품 개선으로 본다.
+Initial targets: Trust ratio ≥ 0.92, Evidence coverage ≥ 0.90, 0 autonomy SLA violations, $/ticket p50 baseline -30%. We count this as product improvement only when all four axes improve together, or at minimum when an improvement on one axis does not collapse another.
 
-### 1.2 First principles 재확인
+### 1.2 Restating first principles
 
-- **Tickets는 *프로그램*이지 *대화*가 아니다.** Ticket 본문 + frontmatter + sidecar는 declarative spec이고, role은 그것을 실행하는 *runtime*이다. Vendor가 추가하는 어떤 기능도 이 분리를 흐리면 거부한다.
-- **`mv`는 commit이다.** State transition을 atomic file rename으로 모델링한 것은 *분산 시스템의 commit*에 해당한다. 이 단순함은 "vendor가 기능을 추가했다고 여기 비비지 마라"는 뜻이다.
-- **Reviewer independence ≥ reviewer convenience.** dual-review의 가치는 두 reviewer가 서로의 결과를 *못 본 채로* 결론을 낸다는 데 있다. 이 invariant를 깨는 어떤 productivity 기능도 거절한다.
-- **`spec/`이 권위다.** Vendor가 hot한 기능을 내놓아도 spec을 수정하지 않으면 CT2 안에 들어오지 않는다. 본 문서가 만드는 베팅은 *모두* 결국 spec PR로 귀결되어야 한다.
-- **External 의존성 0.** bash + python stdlib. 본 문서의 어떤 베팅도 이 룰을 깨지 않는다(JSON schema validator는 stdlib `json` + 수기 검증으로 가능).
+- **Tickets are *programs*, not *conversations*.** A ticket body + frontmatter + sidecar is a declarative spec; the role is the *runtime* that executes it. Any vendor feature that blurs this separation is refused.
+- **`mv` is commit.** Modeling state transitions as atomic file renames is the equivalent of *commit in a distributed system*. This simplicity means: "Don't rub vendor-added features against this."
+- **Reviewer independence ≥ reviewer convenience.** Dual-review's value is that the two reviewers conclude *without seeing each other's results*. Any productivity feature that breaks this invariant is rejected.
+- **`spec/` is authoritative.** Even if a vendor ships a hot feature, it does not enter CT2 unless the spec is amended. The bets this document makes *all* eventually resolve to spec PRs.
+- **Zero external dependencies.** bash + python stdlib. No bet in this document breaks this rule (a JSON schema validator can be built from stdlib `json` + hand-rolled checks).
 
-### 1.3 CT2가 *아닌* 것
+### 1.3 What CT2 is *not*
 
-- ❌ "보편적 agent OS" — Cursor, Aider, Claude Project 등이 노리는 자리. CT2는 *opinionated dual-review pipeline*이다.
-- ❌ 클라우드 SaaS — `.ct2/`는 로컬, single-user, file-system-first.
-- ❌ Linear/Jira 대체재 — ticket은 코드 옆에 산다. 인간 PM 도구를 흉내내지 않는다.
-- ❌ 단일 LLM에 묶인 framework — Codex와 Claude의 *동시 활용*이 dual-review의 본질.
+- ❌ "Universal agent OS" — the territory Cursor, Aider, Claude Project, etc. aim at. CT2 is an *opinionated dual-review pipeline*.
+- ❌ Cloud SaaS — `.ct2/` is local, single-user, file-system-first.
+- ❌ A Linear/Jira replacement — tickets live next to code. We do not mimic human PM tools.
+- ❌ A framework bound to a single LLM — the *simultaneous use* of Codex and Claude is the essence of dual-review.
 
-## 2. Frame Shift — Verified Autonomy OS as Protocol Kernel
+## 2. Frame shift — Verified Autonomy OS as protocol kernel
 
-Verified Autonomy OS는 "모든 agent를 포괄하는 범용 OS"가 아니다. CT2가 이미 가진 `.ct2/`, spec-first ticket, atomic `mv`, dual-review sidecar, inbox, reconciler를 **OS primitive처럼 운영 가능하게 만든 protocol kernel**이다. Reliability Platform은 이 kernel이 사용자에게 주는 운영 가치다.
+Verified Autonomy OS is not "a universal OS that covers every agent." It is **a protocol kernel that makes the `.ct2/`, spec-first tickets, atomic `mv`, dual-review sidecar, inbox, and reconciler that CT2 already has operable as OS primitives**. Reliability Platform is the operational value this kernel delivers to the user.
 
-SRE 비유는 여전히 유효하다. 다만 상위 이름은 Reliability Platform이 아니라 Verified Autonomy OS다.
+The SRE analogy still holds. Only the top-level name is Verified Autonomy OS rather than Reliability Platform.
 
-> SRE의 통찰: "복잡한 분산 시스템은 결국 *SLO + error budget + observability + postmortem*의 사이클로 운영된다."
-> CT2의 다음 단계: "복잡한 multi-agent 협업 또한 *kernel authority + SLO + budget + evidence + postmortem*의 사이클로 운영된다."
+> SRE insight: "A complex distributed system is ultimately operated as a cycle of *SLO + error budget + observability + postmortem*."
+> CT2's next step: "Complex multi-agent collaboration is also operated as a cycle of *kernel authority + SLO + budget + evidence + postmortem*."
 
-이 비유는 단순한 마케팅 framing이 아니다. 다섯 가지 구체적 product 의사결정을 강제한다:
+This analogy is not mere marketing framing. It forces five concrete product decisions:
 
-| SRE 개념 | CT2 매핑 | 즉시 따라오는 의사결정 |
+| SRE concept | CT2 mapping | Decision it forces |
 |---|---|---|
-| **Service** | Role (helm/forge/lens-cc/lens-cx/status/reconciler) | 각 role은 자기 description, owner, 변경 절차, eval suite를 가진다 |
-| **SLO** | role마다 정의된 latency/cost/quality 목표 | `harness.yaml`에 SLO field 추가; 위반 시 자동 escalation |
-| **Error budget** | 일/주 단위 누적 *허용 위반량* | budget 소진 시 auto-mode 차단, manual로만 진행 |
-| **On-call** | 사람이 있어야 풀리는 inbox 메시지의 *대기 시간* | 일정 시간 미해결 시 PushNotification/Discord ping |
-| **Postmortem** | escalated/rejected ticket의 사후 분석 | `.ct2/postmortems/` 디렉터리, monthly summary |
+| **Service** | Role (helm/forge/lens-cc/lens-cx/status/reconciler) | Each role has its own description, owner, change procedure, and eval suite |
+| **SLO** | Latency/cost/quality targets defined per role | Add SLO fields to `harness.yaml`; auto-escalate on violation |
+| **Error budget** | *Permitted violations* accumulated daily/weekly | When budget is exhausted, block auto-mode; proceed manually only |
+| **On-call** | *Waiting time* for inbox messages that need a human to clear | After a threshold, send a PushNotification/Discord ping |
+| **Postmortem** | Post-hoc analysis of escalated/rejected tickets | `.ct2/postmortems/` directory, monthly summary |
 
-이 framing을 받아들이면 Feature Radar의 P0 세 가지(Capability Registry, Decision Bridge, Hook Guardrails)는 자연스럽게 *기반 인프라* — capacity inventory, request mediator, admission control — 의 위치를 차지하고, 본 문서의 다섯 bet은 그 위에 *서비스 운영* 계층을 올린다. 두 문서가 다투지 않고 위아래로 합류한다.
+Accept this framing and Feature Radar's three P0s (Capability Registry, Decision Bridge, Hook Guardrails) naturally take the place of *foundational infrastructure* — capacity inventory, request mediator, admission control — and this document's five bets layer the *service operations* tier on top. The two documents do not fight; they stack.
 
-### 2.1 Layered architecture — 두 문서의 합류 그림
+### 2.1 Layered architecture — how the two documents stack
 
 ```
         Layer 4 — Visibility (advisory only, no authority)
@@ -135,95 +135,95 @@ SRE 비유는 여전히 유효하다. 다만 상위 이름은 Reliability Platfo
         └────────────────────────────────────────────────────┘
 ```
 
-읽는 룰:
+Reading rules:
 
-- **위 계층은 아래 계층에 의존하지만, 아래 계층은 위에 의존하지 않는다.** Bet 1–5 모두 죽어도 Layer 0–1은 그대로 작동.
-- **권위는 한 방향 — 위로 못 올라간다.** Bet 5가 native task에 무엇을 적든 그것이 Layer 0의 ticket을 못 바꾼다(§4.5와 §6 anti-bet 4번이 같이 박는 룰).
-- **트래픽은 양방향 — 정보는 위아래 모두 흐른다.** Layer 0의 ticket 상태 변화 → Layer 4 mirror 업데이트. Layer 3의 외부 메시지 → Layer 1의 Decision Bridge → Layer 0의 inbox.
+- **Upper layers depend on lower layers, but lower layers do not depend on upper.** Even if Bets 1–5 all die, Layers 0–1 keep working.
+- **Authority flows one way — it cannot climb up.** Whatever Bet 5 writes to native tasks cannot change a Layer 0 ticket (a rule jointly pinned by §4.5 and §6's anti-bet 4).
+- **Traffic is bidirectional — information flows both ways.** Layer 0 ticket state change → Layer 4 mirror update. Layer 3 external messages → Layer 1 Decision Bridge → Layer 0 inbox.
 
-## 3. Vendor 표면 재감사 — Feature Radar가 충분히 다루지 못한 부분
+## 3. Vendor surface re-audit — what Feature Radar didn't cover enough
 
-Feature Radar는 거의 모든 vendor 표면을 짚었다. 그러나 *비용/품질 trade-off* 차원에서 stable로 풀려있는데도 CT2가 손대지 않은 표면이 다섯 개 있다. 본 문서의 베팅들은 이 다섯 개에 직접 의존한다.
+Feature Radar touched almost every vendor surface. But on the *cost/quality trade-off* axis, five surfaces are stable yet untouched by CT2. This document's bets depend directly on these five.
 
-| 표면 | 현 상태 | 왜 Feature Radar가 가볍게 다뤘나 | 본 문서가 활용하는 방식 |
+| Surface | Current state | Why Feature Radar treated it lightly | How this document uses it |
 |---|---|---|---|
-| Codex `personality` (stable) | feature flag로 stable enabled | "tone"은 protocol과 무관하다고 보기 쉽다 | Bet 1: role마다 personality preset을 강제(예: lens는 "skeptical/short", helm은 "interrogative") — 결과의 *style 분산*을 줄여 평가 가능성 ↑ |
-| Codex `fast_mode` (stable) | flag stable enabled | latency 최적화는 product 결정이 아닌 줄 알기 쉽다 | Bet 1: status/reconciler처럼 *판단이 거의 없는 역할*은 fast_mode pin |
-| Codex `enable_request_compression` (stable) | flag stable enabled | "토큰 압축"은 internal 최적화로 보임 | Bet 1: 큰 thread를 가진 role(helm-auto-cx 같은)에 강제 — token cost 의 가장 큰 단일 lever |
-| Codex `guardian_approval` (stable) + Claude `auto-mode hard_deny` (2.1.136) | 양쪽 다 stable | Hook Guardrails로 다뤄졌으나 *role policy*와의 결합은 미정 | Bet 1: lens 역할은 자동 admin 작업 *항상* hard_deny; helm은 budget 초과 시 hard_deny |
-| Claude `--max-budget-usd` (CLI) + Claude `--effort` (CLI/`/effort` slash) | 둘 다 stable | "비용은 사용자가 알아서"라고 보기 쉽다 | Bet 1: ticket 우선순위(p0/p1/p2)와 effort/budget pin을 매핑 |
-| Claude `--bare` (CLI) | 2.1.x 이후 stable | 디버깅용 모드로 보임 | Bet 4: eval harness가 매 회귀 실행을 `--bare`로 — 실험을 hook/auto-memory 등 외부 변동 변수로부터 격리 |
-| Claude `EnterPlanMode/ExitPlanMode` (tool) | stable | "plan mode는 옵션 UX"로 보임 | Bet 2의 핵심 — plan mode를 *기본 forge 진입점*으로 |
-| Claude `Monitor` (tool, v2.1.98+) | stable but 일부 환경 미지원 | Watch Plane으로 다뤘지만 *role lifecycle 신호*로의 활용 미정 | Bet 3: monitor → inbox 메시지 → role wakeup 체인 |
-| Claude `TaskCreate/TaskUpdate` (tool) | stable, `blockedBy` 의존성 그래프 지원 | "todo list 흉내"로 보일 수 있다 | Bet 5: ticket을 native task로 mirror — runtime 가시성, *권위는 ticket이 유지* |
-| Claude `--brief` + `SendUserMessage` (tool) | stable, opt-in | 단순 채팅 채널로 보임 | Bet 3: forge가 짧은 progress message를 user에게 직접 push (inbox 우회 X — *추가* 채널) |
-| Codex `tool_search`, `tool_suggest` (stable) | flag stable enabled | "discovery는 LLM이 알아서"로 보임 | Bet 4: eval suite가 tool_search 결과를 결정론적으로 fix하여 회귀 테스트 가능 |
-| Codex `unified_exec` (stable) | flag stable enabled | "exec 모드는 한 종류"로 통합돼 안 보이는 것 | Bet 1의 cost SLO 측정 단위 — exec 호출당 token/latency 표준화 |
-| Claude `worktree.baseRef` (2.1.133) | stable | Feature Radar에 다뤄졌지만 ticket lifecycle과의 결합 미정 | Bet 2: forge가 plan-mode를 거친 후에만 worktree 생성, baseRef는 ticket frontmatter에서 결정 |
-| Claude `--from-pr` (CLI) | stable | 단순 편의 기능 | Bet 4: ultrareview eval 시 PR 컨텍스트 자동 로드 |
+| Codex `personality` (stable) | feature flag stable enabled | Easy to think "tone" is unrelated to protocol | Bet 1: enforce a personality preset per role (e.g., lens as "skeptical/short", helm as "interrogative") — reduces *style variance* in outputs, raising evaluability ↑ |
+| Codex `fast_mode` (stable) | flag stable enabled | Easy to think latency optimization is not a product decision | Bet 1: pin `fast_mode` on *judgment-light roles* like status/reconciler |
+| Codex `enable_request_compression` (stable) | flag stable enabled | "Token compression" looks like internal optimization | Bet 1: force it on long-thread roles (like helm-auto-cx) — the single largest lever on token cost |
+| Codex `guardian_approval` (stable) + Claude `auto-mode hard_deny` (2.1.136) | both stable | Covered under Hook Guardrails, but coupling with *role policy* is undefined | Bet 1: lens role *always* hard_deny on auto admin actions; helm hard_deny on budget overrun |
+| Claude `--max-budget-usd` (CLI) + Claude `--effort` (CLI/`/effort` slash) | both stable | Easy to think "cost is the user's problem" | Bet 1: map ticket priority (p0/p1/p2) to effort/budget pins |
+| Claude `--bare` (CLI) | stable since 2.1.x | Looks like a debug mode | Bet 4: the eval harness runs every regression with `--bare` — isolates experiments from external variables like hooks and auto-memory |
+| Claude `EnterPlanMode/ExitPlanMode` (tool) | stable | "Plan mode looks like an optional UX" | Core of Bet 2 — make plan mode the *default forge entrypoint* |
+| Claude `Monitor` (tool, v2.1.98+) | stable but unsupported in some environments | Covered as the Watch Plane, but its use as a *role lifecycle signal* is undefined | Bet 3: monitor → inbox message → role wakeup chain |
+| Claude `TaskCreate/TaskUpdate` (tool) | stable, supports `blockedBy` dependency graph | Easy to see as a "todo-list imitation" | Bet 5: mirror tickets as native tasks — runtime visibility, *authority stays with the ticket* |
+| Claude `--brief` + `SendUserMessage` (tool) | stable, opt-in | Looks like a simple chat channel | Bet 3: forge pushes short progress messages directly to the user (not bypassing inbox — an *additional* channel) |
+| Codex `tool_search`, `tool_suggest` (stable) | flag stable enabled | "Discovery is the LLM's job" looks reasonable | Bet 4: fix `tool_search` results deterministically so the eval suite can regression-test them |
+| Codex `unified_exec` (stable) | flag stable enabled | "Exec mode is one thing" — unified into invisibility | The cost-SLO unit of Bet 1 — token/latency standardized per exec call |
+| Claude `worktree.baseRef` (2.1.133) | stable | Covered by Feature Radar, but coupling to ticket lifecycle is undefined | Bet 2: forge creates a worktree only after plan-mode; `baseRef` decided from ticket frontmatter |
+| Claude `--from-pr` (CLI) | stable | A simple convenience feature | Bet 4: auto-load PR context for ultrareview evals |
 
-(주: `personality`/`fast_mode`/`enable_request_compression`은 0.130.0의 `codex features list`에 stable enabled로 표시되며, 정확한 CLI surface는 `~/.codex/config.toml` profile/flag로 제어된다. 본 문서의 베팅은 "config을 만든다"는 수준이며, 미공개 internal API에 의존하지 않는다.)
+(Note: `personality`/`fast_mode`/`enable_request_compression` show up as stable enabled in 0.130.0's `codex features list`, with their exact CLI surfaces controlled by `~/.codex/config.toml` profile/flag. This document's bets only go to the level of "make a config" and do not depend on undocumented internal APIs.)
 
-## 3.5 Subagent + Memory subsystems — 한 번 더 짚어둘 두 표면
+## 3.5 Subagent + memory subsystems — two surfaces to call out once more
 
 ### 3.5.1 Subagent (Agent tool, multi_agent flag)
 
-Claude `Agent` 도구와 Codex `multi_agent` (stable) 둘 다 *spawned worker*를 만든다. CT2의 현 모델은 "lens-cc는 Claude 세션 자체, lens-cx는 Codex 세션 자체" — 즉 *프로세스 단위 격리*. 하지만 forge가 큰 ticket을 처리할 때 *내부적으로* explorer/reviewer 보조 subagent를 부르는 것은 가능하고, 실제로 빈번해진다.
+Claude's `Agent` tool and Codex's `multi_agent` (stable) both spawn *workers*. CT2's current model is "lens-cc is the Claude session itself, lens-cx is the Codex session itself" — i.e., *process-level isolation*. But when forge handles a large ticket, it is possible — and increasingly common — to internally summon explorer/reviewer helper subagents.
 
-CT2에 즉시 적용할 룰:
+Rules to apply to CT2 immediately:
 
-- **Subagent는 ticket 권위를 가질 수 없다.** subagent는 ticket frontmatter, sidecar, inbox 메시지를 *작성하지 않는다*. 부모 role이 모은 결과를 작성한다.
-- **Subagent budget는 부모의 budget envelope에 포함**(Bet 1과 결합). 즉 forge가 subagent를 3개 띄우면 그 token cost는 forge ticket budget에 합산.
-- **Subagent isolation은 worktree로** (Claude `isolation: worktree`, Codex `multi_agent` cap). disjoint write set 검증은 부모 role 책임.
-- **lens 역할은 subagent를 띄우지 않는다.** independence가 본질이므로, 검토자가 보조 LLM을 부르는 것 자체가 *외부 신호 유입*. 이 룰은 spec/review-protocol.md에 명문화.
+- **A subagent cannot hold ticket authority.** Subagents *do not write* ticket frontmatter, sidecar, or inbox messages. The parent role writes the aggregated result.
+- **A subagent's budget is included in the parent's budget envelope** (paired with Bet 1). I.e., if forge spawns 3 subagents, their token cost adds to forge's ticket budget.
+- **Subagent isolation is via worktree** (Claude `isolation: worktree`, Codex `multi_agent` cap). Verifying disjoint write sets is the parent role's responsibility.
+- **lens roles do not spawn subagents.** Since independence is essential, a reviewer summoning a helper LLM is itself *external signal injection*. This rule is codified in `spec/review-protocol.md`.
 
-### 3.5.2 Memory subsystem — 기존이 있는데 무엇을 더?
+### 3.5.2 Memory subsystem — given we already have one, what more?
 
-Claude은 `~/.claude/projects/<encoded-cwd>/memory/MEMORY.md` + 개별 메모리 파일로 *프로젝트 단위 자동 메모리*를 가진다. Codex는 `memories` (experimental) + Chronicle. CT2는 spec/CLAUDE.md/AGENTS.md를 *명시적 권위 문서*로 두는 protocol이라 vendor memory와 충돌 가능성이 있다.
+Claude has *project-scoped auto-memory* via `~/.claude/projects/<encoded-cwd>/memory/MEMORY.md` plus individual memory files. Codex has `memories` (experimental) + Chronicle. CT2 is a protocol with `spec/`, `CLAUDE.md`, and `AGENTS.md` as *explicit authority documents*, so there is potential for conflict with vendor memory.
 
-CT2의 명시적 입장:
+CT2's explicit stance:
 
-| 정보 종류 | 어디에 사는가 | 왜 |
+| Information type | Where it lives | Why |
 |---|---|---|
-| 프로젝트 사실(아키텍처, 파일 위치, 코딩 컨벤션) | `spec/`, `AGENTS.md`, `CLAUDE.md` | 권위 문서, PR 추적 가능 |
-| 사용자 선호(수동/자동) | vendor memory (Claude `MEMORY.md`, Codex memories) | 사용자 단위, 프로젝트 간 이동 |
-| 사용자 ↔ CT2 협업 규칙(예: "lens는 항상 skeptical short") | role-contract YAML(Bet 1), eval rubric(Bet 4) | 측정 가능, 회귀 잡힘 |
-| 진행 중 ticket/sidecar/inbox | `.ct2/` | single source of truth |
-| 세션 간 *agent의 이전 추론 흔적* | vendor memory에 기록되도록 *허용* — 단, ticket 결정은 그것에 의존 안 함 | "agent가 어제 본 내용"이 ticket 권위가 되면 안 됨 |
+| Project facts (architecture, file locations, coding conventions) | `spec/`, `AGENTS.md`, `CLAUDE.md` | Authority documents, PR-trackable |
+| User preferences (manual/automatic) | Vendor memory (Claude `MEMORY.md`, Codex memories) | Per-user, portable across projects |
+| User ↔ CT2 collaboration rules (e.g., "lens is always skeptical-short") | role-contract YAML (Bet 1), eval rubric (Bet 4) | Measurable, regression-detectable |
+| In-progress ticket/sidecar/inbox | `.ct2/` | Single source of truth |
+| Cross-session *traces of an agent's prior reasoning* | *Allowed* to be recorded into vendor memory — but ticket decisions do not depend on it | "What the agent saw yesterday" must not become ticket authority |
 
-**spec 추가 룰 (Bet 1 PR과 함께)**: "vendor memory에서 읽은 정보는 ticket frontmatter/sidecar에 *근거 출처*로 인용될 수 없다. ticket의 결정 근거는 ticket 본문, spec, 그리고 명시적으로 cite된 코드 hunk만."
+**Additional spec rule (alongside the Bet 1 PR):** "Information read from vendor memory cannot be cited as *evidence source* in ticket frontmatter/sidecar. A ticket's decision basis is only the ticket body, the spec, and code hunks explicitly cited."
 
-이것은 Bet 4 eval에서도 검증 가능: 같은 input + 같은 role MD에 대해 *memory state가 다른* 두 환경에서 결과가 크게 갈리면 → role MD가 implicit memory에 의존하고 있다는 신호.
+This is also verifiable via the Bet 4 eval: given the same input + same role MD, if results diverge substantially between two environments with *different memory states* → it is a signal that the role MD depends on implicit memory.
 
-## 4. Five Product Bets
+## 4. Five product bets
 
-각 베팅은 다음 형식이다: **문제 → 가설 → 형상 → 성공 지표 → scope-out → 의존성 → 위험.**
+Each bet uses the following format: **problem → hypothesis → shape → success metrics → scope-out → dependencies → risks.**
 
 ---
 
-### Bet 1: Cost-Aware Role Contracts
+### Bet 1: Cost-aware role contracts
 
-#### 4.1.1 문제
+#### 4.1.1 Problem
 
-CT2는 현재 모든 role이 *동일한 모델·동일한 effort·동일한 personality*를 (사실상) 사용한다. 이는 (a) 비용 비효율, (b) 품질 분산, (c) latency 폭주, (d) 사후 측정 불가능 — 네 가지 문제를 동시에 만든다.
+CT2 currently has all roles using (effectively) *the same model, the same effort, and the same personality*. This creates four problems at once: (a) cost inefficiency, (b) quality variance, (c) latency blowups, (d) impossibility of post-hoc measurement.
 
-구체적 evidence:
+Concrete evidence:
 
-- helm은 *생성적/탐색적* 작업(요구를 ticket으로 분해). 비용 vs. 품질 trade-off에서 품질을 사야 한다 → Opus급/`xhigh` effort/`personality: interrogative`.
-- forge는 *수렴적/실행적* 작업(spec → patch). 비용 효율이 우선 → Sonnet/Haiku급/`high` effort/`personality: terse`.
-- lens는 *판단/검증* 작업. 결정의 일관성이 우선 → personality fixed, effort medium, fast_mode 금지.
-- status는 *순수 조회*. → fast_mode pin, low effort, 가능한 가장 싼 모델.
-- reconciler는 *결정론적*. → 이상적으론 LLM 없이 bash. 현재 그렇다(유지).
+- helm does *generative/exploratory* work (breaking requirements into tickets). On the cost-vs-quality trade-off, you should buy quality → Opus-class / `xhigh` effort / `personality: interrogative`.
+- forge does *convergent/executive* work (spec → patch). Cost efficiency comes first → Sonnet/Haiku-class / `high` effort / `personality: terse`.
+- lens does *judgment/verification* work. Consistency of decisions comes first → personality fixed, effort medium, `fast_mode` forbidden.
+- status is *pure read*. → pin `fast_mode`, low effort, the cheapest model possible.
+- reconciler is *deterministic*. → Ideally no LLM, just bash. It already is (keep it).
 
-지금은 이 모든 차이가 *암묵적*이고, role MD의 영문 prompt에 흩어져 있다. 측정도 안 된다.
+Right now all these differences are *implicit*, scattered across English prompts inside the role MDs. Nothing is measured.
 
-#### 4.1.2 가설
+#### 4.1.2 Hypothesis
 
-각 role에 대해 *contract* — `(model, effort, personality, budget_per_ticket_usd, latency_slo_seconds, fast_mode, request_compression)` — 를 명시적으로 선언하면, (a) $/ticket이 측정 가능해지고, (b) 위반 시 자동 차단/escalation이 가능해지고, (c) 변경이 PR로 추적 가능해진다.
+If we explicitly declare a *contract* per role — `(model, effort, personality, budget_per_ticket_usd, latency_slo_seconds, fast_mode, request_compression)` — then (a) $/ticket becomes measurable, (b) violations enable automatic blocking/escalation, and (c) changes become PR-trackable.
 
-#### 4.1.3 형상
+#### 4.1.3 Shape
 
-`harness.yaml`에 신규 `role_contracts` 블록:
+A new `role_contracts` block in `harness.yaml`:
 
 ```yaml
 role_contracts:
@@ -270,10 +270,10 @@ role_contracts:
     request_compression: false
 ```
 
-CLI 통합 (예시 — Claude 측):
+CLI integration (example — Claude side):
 
 ```bash
-# claude-plugin/skills/ct2-forge/SKILL.md 가 호출하는 wrapper
+# Wrapper called by claude-plugin/skills/ct2-forge/SKILL.md
 claude \
   --agent ct2-forge \
   --model "${CT2_FORGE_MODEL:-sonnet}" \
@@ -283,7 +283,7 @@ claude \
   -p "$(cat .ct2/in-progress/${TICKET}.md)"
 ```
 
-Codex 측은 profile per role:
+Codex side: a profile per role:
 
 ```toml
 # ~/.codex/profiles/ct2-forge.toml
@@ -294,52 +294,52 @@ fast_mode = false
 enable_request_compression = true
 ```
 
-신규 도구: `bin/ct2-cost` — `.ct2/telemetry/cost.jsonl`을 읽고 (a) role × ticket 별 누적 비용, (b) SLO violation event, (c) budget remaining을 출력. `ct2-status`에 한 줄로 합류.
+New tool: `bin/ct2-cost` — reads `.ct2/telemetry/cost.jsonl` and outputs (a) cumulative cost by role × ticket, (b) SLO violation events, (c) remaining budget. Folded into `ct2-status` as a single line.
 
-#### 4.1.4 성공 지표
+#### 4.1.4 Success metrics
 
-- **$/ticket(p50)**가 baseline 대비 30% 감소(forge가 sonnet/haiku로 적절히 강등될 때)
-- **lens latency p95**가 90초 이하
-- 한 분기 동안 budget hard_deny 발동 횟수 ≥ 0회 (즉, budget이 SLO 게이트로 *작동했고* 미수렴 작업을 차단했다)
-- Trust ratio가 떨어지지 *않은* 채로 위 cost 효과 달성
+- **$/ticket (p50)** drops 30% vs. baseline (when forge is properly demoted to sonnet/haiku)
+- **lens latency p95** ≤ 90 seconds
+- Budget hard_deny firings within a quarter ≥ 0 (i.e., budget *worked* as an SLO gate and blocked unconverged work)
+- Achieve the above cost effect *without* dropping Trust ratio
 
 #### 4.1.5 Scope-out
 
-- LLM router(자동 모델 선택)는 이번 베팅에 *포함하지 않는다*. 결정은 정적 contract로 시작. router는 6개월 뒤 재고.
-- 사용자별 cap, organization 단위 limit는 out-of-scope (single-user 제품).
+- An LLM router (automatic model selection) is *not* included in this bet. Decisions start with static contracts. Revisit a router in 6 months.
+- Per-user caps and organization-level limits are out of scope (single-user product).
 
-#### 4.1.6 의존성
+#### 4.1.6 Dependencies
 
-- Feature Radar의 P0 Capability Registry — 어떤 role에서 `--max-budget-usd`/effort가 실제로 가용한지 알아야 contract enforce 가능.
-- Codex 측 `personality`, `fast_mode`, `enable_request_compression`의 정확한 config surface 확정 — `codex` 0.130.0에서 stable 표시이지만 본 문서 작성 시점에 spec 페이지에 명시적으로 문서화돼 있지 않으므로, **spike (1일)**로 실측 후 contract 형상 확정.
+- Feature Radar's P0 Capability Registry — knowing in which roles `--max-budget-usd`/effort is actually available is required to enforce a contract.
+- Confirming the exact config surface of Codex's `personality`, `fast_mode`, and `enable_request_compression` — they show stable in `codex` 0.130.0, but at the time of writing they are not explicitly documented on the spec page, so a **1-day spike** measures them empirically before finalizing contract shape.
 
-#### 4.1.7 위험
+#### 4.1.7 Risks
 
-| 위험 | 완화 |
+| Risk | Mitigation |
 |---|---|
-| Sonnet으로 forge 강등 시 trust ratio 하락 | A/B: 신규 contract로 50 ticket 처리 후 trust ratio 비교; 회귀 시 model upgrade 옵션 |
-| `--max-budget-usd`가 작업 *중간*에 끊겨 부분 완료 ticket 양산 | budget이 끊기면 forge가 `bounce` (in-progress → backlog)하도록; *부분 patch는 절대 commit 안 함* |
-| Codex personality preset이 lens의 reviewer-independence에 영향 | personality은 *스타일* layer로만 사용, 결정 logic은 spec/role MD에 그대로 |
+| Trust ratio drops after demoting forge to Sonnet | A/B: process 50 tickets under the new contract and compare Trust ratio; on regression, model-upgrade option |
+| `--max-budget-usd` cuts off *mid-work*, mass-producing partially complete tickets | When the budget cuts, forge `bounce`s (in-progress → backlog); *never commit a partial patch* |
+| Codex personality preset affects lens's reviewer-independence | Use personality only as a *style* layer; keep decision logic in the spec/role MD |
 
 ---
 
-### Bet 2: Plan-Mode-First Forge
+### Bet 2: Plan-mode-first forge
 
-#### 4.2.1 문제
+#### 4.2.1 Problem
 
-현재 forge는 ticket을 받으면 *즉시 코드 작업*에 들어간다. 그 결과:
+Currently, when forge receives a ticket, it dives *straight into coding*. The result:
 
-- ticket의 ambiguity가 forge의 첫 patch에서 드러남 → lens rejection → rework
-- forge의 plan(어떤 함수를 어떻게 수정할지)은 *작업 후*에 commit message나 sidecar 응답으로만 남는다. 사후 검증 불가.
-- 이것은 "plan은 무료, code는 비싸다"라는 LLM 비용 곡선과 정확히 반대로 가는 patten.
+- Ticket ambiguity surfaces in forge's first patch → lens rejection → rework
+- forge's plan (which functions to modify how) survives only as a commit message or sidecar response *after the fact*. Post-hoc verification is impossible.
+- This is the exact opposite of the LLM cost curve, which says "planning is free, coding is expensive."
 
-#### 4.2.2 가설
+#### 4.2.2 Hypothesis
 
-forge가 *항상* `EnterPlanMode`로 시작하고, plan을 sealing한 뒤에만 `ExitPlanMode`로 진입하도록 구조를 강제하면, (a) ambiguity가 코드 작성 *전*에 드러나고 (b) plan 자체가 ticket sidecar(`.ct2/plans/{id}-r{n}.md`)로 보존되어 lens가 plan과 patch를 *함께* 검토할 수 있다.
+If we force the structure so that forge *always* starts with `EnterPlanMode` and only enters `ExitPlanMode` after sealing the plan, then (a) ambiguity surfaces *before* code is written, and (b) the plan itself is preserved as a ticket sidecar (`.ct2/plans/{id}-r{n}.md`) so lens can review the plan and patch *together*.
 
-#### 4.2.3 형상
+#### 4.2.3 Shape
 
-ticket lifecycle 확장:
+Ticket lifecycle extension:
 
 ```
 backlog → in-progress(planning) → in-progress(executing) → in-review
@@ -354,57 +354,57 @@ backlog → in-progress(planning) → in-progress(executing) → in-review
          abort, bounce to backlog
 ```
 
-신규 spec 룰 (review-protocol.md addition):
+New spec rule (review-protocol.md addition):
 
-> **Plan-evidence rule.** lens의 sidecar는 다음 중 하나를 만족해야 한다:
-> (a) `.ct2/plans/{id}-r{n}.md`가 존재하고, sidecar의 "Plan adherence" 섹션이 plan 대비 patch의 일치도를 평가했다.
-> (b) ticket이 `plan-exempt: true`이고 Acceptance Criteria가 3개 이하인 단순 ticket이다.
+> **Plan-evidence rule.** A lens sidecar must satisfy one of:
+> (a) `.ct2/plans/{id}-r{n}.md` exists and the sidecar's "Plan adherence" section has evaluated how well the patch aligns with the plan.
+> (b) The ticket has `plan-exempt: true` and is a simple ticket with 3 or fewer Acceptance Criteria.
 
-Codex 측 매핑: `goals` + `tool_search`. forge는 ticket 진입 시 `/goal` 생성 → `tool_search`로 후보 surface 탐색 → goal 노트가 plan으로 변환되어 `.ct2/plans/`에 저장.
+Codex-side mapping: `goals` + `tool_search`. On ticket entry, forge creates a `/goal` → uses `tool_search` to explore candidate surfaces → the goal note is converted into a plan and saved under `.ct2/plans/`.
 
-#### 4.2.4 성공 지표
+#### 4.2.4 Success metrics
 
-- review-round=1 first-pass approval rate 가 +15pp 이상 상승
-- p50 ticket 완료 시간이 baseline 대비 *증가하지 않음* (plan 단계가 코드 rework 시간을 갈음)
-- lens sidecar에서 "scope creep" 지적 빈도 -50%
+- review-round=1 first-pass approval rate rises by ≥ +15pp
+- p50 ticket completion time *does not increase* vs. baseline (the plan phase offsets code rework time)
+- frequency of "scope creep" callouts in lens sidecars −50%
 
 #### 4.2.5 Scope-out
 
-- plan-mode를 helm/lens에 강요하지 않는다(이들은 본디 plan-shaped 작업).
-- "plan을 LLM이 자동 검증" 기능은 out-of-scope. plan은 ticket의 일부로 lens 인간/모델이 검토.
+- Do not force plan-mode on helm/lens (these are inherently plan-shaped work).
+- "Have an LLM auto-validate the plan" is out of scope. The plan is part of the ticket and reviewed by a lens human/model.
 
-#### 4.2.6 의존성
+#### 4.2.6 Dependencies
 
-- Claude 2.1.136의 plan mode write-block 수정(이전 버전에는 plan 모드에서 file write가 누수되는 버그가 있었다 — local 2.1.138은 OK).
-- Codex `goals` 안정화 (현재 experimental); `goals` 가 GA되면 매핑이 더 견고해진다.
+- Claude 2.1.136's plan-mode write-block fix (earlier versions had a bug where file writes leaked in plan mode — local 2.1.138 is OK).
+- Stabilization of Codex `goals` (currently experimental); when `goals` GAs, the mapping becomes more robust.
 
-#### 4.2.7 위험
+#### 4.2.7 Risks
 
-| 위험 | 완화 |
+| Risk | Mitigation |
 |---|---|
-| plan-mode 강제가 너무 무거워 단순 ticket에 마찰 | `plan-exempt: true` flag in ticket frontmatter |
-| plan과 patch가 어긋날 때 lens가 plan을 *진리*로 잘못 사용 | spec에 명시: "Acceptance Criteria가 진리, plan은 trace" |
-| Codex `goals`의 experimental 상태 | Claude 측 plan-mode를 우선 도입; Codex는 fallback (goal-less plan note) 허용 |
+| Forcing plan-mode is too heavy and creates friction for simple tickets | `plan-exempt: true` flag in ticket frontmatter |
+| When plan and patch diverge, lens mistakenly treats the plan as *truth* | Specify in the spec: "Acceptance Criteria are truth; the plan is trace" |
+| Codex `goals` is experimental | Adopt Claude plan-mode first; allow Codex to fall back (goal-less plan note) |
 
 ---
 
-### Bet 3: Ambient CT2 — Async Agents over Channels
+### Bet 3: Ambient CT2 — async agents over channels
 
-#### 4.3.1 문제
+#### 4.3.1 Problem
 
-CT2는 사용자가 *터미널을 열어야* 시작된다. 결과:
+CT2 only starts when the user *opens a terminal*. Result:
 
-- 자정에 도착한 PR comment를 다음날 아침까지 forge가 모름.
-- 동료(혹은 미래 다인 사용)가 Slack으로 "이 ticket 우선순위 올려줘"라고 해도 들어오지 못함.
-- helm이 "이 클라리피케이션이 필요해"라고 inbox에 적어도, 사용자가 안 보면 그대로 멈춤.
+- A PR comment that arrived at midnight goes unnoticed by forge until next morning.
+- If a colleague (or a future multi-person user) says "raise the priority of this ticket" on Slack, it cannot get in.
+- Even when helm writes "I need this clarification" into the inbox, if the user doesn't look, it stalls.
 
-이것은 "협업 도구"라기보다 "command-line 비서"의 한계다.
+This is less a "collaboration tool" and more the limit of a "command-line assistant."
 
-#### 4.3.2 가설
+#### 4.3.2 Hypothesis
 
-CT2 inbox와 외부 채널(Discord/Slack/Gmail/Notion) 사이에 *얇은 양방향 bridge*를 두면, CT2는 *터미널 밖에서도* 일하기 시작한다. 핵심은 "외부에서 ticket을 *수정*하지 않는다 — `.ct2/`는 여전히 single source of truth — 하지만 메시지/알림/위임 요청은 자유로이 흐른다"이다.
+If we place a *thin bidirectional bridge* between the CT2 inbox and external channels (Discord/Slack/Gmail/Notion), CT2 starts working *outside the terminal*. The key is: "Outside parties *do not modify* tickets — `.ct2/` is still the single source of truth — but messages/notifications/delegation requests flow freely."
 
-#### 4.3.3 형상
+#### 4.3.3 Shape
 
 ```
                 ┌──────────────────────────────────┐
@@ -429,148 +429,148 @@ CT2 inbox와 외부 채널(Discord/Slack/Gmail/Notion) 사이에 *얇은 양방�
                 └──────────────────────────────────┘
 ```
 
-지원하는 외부 동작 (whitelist):
+Supported external actions (whitelist):
 
-| 외부 명령 | 효과 | 권한 |
+| External command | Effect | Permission |
 |---|---|---|
-| `/ct2 status` | `ct2-status` 한 줄 요약을 채널에 붙임 | 모두 |
-| `/ct2 priority {id} {p0|p1|p2}` | helm inbox에 priority-override 메시지 작성 | 명시 ALLOW 사용자 |
-| `/ct2 unblock {id}` | inbox blocked 처리 후 forge 재개 | 명시 ALLOW |
-| `/ct2 clarify {id}: <text>` | helm → forge clarification 메시지 | 명시 ALLOW |
-| (그 외) | 거절. ticket 직접 편집은 *영구히* 외부에서 불가능 | — |
+| `/ct2 status` | Posts a one-line `ct2-status` summary in the channel | Everyone |
+| `/ct2 priority {id} {p0|p1|p2}` | Writes a priority-override message to the helm inbox | Explicit ALLOW users |
+| `/ct2 unblock {id}` | Clears blocked in inbox, resumes forge | Explicit ALLOW |
+| `/ct2 clarify {id}: <text>` | helm → forge clarification message | Explicit ALLOW |
+| (anything else) | Rejected. Direct ticket editing is *permanently* impossible from outside | — |
 
-알림 시점 (PushNotification):
+Notification triggers (PushNotification):
 
-- escalated 도달 (사람 개입 필요)
-- helm inbox에 blocked 메시지 도착 → 일정 시간(예: 30분) 미해결
-- ultrareview 결과 critical issue 발견
-- budget hard_deny 발동
-- nightly summary (옵션)
+- escalated reached (human intervention required)
+- a blocked message arrived in the helm inbox → unresolved for a threshold (e.g., 30 minutes)
+- ultrareview finds a critical issue
+- budget hard_deny fires
+- nightly summary (optional)
 
-#### 4.3.4 성공 지표
+#### 4.3.4 Success metrics
 
-- p95 "blocked → unblocked" wallclock 시간이 baseline 대비 -70%
-- 외부 채널을 통한 ticket 변경(직접 수정) 시도 *0회* (= invariant 유지)
-- 사용자 설문: "잠자기 전에 forge에게 일을 맡기고 자고 일어나도 정상"이라는 응답 ≥ 4/5
+- p95 "blocked → unblocked" wallclock time drops 70% vs. baseline
+- *0* attempts to change tickets directly via external channels (= invariant preserved)
+- User survey: "I can hand work to forge before bed and things are fine when I wake up" response ≥ 4/5
 
 #### 4.3.5 Scope-out
 
-- 멀티 사용자 ticket 편집/소유권 분리는 out-of-scope (single-user 가정 유지).
-- bridge 본체를 Claude/Codex 어느 한쪽에 묶지 않는다 — 별도 bash daemon으로 구현(외부 의존 0 룰을 위해 `gh`, `discord`/`slack` MCP만 사용).
+- Multi-user ticket editing / ownership split is out of scope (single-user assumption retained).
+- Do not bind the bridge to either Claude or Codex — implement it as a separate bash daemon (to obey the zero-external-deps rule, use only the `gh`, `discord`/`slack` MCPs).
 
-#### 4.3.6 의존성
+#### 4.3.6 Dependencies
 
-- Discord MCP / Slack MCP의 안정성 (현 환경에 connected).
-- `PushNotification`/`RemoteTrigger` 권한 — Claude `--remote-control` 세션에서.
+- Stability of the Discord MCP / Slack MCP (currently connected).
+- `PushNotification`/`RemoteTrigger` permissions — under a Claude `--remote-control` session.
 
-#### 4.3.7 위험
+#### 4.3.7 Risks
 
-| 위험 | 완화 |
+| Risk | Mitigation |
 |---|---|
-| "외부에서 ticket 수정" 유혹 → invariant 붕괴 | bridge 내부에 strict whitelist; ticket file 직접 쓰기는 코드상 *불가능*하게 |
-| 알림 폭주(noise) | per-channel 일/시간당 cap; 동일 종류 알림 dedup window |
-| Slack/Discord에 secret 누출 | bridge가 ticket 본문/sidecar 본문은 *절대* 외부로 보내지 않음 — id/제목/상태만 |
+| The "edit tickets from outside" temptation → invariant collapse | Strict whitelist inside the bridge; direct writes to ticket files are *impossible* in code |
+| Notification flood (noise) | Per-channel daily/hourly cap; dedup window for same-kind notifications |
+| Secret leakage to Slack/Discord | The bridge *never* sends ticket body/sidecar content outward — only id/title/state |
 
 ---
 
-### Bet 4: Eval Harness for Roles
+### Bet 4: Eval harness for roles
 
-#### 4.4.1 문제
+#### 4.4.1 Problem
 
-CT2 role 정의(`config/ct2-lens-cc-role.md`, `config/ct2-lens-cx-role.md`, plugin SKILL.md)는 *코드*인데 *테스트가 없다*. Role MD를 한 줄 고치면:
+CT2 role definitions (`config/ct2-lens-cc-role.md`, `config/ct2-lens-cx-role.md`, plugin SKILL.md) are *code* but have *no tests*. Change a role MD by one line and:
 
-- forge가 더 보수적/공격적으로 변할 수 있고
-- lens가 같은 patch를 어제와 다르게 평가할 수 있고
-- helm이 ambiguity 처리 방식을 바꿀 수 있다
+- forge can become more conservative/aggressive
+- lens can grade the same patch differently than yesterday
+- helm can change how it handles ambiguity
 
-그러나 우리는 그것을 *measure*할 방법이 없다. 결과적으로 role MD 수정은 "느낌"으로 진행되고, 회귀를 잡을 수 없다.
+But we have no way to *measure* this. As a result, role MD edits run on "vibes", and regressions go uncaught.
 
-#### 4.4.2 가설
+#### 4.4.2 Hypothesis
 
-`skill-creator`의 evals 패턴 + `claude --json-schema` + `claude --bare`를 활용해, 각 role마다 *fixed-input regression suite*를 만들면 role MD/skill MD/role config 변경의 영향을 *수치로* 잡아낼 수 있다.
+Using `skill-creator`'s evals pattern + `claude --json-schema` + `claude --bare`, build a *fixed-input regression suite* per role so that the impact of changes to role MD/skill MD/role config can be captured *numerically*.
 
-#### 4.4.3 형상
+#### 4.4.3 Shape
 
 ```
 .ct2/evals/
 ├── ct2-helm/
 │   ├── case-001-vague-feature-request/
-│   │   ├── input.md         # 사용자가 helm에 던지는 요청 raw
-│   │   ├── expected.json    # 기대 ticket frontmatter (subset match)
-│   │   └── rubric.md        # 사람이 읽고 채점 가능한 정성 기준
+│   │   ├── input.md         # Raw user request thrown at helm
+│   │   ├── expected.json    # Expected ticket frontmatter (subset match)
+│   │   └── rubric.md        # Qualitative criteria a human can read and score
 │   └── case-002-...
 ├── ct2-forge/
 │   ├── case-001-clear-spec/
-│   │   ├── repo-snapshot.tar  # forge가 작업할 미니 repo
+│   │   ├── repo-snapshot.tar  # Mini repo forge will work in
 │   │   ├── ticket.md
-│   │   ├── expected-files/    # 기대 patch 결과
+│   │   ├── expected-files/    # Expected patch result
 │   │   └── rubric.md
 │   └── ...
 ├── ct2-lens-cc/
 │   └── case-001-buggy-patch/
 │       ├── ticket.md
 │       ├── patch.diff
-│       └── expected-sidecar.json  # 기대 verdict, 기대 issue 키워드
+│       └── expected-sidecar.json  # Expected verdict, expected issue keywords
 └── runner.sh
 ```
 
-`runner.sh`는 매 케이스에 대해:
+For each case, `runner.sh`:
 
-1. 깨끗한 임시 디렉터리에 case 자료 펼침.
-2. `claude --bare --agent ct2-{role} --json-schema <schema> -p <input>` 실행 — `--bare`로 외부 변수(auto-memory, hook, plugin sync) 제거.
-3. 결과를 `expected-*.json` 대비 deep-subset 비교 + LLM-as-judge로 정성 채점 (`/ultrareview`?? — 아니, 지나친 의존; 단순 별도 claude 호출로 채점).
-4. role × case × commit 별 score 행을 `.ct2/evals/results.jsonl`에 누적.
+1. Unfurls case materials into a clean temp directory.
+2. Runs `claude --bare --agent ct2-{role} --json-schema <schema> -p <input>` — `--bare` removes external variables (auto-memory, hooks, plugin sync).
+3. Compares results against `expected-*.json` via deep-subset match + qualitative LLM-as-judge scoring (`/ultrareview`?? — no, too much dependency; just call a separate cheap claude for scoring).
+4. Accumulates score rows per role × case × commit into `.ct2/evals/results.jsonl`.
 
-신규 ticket type: `eval-regression` — role MD 수정 PR이 들어오면 자동으로 이 ticket이 생성되어 baseline 대비 회귀를 보고.
+New ticket type: `eval-regression` — when a role-MD edit PR comes in, this ticket is auto-created and reports regression vs. baseline.
 
-#### 4.4.4 성공 지표
+#### 4.4.4 Success metrics
 
-- role MD 변경 PR 중 eval 회귀로 차단된 비율 ≥ 1건/분기 (= harness가 실제 회귀를 잡고 있다)
-- 각 role 당 ≥ 5개 eval case 가 6주 안에 자리잡음
-- runner 1회 실행 비용 ≤ $0.50 / role (Bet 1과 결합)
+- Ratio of role-MD-change PRs blocked by eval regression ≥ 1 per quarter (= the harness is actually catching regressions)
+- ≥ 5 eval cases per role land within 6 weeks
+- Cost of one runner invocation ≤ $0.50 / role (combined with Bet 1)
 
 #### 4.4.5 Scope-out
 
-- "role을 LLM이 자동 최적화" — out-of-scope. eval은 *방어적*이다, 진화는 사람이.
-- helm/forge eval은 작은 fixture repo로만 — 실 repo 회귀는 너무 비싸고 비결정론적.
+- "Have an LLM auto-optimize a role" — out of scope. Evals are *defensive*; evolution is human.
+- helm/forge evals stay on small fixture repos only — real-repo regressions are too expensive and non-deterministic.
 
-#### 4.4.6 의존성
+#### 4.4.6 Dependencies
 
-- `--bare` 모드의 stable 동작.
-- `--json-schema` (현 stable).
-- (옵션) `skill-creator` skill — 우리가 만드는 게 아니라 fold-in.
+- Stable behavior of `--bare` mode.
+- `--json-schema` (currently stable).
+- (Optional) the `skill-creator` skill — we don't build it, we fold it in.
 
-#### 4.4.7 위험
+#### 4.4.7 Risks
 
-| 위험 | 완화 |
+| Risk | Mitigation |
 |---|---|
-| LLM-as-judge 비결정론 → noisy eval | rubric 기반 정량 metric을 우선; LLM 채점은 보조 metric |
-| eval suite가 prompt를 *과적합*하게 만든다 | case 추가는 특정 PR 회귀 잡기보단 *실 ticket 표본*에서 추출 |
-| eval 비용이 contract budget 초과 | runner는 별도 budget envelope; ticket budget과 분리 |
+| LLM-as-judge non-determinism → noisy evals | Prefer rubric-based quantitative metrics; LLM scoring is a secondary metric |
+| Eval suite *overfits* to prompts | Source new cases from *real-ticket samples* rather than just chasing a specific PR regression |
+| Eval cost breaks the contract budget | Runner has a separate budget envelope; isolated from ticket budgets |
 
 ---
 
-### Bet 5: Native Task Graph Mirror (Advisory)
+### Bet 5: Native task graph mirror (advisory)
 
-#### 4.5.1 문제
+#### 4.5.1 Problem
 
-CT2 ticket은 파일이고, runtime(Claude `TaskList`, Codex `multi_agent`)은 별도의 task 표현을 가진다. 이 둘이 *완전히 분리*되어 있어:
+CT2 tickets are files, and runtimes (Claude `TaskList`, Codex `multi_agent`) have their own task representations. The two are *completely separate*, so:
 
-- Claude 세션 안에서 "지금 CT2가 뭘 하고 있나"가 안 보임 — `TaskList`에 안 뜸.
-- runtime이 background에서 task를 진행해도 ticket 진행률에 반영되지 않음.
-- 사용자는 runtime UI에서 task 봤다가 `ct2-status`에서 또 ticket 봐야 — 인지 부하 ↑.
+- Inside a Claude session, "what is CT2 doing right now?" is invisible — it doesn't show in `TaskList`.
+- Even when the runtime is making background progress on tasks, it does not reflect in ticket progress.
+- The user has to look at tasks in the runtime UI, then at tickets in `ct2-status` again — cognitive load ↑.
 
-Claude `TaskCreate`는 `blockedBy` 의존성을 native 지원한다. CT2의 ticket dependency(현재는 없음)와 자연스럽게 매핑된다.
+Claude `TaskCreate` natively supports `blockedBy` dependencies. This maps naturally onto CT2 ticket dependencies (currently absent).
 
-#### 4.5.2 가설
+#### 4.5.2 Hypothesis
 
-ticket 상태 변화 시 native task를 *advisory*로 mirror하면 — 그러나 native task로는 ticket state를 *바꾸지 못하게* 하면 — 인지 통일성은 얻고 권위는 잃지 않는다.
+If we *advisorily* mirror tickets to native tasks on state change — but block native tasks from *changing* ticket state — we gain cognitive unity without losing authority.
 
-이 가설을 *마지막* bet으로 둔 이유: 거꾸로 흐를 위험이 가장 크다. 네이티브 task가 보기에 편리해서 사용자가 그 위에서 작업하다가 ticket과 동기화가 깨질 수 있다.
+Why this is the *last* bet: it carries the greatest risk of flowing backwards. Native tasks may feel so convenient that the user starts working on them and the sync with tickets breaks.
 
-#### 4.5.3 형상
+#### 4.5.3 Shape
 
-방향성: **CT2 → native = OK, native → CT2 = 차단**.
+Direction: **CT2 → native = OK, native → CT2 = blocked**.
 
 ```
 ct2-status / ticket transition:
@@ -590,286 +590,286 @@ native TaskUpdate hook (PreToolUse):
        block with message "CT2 tickets are authoritative; edit .ct2/{id}.md"
 ```
 
-CT2 ticket frontmatter 확장(optional):
+CT2 ticket frontmatter extension (optional):
 
 ```yaml
 depends_on: ["003-refactor-pool", "008-migration"]
 ```
 
-→ `TaskCreate(addBlockedBy=[task_id_of_003, task_id_of_008])`로 매핑.
+→ Mapped to `TaskCreate(addBlockedBy=[task_id_of_003, task_id_of_008])`.
 
-#### 4.5.4 성공 지표
+#### 4.5.4 Success metrics
 
-- 사용자 설문: "ticket과 native task가 일치하는가" → ≥ 4/5
-- "native task 통해 ticket 상태가 잘못 바뀐 사례" → 0건
-- mirror 동기화 latency p95 < 5초
+- User survey: "Are tickets and native tasks in agreement?" → ≥ 4/5
+- "Cases where ticket state was changed incorrectly via a native task" → 0
+- Mirror sync latency p95 < 5 seconds
 
 #### 4.5.5 Scope-out
 
-- 양방향 동기화 — 영구히 out-of-scope. 권위 분기는 CT2 정체성을 깬다.
-- TeamCreate/SendMessage 통합 — `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` 게이트 뒤에 있고 본 분기 진행에 의존하지 않는다. 모니터링.
+- Bidirectional sync — *permanently* out of scope. Authority divergence breaks CT2 identity.
+- TeamCreate/SendMessage integration — sits behind the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` gate and is not depended on by this branch. Monitor.
 
-#### 4.5.6 의존성
+#### 4.5.6 Dependencies
 
 - Claude `TaskCreate/TaskUpdate` (stable).
-- PreToolUse hook이 metadata 검사 가능한지 spike 필요(Bet 4의 eval 같은 환경에서 점검 가능).
+- Need a spike to confirm whether the PreToolUse hook can inspect metadata (can be checked in the same environment as Bet 4 evals).
 
-#### 4.5.7 위험
+#### 4.5.7 Risks
 
-| 위험 | 완화 |
+| Risk | Mitigation |
 |---|---|
-| native task와 ticket 동기화 깨짐 | reconciler가 매 loop에서 mismatch 검출하면 ticket *우선*으로 강제 sync; mismatch event 로깅 |
-| 사용자가 native task를 직접 편집해 의존성 그래프 변경 | hook으로 차단; 차단 시 친절한 안내 메시지 |
-| TaskCreate API 변경 | Claude version pin (Capability Registry — Feature Radar P0와 자연스럽게 합류) |
+| Sync between native task and ticket breaks | When the reconciler detects mismatches on each loop, force sync with ticket as *primary*; log mismatch events |
+| User directly edits native tasks to change the dependency graph | Block with a hook; show a friendly message on block |
+| TaskCreate API change | Claude version pin (folds naturally into the Capability Registry — Feature Radar P0) |
 
 ---
 
-## 5. 우선순위와 sequencing
+## 5. Priority and sequencing
 
-### 5.1 왜 이 순서인가
+### 5.1 Why this order
 
-**Phase 0 (Registry+Baseline) 먼저** — 어떤 runtime 기능이 실제로 가용한지, 현재 trust/evidence/autonomy/cost baseline이 얼마인지 모르면 어떤 베팅도 제품 효과로 판정할 수 없다. Capability Registry와 empirical baseline은 bet이 아니라 admission gate다.
+**Phase 0 (Registry+Baseline) first** — Without knowing which runtime features are actually available and what the current trust/evidence/autonomy/cost baselines are, no bet's product impact can be judged. Capability Registry and empirical baselines are not bets; they are admission gates.
 
-**Bet 1 (Cost contracts) 두 번째** — 비용/지연을 *측정*할 수 있어야 다른 베팅의 효과를 평가할 수 있다. 다른 모든 베팅의 ROI 분모.
+**Bet 1 (Cost contracts) second** — Cost/latency must be *measurable* before the impact of other bets can be evaluated. The ROI denominator of every other bet.
 
-**Bet 2 (Plan-mode-first) 세 번째** — Trust ratio와 Evidence coverage에 직접 영향. forge rework가 줄어들면 lens latency도, $/ticket도, p50 latency도 동시에 좋아짐.
+**Bet 2 (Plan-mode-first) third** — Directly affects Trust ratio and Evidence coverage. Reducing forge rework improves lens latency, $/ticket, and p50 latency all at once.
 
-**Bet 4 (Eval) 네 번째** — Bet 1, 2가 만든 변화가 *회귀하지 않도록* 잠금. Bet 3, 5에 들어가기 전에 안전망.
+**Bet 4 (Eval) fourth** — Locks in the changes that Bets 1 and 2 produce so they *don't regress*. Safety net before stepping into Bets 3 and 5.
 
-**Bet 3 (Ambient) 다섯 번째** — UX 개선이지만 invariant 위험이 있다. eval/contract가 자리잡은 뒤에 도입.
+**Bet 3 (Ambient) fifth** — A UX improvement, but carries invariant risk. Adopt after eval/contracts are in place.
 
-**Bet 5 (Task mirror) 마지막** — *가장 매혹적이고 가장 위험*하다. 네이티브 task가 보기에 좋다는 이유로 권위 분기를 만들 유혹. 다른 4개가 안정된 후에야 실험.
+**Bet 5 (Task mirror) last** — The *most seductive and most dangerous*. The temptation to create authority divergence because native tasks look nicer. Only experiment with it after the other four are stable.
 
 ### 5.2 6-week sprint plan
 
-| 주차 | 베팅 | 산출물 | exit criteria |
+| Week | Bet | Deliverables | Exit criteria |
 |---|---|---|---|
-| 0-1 | Phase 0 Registry+Baseline | `ct2-runtime-doctor`, `bin/ct2-baseline`, `.ct2/telemetry/baseline-2026-05.json` | Codex/Claude capability와 balanced scorecard baseline이 기록됨; state mutation 없음 |
-| 1 | Bet 1 spike | Codex `personality`/`fast_mode`/`enable_request_compression` 실측 보고서; `harness.yaml` `role_contracts` 초안 | 5개 role 모두 contract 안에 있음; CLI 명령으로 dry-run 검증 |
-| 2 | Bet 1 impl | role wrapper 스크립트, `bin/ct2-cost`, telemetry sink | 1주간 실 ticket 처리 시 cost.jsonl이 기록되고 `ct2-status`에 표출 |
-| 3 | Bet 2 spike + impl | plan-mode integration, `.ct2/plans/` 디렉터리, spec 업데이트 PR | 5개 ticket을 plan-mode-first로 처리; first-pass approval 비교 |
-| 4 | Bet 4 baseline | helm/forge/lens 각 3 case eval suite, runner.sh, baseline 측정 | role MD 한 줄 의도적 변경 시 eval에서 잡혀나옴 |
-| 5 | Bet 3 phase-1 | `ct2-bridge` daemon, Discord/Slack notify only(읽기전용), 알림 정책 | 5개 PushNotification 발송 로그; ticket modification 시도 0건 |
-| 6 | Buffer + retro | postmortem, balanced scorecard 1차 측정, Bet 5 spike (실 mirror 시도 X) | Trust/Evidence/Autonomy/Cost scorecard 보고; 다음 6주 plan |
+| 0-1 | Phase 0 Registry+Baseline | `ct2-runtime-doctor`, `bin/ct2-baseline`, `.ct2/telemetry/baseline-2026-05.json` | Codex/Claude capability and balanced-scorecard baseline recorded; no state mutation |
+| 1 | Bet 1 spike | Empirical report on Codex `personality`/`fast_mode`/`enable_request_compression`; `harness.yaml` `role_contracts` draft | All 5 roles sit inside a contract; CLI dry-run verifies it |
+| 2 | Bet 1 impl | Role wrapper scripts, `bin/ct2-cost`, telemetry sink | Over 1 week of real ticket processing, cost.jsonl is recorded and surfaces in `ct2-status` |
+| 3 | Bet 2 spike + impl | Plan-mode integration, `.ct2/plans/` directory, spec update PR | 5 tickets processed plan-mode-first; first-pass approval compared |
+| 4 | Bet 4 baseline | 3-case eval suite per helm/forge/lens, runner.sh, baseline measurement | A deliberate one-line role MD change gets caught by the eval |
+| 5 | Bet 3 phase-1 | `ct2-bridge` daemon, Discord/Slack notify-only (read-only), notification policy | Logs of 5 PushNotification sends; 0 ticket-modification attempts |
+| 6 | Buffer + retro | Postmortem, first balanced-scorecard measurement, Bet 5 spike (no actual mirroring) | Trust/Evidence/Autonomy/Cost scorecard report; next 6-week plan |
 
-### 5.2.1 Empirical baseline plan — "측정 없이 베팅하지 말라"
+### 5.2.1 Empirical baseline plan — "do not bet without measurement"
 
-본 문서의 모든 metric은 *baseline 대비*로 표현된다. 그러나 현재 CT2에는 cost/latency/trust/evidence/autonomy 측정 인프라가 없다. 베팅을 시작하려면 *최소한* 다음 baseline이 필요하다. Phase 0에서 먼저 수행하고, Bet 1 spike와 병행 가능한 항목만 병행한다.
+Every metric in this document is expressed *relative to baseline*. But CT2 currently has no measurement infrastructure for cost/latency/trust/evidence/autonomy. To start betting, *at minimum* the following baselines are needed. Run this first in Phase 0 and parallelize only the items compatible with the Bet 1 spike.
 
-| Baseline | 수집 방법 | 기간 | 목표 표본 |
+| Baseline | Collection method | Window | Target sample |
 |---|---|---|---|
-| Trust ratio (현재) | `git log --grep "ct2-revise"` + `done/` 디렉터리 회귀 분석. ticket이 done 도달 후 revise/revert/reopen 됐는지 시점별로 카운트. | 직전 90일 git history 회고 | ≥ 20 done ticket |
-| First-pass approval rate | `.ct2/reviews/`에서 `*-r0` sidecar의 verdict 분포(존재 시) | 직전 90일 | ≥ 20 review event |
-| Evidence coverage | `done/` 전이 ticket 중 sidecar, command evidence, verifier result가 연결된 비율 | 직전 90일 | ≥ 20 done ticket |
-| $/ticket | **수집 인프라 없음** — Bet 1 spike 산출물에 포함. baseline은 0주차 사후 구성. | 1주차 ~ 2주차 병행 | 이번 sprint 처리되는 ticket 전수 |
-| ticket latency (sealed → done) | ticket frontmatter `sealed` 와 `updated` (verdict=approved 시) 차이 | 직전 90일 | ≥ 20 |
-| review latency (in-review entry → reconciler verdict) | `.ct2/reviews/` mtime + ticket mtime cross | 직전 90일 | ≥ 20 |
-| blocked → unblocked latency | `.ct2/inbox/{role}/done/` 의 blocked 메시지 mtime → 다음 helm 응답 메시지 mtime | 직전 90일 | ≥ 5 (rare event) |
+| Trust ratio (current) | `git log --grep "ct2-revise"` + regression analysis of the `done/` directory. Count whether tickets that reached done were revised/reverted/reopened by timepoint. | Past 90 days of git history retrospect | ≥ 20 done tickets |
+| First-pass approval rate | Distribution of `*-r0` sidecar verdicts in `.ct2/reviews/` (where present) | Past 90 days | ≥ 20 review events |
+| Evidence coverage | Ratio of `done/` transition tickets that have a sidecar, command evidence, and verifier result attached | Past 90 days | ≥ 20 done tickets |
+| $/ticket | **No collection infrastructure** — included in the Bet 1 spike deliverables. Baseline is constructed after week 0. | Weeks 1–2, in parallel | All tickets processed in this sprint |
+| Ticket latency (sealed → done) | Difference between ticket frontmatter `sealed` and `updated` (when verdict=approved) | Past 90 days | ≥ 20 |
+| Review latency (in-review entry → reconciler verdict) | Cross of `.ct2/reviews/` mtime and ticket mtime | Past 90 days | ≥ 20 |
+| Blocked → unblocked latency | mtime of `.ct2/inbox/{role}/done/` blocked messages → mtime of the next helm reply message | Past 90 days | ≥ 5 (rare event) |
 
-**산출물**: `bin/ct2-baseline` (1회용 파이썬 스크립트, stdlib만), `.ct2/telemetry/baseline-2026-05.json`. 본 문서 §9 success metric의 "baseline 대비" 수치는 모두 이 파일을 reference. baseline이 아예 안 잡히는 metric(특히 $/ticket)은 본 sprint 내 *측정 시작* 자체가 deliverable이다 — "baseline 0에서 시작" 기록.
+**Deliverables**: `bin/ct2-baseline` (one-off Python script, stdlib only), `.ct2/telemetry/baseline-2026-05.json`. Every "vs. baseline" number in §9's success metrics references this file. For metrics where no baseline can be obtained (especially $/ticket), *starting measurement* within this sprint is itself the deliverable — record it as "starting from baseline 0".
 
-**중요한 솔직함.** 실 데이터가 적으면(예: done이 5건뿐), p50/p95 통계는 무의미하다. 그 경우엔 metric을 *비율*(승률 같은)로 단순화하고, 6주 후 sprint 종료 시점에 신규 sprint 데이터로 대체. 통계가 의미를 갖기 전에 "trust ratio 0.92"를 주장하지 않는다.
+**Important honesty.** When real data is scarce (e.g., only 5 done tickets), p50/p95 statistics are meaningless. In that case, simplify metrics into *ratios* (like win rate), and replace with fresh sprint data at the end of 6 weeks. We do not claim "trust ratio 0.92" before the statistics gain meaning.
 
 ### 5.3 90-day vision
 
-- Bet 3 phase-2 (외부 명령 whitelist 활성화)
-- Bet 5 mirror 활성화(advisory만)
-- eval suite 30+ cases per role
-- 모든 PR에 자동 eval CI
-- multi-machine 사용을 위한 `.ct2/runtime/sessions.json` registry
+- Bet 3 phase-2 (activate external command whitelist)
+- Activate Bet 5 mirror (advisory only)
+- 30+ eval cases per role
+- Automatic eval CI on every PR
+- A `.ct2/runtime/sessions.json` registry for multi-machine use
 
 ### 5.4 12-month vision
 
-- Cloud delegation pilot (Feature Radar의 P2와 합류) — *advisory only, ticket 권위 유지*
-- Multi-tenant 실험 — single-user 룰을 *깨지 않은 채* 같은 repo에서 두 사람이 ticket 분담하는 방법
+- Cloud delegation pilot (folds with Feature Radar's P2) — *advisory only, ticket authority preserved*
+- Multi-tenant experiment — how two people share tickets in the same repo *without* breaking the single-user rule
 - Multimodal evidence (Feature Radar P2)
-- "CT2 as plugin marketplace" — 다른 팀이 자기 role을 만들고 공유
+- "CT2 as plugin marketplace" — other teams build and share their own roles
 
-## 6. Anti-bets — 매혹적이지만 거절
+## 6. Anti-bets — seductive but refused
 
-다음 6개는 의식적으로 *하지 않는다*. 각각 거절 이유를 명시한다 — 미래의 PR/제안이 들어오면 이 섹션을 인용해 거절하기 위해서.
+The following 6 we consciously *do not* do. Each comes with an explicit refusal reason — so future PRs/proposals can be refused by citing this section.
 
-| Anti-bet | 매혹 | 거절 이유 |
+| Anti-bet | Seduction | Refusal reason |
 |---|---|---|
-| **vendor scheduler가 ticket을 done으로 보낸다** | 자동화 끝판왕 | dual-review 권위가 vendor cron으로 분기됨. CT2 정체성 붕괴. |
-| **이미지가 단독 evidence가 된다** | UI ticket이 빠르게 닫힘 | 검증 가능한 텍스트 trace가 없으면 "왜 approved 됐는지"를 사후 재구성 불가 |
-| **클라우드(Codex Cloud, Claude Routines)에 ticket 라이프사이클 위임** | 백그라운드로 계속 도는 자동화 | `.ct2/`가 권위라는 룰 깨짐. cloud는 *executor*만, *판정*은 못 함. |
-| **TeamCreate/SendMessage가 inbox를 대체** | runtime native primitives | 1) experimental flag 게이트, 2) 메시지의 *인스턴스 단위 영속*이 inbox의 단순함보다 약함 |
-| **자동 LLM router** | role마다 비용/품질 자동 최적화 | 정적 contract도 안 굳혀진 상태에서 router는 디버깅 불가능한 변동성 추가 |
-| **role을 LLM이 자동 진화** | "self-improving CT2" | 사람이 role을 *읽을 수 있어야* 한다는 디자인 룰 깨짐. eval은 회귀 *방어*, 진화는 사람이. |
+| **A vendor scheduler marks tickets done** | The ultimate automation | Dual-review authority forks into a vendor cron. CT2 identity collapses. |
+| **An image is sole evidence** | UI tickets close fast | Without a verifiable text trace, "why was it approved" cannot be reconstructed after the fact |
+| **Delegating the ticket lifecycle to the cloud (Codex Cloud, Claude Routines)** | Continuously running background automation | Breaks the rule that `.ct2/` is authority. Cloud is *executor* only, never *judge*. |
+| **TeamCreate/SendMessage replaces the inbox** | Runtime-native primitives | 1) Behind an experimental flag, 2) message *per-instance persistence* is weaker than the inbox's simplicity |
+| **An auto LLM router** | Auto-optimize cost/quality per role | Without even static contracts in place, a router adds undebuggable variance |
+| **Have an LLM auto-evolve roles** | "Self-improving CT2" | Breaks the design rule that humans must be able to *read* roles. Evals are regression *defense*; evolution is human. |
 
-## 6.5 Kill criteria — 베팅을 *언제 끄는가*
+## 6.5 Kill criteria — *when do we cut a bet*
 
-성공 지표만 박는 것은 위험하다. "잘 안 되어도 매몰비용 때문에 계속 가는" 함정. 베팅별 *kill criteria* — 3주차 mid-point에서 다음 trigger가 발생하면 그 베팅을 중단/재형상.
+Pinning only success metrics is risky. The "stay in because of sunk cost even though it isn't working" trap. *Kill criteria* per bet — at the 3-week mid-point, if any trigger below fires, the bet is halted or reshaped.
 
 | Bet | 3-week kill trigger | 6-week kill trigger |
 |---|---|---|
-| **1 Cost contracts** | spike에서 `personality`/`fast_mode`/`request_compression` 중 ≥ 2 표면이 실제로 작동 안 함 (문서엔 stable이지만 실측 불일치) | $/ticket 30% 감소 미달 *그리고* trust ratio도 함께 하락 — 양쪽 모두 실패 시 contract 자체 폐기 |
-| **2 Plan-mode-first** | 처음 3 ticket에서 plan→patch 흐름이 사용자 마찰 폭증(즉, helm/forge가 plan mode에서 빠져나오지 못함) | first-pass approval rate +15pp 미달 *그리고* p50 ticket latency +20% 이상 — 비용만 늘었다 |
-| **3 Ambient bridge** | 첫 알림 5건 중 ≥ 1건이 false alarm 또는 중복 noise | 외부에서 ticket 수정 시도 발생 (단 1회라도) — invariant 깨짐 |
-| **4 Eval harness** | runner 1회 실행이 $5+ (개별 case 비용 폭주) | 4주 누적 회귀 검출 0건 — eval suite가 noise만 잡고 있다 |
-| **5 Task mirror** | spike에서 PreToolUse hook이 metadata 검사 불가 — 차단 메커니즘 없음 | mismatch event(ticket과 native task 어긋남)이 일/회 이상 발생 — 동기화 비용이 가시성 ROI 초과 |
+| **1 Cost contracts** | At the spike, ≥ 2 of `personality`/`fast_mode`/`request_compression` do not actually work (docs say stable but measurements disagree) | $/ticket failed to drop 30% *and* trust ratio also dropped — both failed, scrap the contracts entirely |
+| **2 Plan-mode-first** | In the first 3 tickets, the plan→patch flow blows up user friction (i.e., helm/forge cannot exit plan mode) | First-pass approval rate misses +15pp *and* p50 ticket latency rose 20%+ — only cost went up |
+| **3 Ambient bridge** | Of the first 5 notifications, ≥ 1 is a false alarm or duplicate noise | Even one external ticket-modification attempt occurs — invariant broken |
+| **4 Eval harness** | A single runner invocation costs $5+ (per-case cost explodes) | 4-week cumulative regression detections = 0 — the eval suite is catching only noise |
+| **5 Task mirror** | At the spike, PreToolUse hook cannot inspect metadata — no blocking mechanism | Mismatch events (tickets diverging from native tasks) occur more than once per day/run — sync cost exceeds visibility ROI |
 
-Kill 결정 시 다음 trail을 남긴다: `.ct2/postmortems/bet-{n}-kill-{date}.md` — 사유, 측정값, 대안. 죽인 베팅을 *3개월 안에* 다시 동일 형상으로 시도하지 않는다(다른 형상은 OK).
+When killing, leave the following trail: `.ct2/postmortems/bet-{n}-kill-{date}.md` — reason, measurements, alternatives. A killed bet is *not retried in the same shape within 3 months* (a different shape is OK).
 
-### 6.6 Per-bet spec PR list — 무엇을 spec에 박는가
+### 6.6 Per-bet spec PR list — what we pin to spec
 
-각 베팅이 만들어낼 spec 변경. 코드 PR은 별개; 여기는 *권위 문서* PR만.
+The spec changes each bet will create. Code PRs are separate; this is only *authority document* PRs.
 
-| Bet | 신규 spec 파일 | 기존 spec 수정 |
+| Bet | New spec file | Existing spec edits |
 |---|---|---|
-| 1 Cost contracts | `spec/role-contracts.md` (신규) | `spec/state-machine.md`에 budget-bounce transition; `config/harness.yaml` 템플릿에 `role_contracts` 블록 |
-| 2 Plan-mode-first | `spec/plan-evidence.md` (신규) | `spec/review-protocol.md`에 plan-evidence rule; `spec/ticket-format.md`에 `plan-exempt` field; `spec/state-machine.md`의 in-progress 분할 |
-| 3 Ambient bridge | `spec/external-channels.md` (신규) | `spec/review-protocol.md`의 inbox 섹션에 외부 origin 메시지 처리 |
-| 4 Eval harness | `spec/role-evals.md` (신규) | `config/ct2-lens-*-role.md`에 eval 적용 의무; `AGENTS.md`에 role MD 변경 시 eval 통과 요구 |
-| 5 Task mirror | `spec/runtime-mirror.md` (신규) | `spec/state-machine.md`에 mirror sync 규칙; `spec/directory-structure.md`에 `.ct2/runtime/mirror/` |
+| 1 Cost contracts | `spec/role-contracts.md` (new) | Budget-bounce transition in `spec/state-machine.md`; `role_contracts` block in the `config/harness.yaml` template |
+| 2 Plan-mode-first | `spec/plan-evidence.md` (new) | Plan-evidence rule in `spec/review-protocol.md`; `plan-exempt` field in `spec/ticket-format.md`; in-progress split in `spec/state-machine.md` |
+| 3 Ambient bridge | `spec/external-channels.md` (new) | Handling of external-origin messages in the inbox section of `spec/review-protocol.md` |
+| 4 Eval harness | `spec/role-evals.md` (new) | Eval-application obligation in `config/ct2-lens-*-role.md`; `AGENTS.md` requires eval pass on role-MD changes |
+| 5 Task mirror | `spec/runtime-mirror.md` (new) | Mirror-sync rules in `spec/state-machine.md`; `.ct2/runtime/mirror/` in `spec/directory-structure.md` |
 
-CT2 정신("spec is authoritative")의 일관성을 유지하기 위해, **코드 PR은 spec PR이 머지된 후에만** 진행. spec PR이 의도된 형상을 통과하지 못하면 베팅 자체를 재형상.
+To preserve the consistency of CT2's spirit ("spec is authoritative"), **code PRs proceed only after the corresponding spec PR is merged**. If the spec PR fails to land in the intended shape, the bet itself is reshaped.
 
-## 7. Hidden primitives — 어디에 묻혀있나
+## 7. Hidden primitives — where they are buried
 
-본 섹션은 Feature Radar에 *없거나 가볍게* 다뤄졌고 본 베팅들에 직접 안 쓰지만, 후속 베팅의 재료가 될 수 있는 표면들. 인덱스로만.
+This section indexes surfaces that Feature Radar *omitted or treated lightly* and that are not used directly by these bets but may be raw material for follow-up bets. Index only.
 
-- **Codex `tool_call_mcp_elicitation` (stable).** MCP tool이 user에게 elicitation 가능 — Bet 3의 외부 채널 명령 검증에 활용 후보.
-- **Codex `enable_request_compression` (stable).** Bet 1에 일부 활용. helm-auto-cx 같은 long-thread role에 강제하면 token 절감 큼.
-- **Codex `image_generation` + `image_input` + `view_image` (stable).** UI ticket의 *비주얼 spec*에 사용. Feature Radar P2 다중모달과 합류.
-- **Claude `--exclude-dynamic-system-prompt-sections` (CLI).** prompt cache hit rate 개선 — Bet 1의 cost lever 보조.
-- **Claude `--include-hook-events` (CLI).** Bet 4 eval 시 hook 작동 trace 검증에 사용.
-- **Claude `--fork-session` (CLI).** lens가 같은 ticket을 두 가지 angle로 검토할 때(예: security 관점 + perf 관점) — 후속 베팅 후보.
-- **Claude `LSP` tool.** forge가 patch 후 type error를 *자동* 인지. lens sidecar의 "AC: tests pass" 검증 보조.
-- **Codex `child_agents_md` (under development).** subagent 별 AGENTS.md 분리 — 안정화되면 lens-cc/lens-cx의 *완전 격리*에 강력. 6개월 후 재고.
-- **Claude `claude project purge` (2.1.126+).** 임시 ticket workspace 클린업.
-- **Claude `--from-pr`.** lens가 PR 컨텍스트를 함께 로드해 review.
+- **Codex `tool_call_mcp_elicitation` (stable).** MCP tools can elicit from the user — a candidate for verifying external-channel commands in Bet 3.
+- **Codex `enable_request_compression` (stable).** Partially used by Bet 1. Forcing it on long-thread roles like helm-auto-cx yields large token savings.
+- **Codex `image_generation` + `image_input` + `view_image` (stable).** For *visual specs* on UI tickets. Folds in with Feature Radar P2 multimodality.
+- **Claude `--exclude-dynamic-system-prompt-sections` (CLI).** Improves prompt cache hit rate — auxiliary cost lever for Bet 1.
+- **Claude `--include-hook-events` (CLI).** Used in Bet 4 evals to verify hook-firing traces.
+- **Claude `--fork-session` (CLI).** When lens reviews the same ticket from two angles (e.g., security + perf) — a follow-up bet candidate.
+- **Claude `LSP` tool.** forge *automatically* notices type errors after a patch. Helps lens sidecars verify "AC: tests pass".
+- **Codex `child_agents_md` (under development).** Per-subagent AGENTS.md separation — once stable, very strong for *complete isolation* of lens-cc/lens-cx. Revisit in 6 months.
+- **Claude `claude project purge` (2.1.126+).** Cleanup of temporary ticket workspaces.
+- **Claude `--from-pr`.** lens loads PR context into the review.
 
-## 8. Risk Register
+## 8. Risk register
 
-| ID | 위험 | 영향 | 가능성 | 완화 |
+| ID | Risk | Impact | Likelihood | Mitigation |
 |---|---|---|---|---|
-| R-01 | Bet 1 contract가 trust ratio를 떨어뜨림 | 高 | 中 | A/B with 50-ticket window; 회귀 시 model 한 단계 upgrade |
-| R-02 | plan-mode 강제가 사용자 마찰 만듦 | 中 | 中 | `plan-exempt` flag; 6주 후 사용자 NPS 측정 |
-| R-03 | Discord/Slack bridge에서 secret 누출 | 高 | 低 | 본문은 절대 외부로; id/title/state만 |
-| R-04 | eval 비용이 cost contract 깨뜨림 | 中 | 中 | 별도 budget envelope; 하루 cap |
-| R-05 | native task mirror 권위 분기 | 高 | 中 | Bet 5를 마지막에; advisory-only; 차단 hook |
-| R-06 | Codex experimental feature(`goals`)에 깊게 의존 | 中 | 中 | Claude plan-mode를 우선; Codex는 fallback |
-| R-07 | vendor 버전 drift | 中 | 高 | Capability Registry(Feature Radar P0)와 합류; min-version 게이트 |
-| R-08 | "always-on" Bet 3가 인지부하 폭증(알림 지옥) | 中 | 中 | per-channel cap, dedup, snooze |
-| R-09 | role MD 변경 PR이 eval 통과를 *과적합* | 低 | 中 | case 모집을 실 ticket sample에서; 분기별 case 회전 |
-| R-10 | single-user 가정이 실 사용 시 깨짐(공유 repo, 2인 사용) | 中 | 低 | 12개월 vision으로 미루고, 그 전엔 명시적 거절 |
+| R-01 | Bet 1 contract drops the trust ratio | High | Mid | A/B with a 50-ticket window; model-upgrade by one notch on regression |
+| R-02 | Forced plan-mode creates user friction | Mid | Mid | `plan-exempt` flag; measure user NPS after 6 weeks |
+| R-03 | Secret leakage from the Discord/Slack bridge | High | Low | Never send bodies outward; only id/title/state |
+| R-04 | Eval cost breaks the cost contract | Mid | Mid | Separate budget envelope; daily cap |
+| R-05 | Native task mirror authority divergence | High | Mid | Place Bet 5 last; advisory-only; blocking hook |
+| R-06 | Deep dependence on a Codex experimental feature (`goals`) | Mid | Mid | Adopt Claude plan-mode first; Codex is fallback |
+| R-07 | Vendor version drift | Mid | High | Folds into the Capability Registry (Feature Radar P0); min-version gate |
+| R-08 | "Always-on" Bet 3 explodes cognitive load (notification hell) | Mid | Mid | Per-channel cap, dedup, snooze |
+| R-09 | Role-MD-change PR *overfits* to pass evals | Low | Mid | Source cases from real-ticket samples; rotate cases quarterly |
+| R-10 | Single-user assumption breaks in real use (shared repo, 2-person use) | Mid | Low | Defer to the 12-month vision; explicit refusal before then |
 
-## 9. Success Metrics — 어떻게 "잘 된 것"을 알 것인가
+## 9. Success metrics — how we know "things went well"
 
-90일 후 다음 balanced scorecard로 self-grade:
+Self-grade after 90 days against the following balanced scorecard:
 
 1. **Trust:** Trust ratio (90d) ≥ 0.92; first-pass approval rate baseline +15pp
-2. **Evidence:** Evidence coverage ≥ 0.90; `done/` transition 중 uncited verifier 0건
-3. **Autonomy:** lens latency p95 ≤ 90초; blocked → unblocked p95 wallclock baseline -70%; stale runtime twin 0건
-4. **Cost/Latency:** $/ticket p50 baseline -30%; p50 ticket latency가 baseline보다 증가하지 않음
-5. **Safety:** eval suite size ≥ 5 cases × 4 roles = 20+; ticket 외부 수정 0건; dual-review 우회 0건; vendor scheduler가 done 발행 0건
+2. **Evidence:** Evidence coverage ≥ 0.90; 0 uncited verifiers among `done/` transitions
+3. **Autonomy:** lens latency p95 ≤ 90 seconds; blocked → unblocked p95 wallclock baseline −70%; 0 stale runtime twins
+4. **Cost/Latency:** $/ticket p50 baseline −30%; p50 ticket latency does not rise vs. baseline
+5. **Safety:** eval suite size ≥ 5 cases × 4 roles = 20+; 0 external ticket modifications; 0 dual-review bypasses; 0 done-issuances by a vendor scheduler
 
-한 축의 개선이 다른 축의 붕괴를 만들면 성공으로 판정하지 않는다. 예를 들어 cost가 30% 줄어도 Trust나 Evidence가 하락하면 Bet 1은 재형상한다.
+We do not call it success if a gain on one axis collapses another. For example, even if cost drops 30%, if Trust or Evidence falls, Bet 1 is reshaped.
 
-## 10. Feature Radar와의 관계 — 정확히 어떻게 합류하는가
+## 10. Relationship to Feature Radar — exactly how they merge
 
-| Feature Radar 항목 | 본 문서에서의 처리 |
+| Feature Radar item | Treatment in this document |
 |---|---|
-| P0 Capability Registry | **그대로 채택**. Bet 1 contract enforcement의 전제. |
-| P0 Decision Bridge | **그대로 채택**. Bet 3 외부 명령이 internal decision으로 변환되는 경로. |
-| P0 Hook Guardrails | **그대로 채택**. Bet 5 mirror에서 PreToolUse 차단 hook 재사용. |
-| P1 Watch/Monitor Plane | **재정의**. "wakeup 인프라"로 자리매김 — Bet 3의 *알림 정책 엔진*과 합류. |
-| P1 Runtime Driver Hardening | **그대로 채택**. Bet 1이 driver의 cost 측정 path 의존. |
-| P1 Dual Plugin Distribution | **연기**. 6주 sprint 후, 90일 vision 안에. Plugin 안정성보단 protocol 안정성이 먼저. |
-| P1 Observability Ledger | **그대로 채택**. Bet 1의 telemetry sink와 동일 인프라. |
-| P2 Multimodal Evidence | **유지**. 90일 이후. UI 작업이 늘어나기 전엔 우선순위 낮음. |
-| P2 Cloud Delegation | **회의적 유지**. Anti-bet 3과 가까움 — *executor* 한정. |
+| P0 Capability Registry | **Adopt as-is**. Prerequisite for Bet 1 contract enforcement. |
+| P0 Decision Bridge | **Adopt as-is**. The path Bet 3 external commands take to become internal decisions. |
+| P0 Hook Guardrails | **Adopt as-is**. Reused as the PreToolUse blocking hook in Bet 5 mirror. |
+| P1 Watch/Monitor Plane | **Redefined**. Repositioned as "wakeup infrastructure" — folds into Bet 3's *notification policy engine*. |
+| P1 Runtime Driver Hardening | **Adopt as-is**. Bet 1 depends on the driver's cost-measurement path. |
+| P1 Dual Plugin Distribution | **Defer**. After the 6-week sprint, within the 90-day vision. Protocol stability comes before plugin stability. |
+| P1 Observability Ledger | **Adopt as-is**. Same infrastructure as Bet 1's telemetry sink. |
+| P2 Multimodal Evidence | **Retain**. After 90 days. Low priority until UI work increases. |
+| P2 Cloud Delegation | **Skeptical retain**. Close to Anti-bet 3 — *executor only*. |
 
-요약: Feature Radar의 P0 셋은 Verified Autonomy OS의 *kernel admission layer*, P1 한 두 개는 본 문서 베팅의 *직접 의존*, P1 나머지와 P2는 *6주 후 재평가*다. 최종 통합 문서에서는 이 관계를 OS primitive와 release train으로 다시 묶는다.
+Summary: Feature Radar's three P0s are the *kernel admission layer* of Verified Autonomy OS, one or two P1s are *direct dependencies* of this document's bets, and the rest of P1 and P2 are *re-evaluated after 6 weeks*. The final integrated document rebundles this relationship in terms of OS primitives and a release train.
 
-## 10.5 Competitive landscape — 비슷한 문제를 푸는 다른 시스템들
+## 10.5 Competitive landscape — other systems solving similar problems
 
-CT2가 *어디에 머물 것인지*를 정의하기 위해, 인접 제품군과 명시적으로 대조. 본 비교는 frontier-tech PRD의 표준이다("우리는 X와 다르다, 그래서 우리만의 자리가 있다"). 본 표는 일반 평가가 아니라 *CT2 프레임에서의 비교*다.
+To define *where CT2 will sit*, we explicitly contrast against adjacent product families. This comparison is the standard of a frontier-tech PRD ("we are different from X, and that is why we have a place of our own"). The table below is not a general evaluation but *a comparison through CT2's frame*.
 
-| 시스템 | 주된 자리 | 우리와의 가장 큰 공통점 | 우리와의 가장 큰 차이 | CT2가 차용할 만한 것 |
+| System | Main position | Largest commonality with us | Largest difference from us | What CT2 might borrow |
 |---|---|---|---|---|
-| **Cursor** | IDE-내장 single-agent assistant | 코드 옆에 ticket-like context | review independence 없음, dual-LLM 아님 | 없음 — 다른 자리 |
-| **Aider** | git-aware single-agent CLI | git workflow 통합, file-system-first | dual-review 없음, plan-mode-first 아님 | 부분 commit 흐름은 ct2-git-* 와 호환 |
-| **AutoGen** (MS) | multi-agent conversation framework | multi-agent | "대화"가 권위 — file 권위 아님; 검증가능성 약함 | role definition pattern (다른 형상) |
-| **CrewAI** | task graph orchestration | task graph | python-bound (외부 의존성), 사용자 룰 위반 | 그래프 의존성 시각화 정도 |
-| **Smol Developer / GPT-Engineer** | 처음부터-끝까지 자동 생성 | LLM 작업 위임 | review/iteration 없음, 1-shot | Bet 4 eval에서 1-shot baseline로 비교용 |
-| **Devin (Cognition)** | autonomous SWE | autonomous | dual-review 없음, 검증 불투명, SaaS only | Bet 3 ambient — async 스타일 |
-| **OpenHands (구 OpenDevin)** | open-source SWE agent | open, file-based | 단일 agent 중심, dual-review 없음 | sandboxing 모델 (Codex `unified_exec`와 비교) |
-| **Claude Projects / OpenAI Projects** | vendor-internal context store | 같은 vendor 내 reuse | 권위가 vendor cloud, file 아님 | 사용자 메모리 통합 (§3.5.2) |
-| **Linear / Jira + Copilot** | PM tool + AI helper | ticket 개념 | spec/code 분리, dev workflow에서 멀음 | 없음 — 다른 자리 |
-| **Anthropic Computer Use / OpenAI Operator** | OS-level automation | 검증 가능 trail 시도 | code review가 아닌 GUI task | screenshot evidence (Feature Radar P2) |
+| **Cursor** | IDE-embedded single-agent assistant | Ticket-like context beside code | No review independence, not dual-LLM | None — different place |
+| **Aider** | git-aware single-agent CLI | git-workflow integration, file-system-first | No dual-review, not plan-mode-first | The partial-commit flow is compatible with ct2-git-* |
+| **AutoGen** (MS) | Multi-agent conversation framework | Multi-agent | "Conversation" is authority — not files; verifiability is weak | Role definition patterns (in a different shape) |
+| **CrewAI** | Task graph orchestration | Task graph | Python-bound (external dependency), violates our rule | Graph dependency visualization at most |
+| **Smol Developer / GPT-Engineer** | Start-to-end auto-generation | Delegating LLM work | No review/iteration, 1-shot | Useful as a 1-shot baseline in Bet 4 evals |
+| **Devin (Cognition)** | Autonomous SWE | Autonomous | No dual-review, opaque verification, SaaS only | Bet 3 ambient — async style |
+| **OpenHands (formerly OpenDevin)** | Open-source SWE agent | Open, file-based | Single-agent centric, no dual-review | The sandboxing model (compare with Codex `unified_exec`) |
+| **Claude Projects / OpenAI Projects** | Vendor-internal context store | Reuse within the same vendor | Authority is the vendor cloud, not files | User-memory integration (§3.5.2) |
+| **Linear / Jira + Copilot** | PM tool + AI helper | Ticket concept | Spec/code separated, far from dev workflow | None — different place |
+| **Anthropic Computer Use / OpenAI Operator** | OS-level automation | Attempts a verifiable trail | GUI tasks, not code review | Screenshot evidence (Feature Radar P2) |
 
-CT2의 **차별점 한 줄**: "두 개의 *서로 모르는* LLM이 같은 patch를 *각자* 검증하고 그 trace가 immutable file로 남는, 단일 사용자용 file-system-first harness." 이 자리는 위 어느 것도 정확히 차지하지 않는다. "differential testing for LLM patches" — 즉 *dual-LLM regression validation* — 이 우리가 본격적으로 점유할 시장 segment.
+**CT2's one-line differentiator**: "A single-user, file-system-first harness where two *mutually unaware* LLMs *each* validate the same patch and the trace is preserved as an immutable file." None of the above occupy this position exactly. "Differential testing for LLM patches" — i.e., *dual-LLM regression validation* — is the market segment we will earnestly claim.
 
-본 차별화가 흔들리지 않는 한, 본 문서의 베팅은 "Cursor 같이 만들자/Devin 같이 만들자"는 방향으로 끌려가서는 안 된다. §6 anti-bet 들이 그 방어선이다.
+As long as this differentiation does not waver, this document's bets must not get dragged in a "make it like Cursor / make it like Devin" direction. §6's anti-bets are the line of defense.
 
-## 11. Decision Log — 문서 작성 중 채택/기각된 큰 갈래
+## 11. Decision log — major forks adopted/rejected during authoring
 
-| 갈래 | 채택? | 이유 |
+| Fork | Adopted? | Reason |
 |---|---|---|
-| "Verified Autonomy OS를 canonical 이름으로 채택" | 채택 | Feature Radar의 강한 protocol framing을 제품 정체성으로 올림 |
-| "OS를 보편적 agent OS로 확장" | 거절 | 범위는 file-first dual-review protocol kernel로 제한 |
-| "CT2를 SaaS화" | 거절 | local file authority가 정체성. SaaS는 다른 제품. |
-| "CT2를 풀-multi-tenant" | 12개월 후 | 지금 풀어주면 invariant 다섯 개 동시에 깨짐. |
-| "Reliability Platform 비유 채택" | 하위 framing으로 채택 | OS가 제공하는 운영 가치로 유지하되 canonical 이름은 아님 |
-| "TeamCreate/SendMessage 즉시 채택" | 거절 | experimental flag, 인스턴스 결합 비용 |
-| "Native task mirror를 1번 베팅으로" | 거절 | 가장 매혹적, 가장 위험. 마지막. |
-| "외부 의존성 추가(예: redis)" | 거절 | 외부 0 룰 유지. file system + bash + python stdlib. |
-| "/ultrareview를 lens 대체로 사용" | 거절 | dual-review independence가 lens의 본질. ultrareview는 *제3 의견*만. |
-| "LLM router 도입" | 12개월 후 | 정적 contract 안 정착 상태에선 router는 noise multiplier |
+| "Adopt Verified Autonomy OS as the canonical name" | Adopted | Elevates Feature Radar's strong protocol framing into product identity |
+| "Expand OS into a universal agent OS" | Refused | Scope is restricted to a file-first dual-review protocol kernel |
+| "SaaS-ify CT2" | Refused | Local file authority is the identity. SaaS is a different product. |
+| "Make CT2 fully multi-tenant" | After 12 months | Unleashing it now breaks five invariants at once. |
+| "Adopt the Reliability Platform analogy" | Adopted as sub-framing | Retain it as the operational value the OS provides, not as the canonical name |
+| "Adopt TeamCreate/SendMessage immediately" | Refused | Experimental flag, instance-coupling cost |
+| "Make Native task mirror Bet #1" | Refused | Most seductive, most dangerous. Last. |
+| "Add external dependencies (e.g., redis)" | Refused | Keep the zero-external rule. File system + bash + python stdlib. |
+| "Use /ultrareview as a lens replacement" | Refused | Dual-review independence is lens's essence. Ultrareview is only a *third opinion*. |
+| "Adopt an LLM router" | After 12 months | Without settled static contracts, a router is a noise multiplier |
 
-## 11.5 Stakeholder map — 누구를 위한 문서인가
+## 11.5 Stakeholder map — who this document is for
 
-본 문서는 다음 4 stakeholder를 동시에 만족시켜야 한다. 각자에게 무엇을 약속하는지를 명시.
+This document must satisfy the following 4 stakeholders simultaneously. Specify what we promise each.
 
-| Stakeholder | 본 sprint에서 무엇이 좋아지나 | 어떻게 측정하나 |
+| Stakeholder | What gets better in this sprint | How we measure |
 |---|---|---|
-| **Solo dev (현재 사용자)** | $/ticket 30% 감소; first-pass approval +15pp; "자고 일어나도 정상" UX | §9 balanced scorecard |
-| **얼리 어답터(다른 multi-agent 사용자)** | role-contract 패턴이 spec에 박혀, 자기 환경에서 vendor 갈아끼우기 가능 | spec PR 머지 이후 fork 수, plugin install 수 |
-| **CT2 plugin author / spec 기여자** | spec PR-driven 변경 절차; eval로 회귀 잡힘; PR 부담 ↓ | §6.6 spec PR list, eval suite case 수 |
-| **(미래) enterprise 사용자** | budget hard_deny, OTel 통합, audit trail 강화 | §9 metric 7 (invariant 위반 0) + Feature Radar P0 Capability Registry |
+| **Solo dev (current user)** | $/ticket −30%; first-pass approval +15pp; "still-OK-after-sleep" UX | §9 balanced scorecard |
+| **Early adopters (other multi-agent users)** | Role-contract pattern pinned to spec, enabling vendor swap in their own environments | Forks and plugin-install counts after spec PRs merge |
+| **CT2 plugin authors / spec contributors** | Spec-PR-driven change procedure; regressions caught by evals; PR burden ↓ | §6.6 spec PR list, eval-suite case count |
+| **(Future) enterprise users** | Budget hard_deny, OTel integration, strengthened audit trail | §9 metric 7 (0 invariant violations) + Feature Radar P0 Capability Registry |
 
-각자에 대한 **거절**:
+**Refusals** to each:
 
-- Solo dev에게: "더 빠른 ticket 처리"는 약속하지 않는다 — *신뢰 가능한* ticket 처리.
-- Plugin author에게: "내 plugin이 ct2-status에 자동 노출"은 약속하지 않는다 — Capability Registry에 *등록되어야* 노출.
-- Enterprise에게: "SaaS multi-tenant"은 약속하지 않는다 — local file authority 유지.
+- To Solo dev: We do not promise "faster ticket processing" — we promise *trustworthy* ticket processing.
+- To plugin authors: We do not promise "my plugin auto-surfaces in ct2-status" — it surfaces only when *registered* in the Capability Registry.
+- To enterprise: We do not promise "SaaS multi-tenant" — we preserve local file authority.
 
-## 12. Open questions — spike로 풀어야 하는 것들
+## 12. Open questions — things to resolve via spike
 
-각각 1–2일 spike, 주차 1에 병렬 진행:
+Each is a 1–2 day spike, parallelized in week 1:
 
-1. **Codex `personality` config surface.** 문서엔 stable로 표시되지만 실제 CLI/profile 손잡이가 어디인지. `~/.codex/config.toml` 실측 + 0.130.0 release notes 재독.
-2. **`enable_request_compression` 관측.** 실 ticket을 두 번 처리(on/off)하고 token 비교.
-3. **`--max-budget-usd` 작동 모드.** 작업 *중간*에 끊기는지, *시작 전* 추정으로 거절하는지. Test ticket으로 검증.
-4. **`--bare` 모드의 skill 가용성.** SKILL 파일이 fully resolve 되는지, plugin sync 없이 작동하는지.
-5. **`PreToolUse` hook이 `TaskUpdate` metadata를 검사 가능한지.** 검사 불가하면 Bet 5 형상 수정 필요.
-6. **`Monitor` 도구 cap (Bedrock/Vertex/Foundry 미지원).** CT2 사용자가 그 환경을 쓰면 fallback 필요.
-7. **`AskUserQuestion` multi-select가 inbox로 fallback 되는 path.** Feature Radar P0 Decision Bridge와 직접 결합.
+1. **Codex `personality` config surface.** Docs say stable, but where the actual CLI/profile handle lives. Measure `~/.codex/config.toml` + re-read the 0.130.0 release notes.
+2. **Observing `enable_request_compression`.** Process the same real ticket twice (on/off) and compare tokens.
+3. **`--max-budget-usd` behavior mode.** Does it cut *mid-work*, or refuse *before start* via estimation? Verify with a test ticket.
+4. **`--bare` mode skill availability.** Do SKILL files fully resolve? Does it work without plugin sync?
+5. **Whether `PreToolUse` hook can inspect `TaskUpdate` metadata.** If not, Bet 5 shape needs to be revised.
+6. **`Monitor` tool caps (unsupported on Bedrock/Vertex/Foundry).** Need a fallback if CT2 users live in those environments.
+7. **The path where `AskUserQuestion` multi-select falls back to the inbox.** Direct coupling with Feature Radar P0 Decision Bridge.
 
-## 13. Anti-pattern catalog — 6주 안에 보일 수 있는 함정
+## 13. Anti-pattern catalog — traps that could appear within 6 weeks
 
-문서로 박아두는 이유: 6주 후 회고 때 함정에 빠진 채 베팅을 "성공"으로 잘못 판정하지 않기 위해.
+Why we pin them in the document: at the 6-week retro, to avoid wrongly marking bets as "successes" while sitting in a trap.
 
-- **Cost가 30% 줄었지만 trust ratio도 함께 줄었다.** → forge model을 너무 강등. roll back.
-- **first-pass rate가 올랐지만 plan-mode가 helm boilerplate를 만들기만 한다.** → plan-exempt threshold를 낮춤; eval에 "plan signal-to-noise" rubric 추가.
-- **Discord ping이 inbox 대체로 사용된다.** → bridge 정책에 "외부 채널이 ticket lifecycle의 권위가 될 수 없다" 명시; 위반 metric 측정.
-- **eval suite가 minor wording 변경에서 거짓 회귀 발생.** → judge 결정론성 점검; rubric 단순화.
-- **Native task mirror에서 사용자가 native에서 직접 작업.** → hook으로 차단; mismatch event 카운트.
+- **Cost dropped 30% but trust ratio dropped too.** → forge model demoted too far. Roll back.
+- **First-pass rate rose, but plan-mode is only producing helm boilerplate.** → Lower the plan-exempt threshold; add a "plan signal-to-noise" rubric to the eval.
+- **Discord pings get used as an inbox replacement.** → Spec into bridge policy: "external channels cannot be authority over ticket lifecycle"; measure violation metrics.
+- **The eval suite raises false regressions on minor wording changes.** → Inspect judge determinism; simplify the rubric.
+- **In the native task mirror, the user works directly on the native side.** → Block via hook; count mismatch events.
 
-## 14. Closing — 한 문단
+## 14. Closing — one paragraph
 
-CT2의 다음 라운드는 *기능 추가*가 아니라 *정체성 명확화*다. Vendor가 stable로 풀어둔 다섯 표면(`personality`, `fast_mode`, `enable_request_compression`, `--max-budget-usd`, `EnterPlanMode`)을 OS primitive, role contract, plan evidence, eval, ambient advisory bridge로 묶으면, CT2는 "atomic mv + dual review"라는 단순한 protocol harness에서 **Verified Autonomy OS**로 업그레이드된다. 그 단계에서 가장 중요한 결정은 *무엇을 추가할지*가 아니라 *무엇을 끝내 안 할지*다. 본 문서 §6의 여섯 anti-bet은 그 거절을 미리 박아두기 위한 글이다. CT2가 보편적 agent OS로 범람하지 않고 file-first dual-review protocol kernel로 남을 수 있도록.
+CT2's next round is not *feature addition* but *identity clarification*. By bundling the five vendor-stable surfaces (`personality`, `fast_mode`, `enable_request_compression`, `--max-budget-usd`, `EnterPlanMode`) into OS primitives, role contracts, plan evidence, evals, and an ambient advisory bridge, CT2 upgrades from a simple protocol harness called "atomic mv + dual review" into **Verified Autonomy OS**. At this stage, the most important decision is not *what to add* but *what to ultimately refuse*. §6's six anti-bets are how we pre-pin those refusals. So that CT2 does not overflow into a universal agent OS but remains a file-first dual-review protocol kernel.
 
 ---
 
-## Appendix A — 본 문서가 *원본* 데이터로 활용한 표면 인덱스
+## Appendix A — index of surfaces this document treated as *primary* data
 
-다음은 작성 중 직접 확인한 항목과 확인 방법. 추후 검증 시 본 인덱스를 starting point로.
+What we directly verified during authoring, and how. Use this index as the starting point for re-verification later.
 
-| 항목 | 확인 방법 | 결과 |
+| Item | Verification method | Result |
 |---|---|---|
 | `codex --version` | local CLI | `codex-cli 0.130.0` |
 | `claude --version` | local CLI | `2.1.138 (Claude Code)` |
@@ -877,36 +877,36 @@ CT2의 다음 라운드는 *기능 추가*가 아니라 *정체성 명확화*다
 | Codex experimental flags | `codex features list` | `goals`, `external_migration`, `prevent_idle_sleep` |
 | Claude CLI surface | `claude --help` | `--agent`, `--agents`, `--bare`, `--brief`, `--effort`, `--fork-session`, `--from-pr`, `--include-hook-events`, `--include-partial-messages`, `--input-format`, `--json-schema`, `--max-budget-usd`, `--no-session-persistence`, `--plugin-dir`, `--plugin-url`, `--remote-control`, `--resume`, `--session-id`, `--system-prompt`, `--tmux`, `--tools`, `--worktree` |
 | Claude built-in tools | docs (tools-reference) | Agent, AskUserQuestion, Bash, CronCreate/List/Delete, Edit, EnterPlanMode/ExitPlanMode, EnterWorktree/ExitWorktree, Glob, Grep, ListMcpResourcesTool, LSP, Monitor, NotebookEdit, PowerShell, Read, ReadMcpResourceTool, SendMessage, ShareOnboardingGuide, Skill, TaskCreate/Get/List/Update/Stop/Output, TeamCreate/Delete, TodoWrite, ToolSearch, WebFetch, WebSearch, Write |
-| Claude 2.1.136 변경 | docs changelog | OTel feedback survey, autoMode hard_deny, plan mode write block 수정, AskUserQuestion multi-select, CronList output |
-| Claude 2.1.133 변경 | docs changelog | `worktree.baseRef`, hook effort metadata, subagent skill discovery 수정, sandbox bwrap/socat path |
-| Claude 2.1.129 변경 | docs changelog | `--plugin-url`, `skillOverrides`, `claude_code.pull_request.count` OTel, `experimental` plugin manifest |
-| Claude 2.1.128 변경 | docs changelog | EnterWorktree from local HEAD, `--channels` console auth, MCP tool counts |
-| Claude 2.1.126 변경 | docs changelog | `claude project purge`, `--dangerously-skip-permissions` 확장, OAuth code paste |
-| Codex 0.130 변경 | docs changelog | `codex remote-control`, app-server thread paging, plugin sharing metadata, multi-env `view_image` |
-| Codex 0.129 변경 | docs changelog | TUI vim, `/goal` discovery/pause/resume, plugin workspace sharing, hook pre/post-compaction |
-| Codex 0.128 변경 | docs changelog | `/goal` 첫 구현, plugin marketplace install, multi-agent v2 caps |
+| Claude 2.1.136 changes | docs changelog | OTel feedback survey, autoMode hard_deny, plan-mode write-block fix, AskUserQuestion multi-select, CronList output |
+| Claude 2.1.133 changes | docs changelog | `worktree.baseRef`, hook effort metadata, subagent skill discovery fix, sandbox bwrap/socat path |
+| Claude 2.1.129 changes | docs changelog | `--plugin-url`, `skillOverrides`, `claude_code.pull_request.count` OTel, `experimental` plugin manifest |
+| Claude 2.1.128 changes | docs changelog | EnterWorktree from local HEAD, `--channels` console auth, MCP tool counts |
+| Claude 2.1.126 changes | docs changelog | `claude project purge`, `--dangerously-skip-permissions` extensions, OAuth code paste |
+| Codex 0.130 changes | docs changelog | `codex remote-control`, app-server thread paging, plugin sharing metadata, multi-env `view_image` |
+| Codex 0.129 changes | docs changelog | TUI vim, `/goal` discovery/pause/resume, plugin workspace sharing, hook pre/post-compaction |
+| Codex 0.128 changes | docs changelog | First implementation of `/goal`, plugin marketplace install, multi-agent v2 caps |
 
-## Appendix B — Feature Radar와 일관성 점검 (diff 요약)
+## Appendix B — consistency check vs. Feature Radar (diff summary)
 
-| 사실 | Feature Radar | 본 문서 | 격차 원인 |
+| Fact | Feature Radar | This document | Cause of divergence |
 |---|---|---|---|
-| 로컬 Claude 버전 | 2.1.138 | 2.1.138 | 현재 두 문서 모두 최신 실측 기준으로 정합 |
-| Claude 2.1.138 ~ 2.1.132 gap | 사라짐 | 사라짐 | 과거 draft의 stale diff를 제거 |
-| `--bare` 모드 | 다루지 않음 | Bet 4의 핵심 의존 | 본 문서가 추가 |
-| `personality`, `fast_mode`, `enable_request_compression` | 가볍게 표면만 | Bet 1의 직접 손잡이 | 본 문서가 추가 |
-| `--max-budget-usd`, `--effort` | 가볍게 표면만 | Bet 1의 핵심 | 본 문서가 추가 |
-| EnterPlanMode | 다루지 않음 | Bet 2의 핵심 | 본 문서가 추가 |
-| Balanced scorecard | 후보 인프라만 제안 | Trust/Evidence/Autonomy/Cost로 채택 | 사용자 인터뷰 결과 반영 |
-| Verified Autonomy OS framing | North Star로 제안 | canonical 제품 정체성으로 채택 | 사용자 인터뷰 결과 반영 |
-| Anti-bets | "non-goals" 6개 | 별도 §6에서 6개 anti-bet | 강조 차이 |
+| Local Claude version | 2.1.138 | 2.1.138 | Both documents now align on the latest measured value |
+| Claude 2.1.138–2.1.132 gap | Gone | Gone | Stale diffs from old drafts removed |
+| `--bare` mode | Not covered | Core dependency of Bet 4 | Added in this document |
+| `personality`, `fast_mode`, `enable_request_compression` | Lightly surfaced | Direct handles in Bet 1 | Added in this document |
+| `--max-budget-usd`, `--effort` | Lightly surfaced | Core of Bet 1 | Added in this document |
+| EnterPlanMode | Not covered | Core of Bet 2 | Added in this document |
+| Balanced scorecard | Only candidate infrastructure | Adopted as Trust/Evidence/Autonomy/Cost | Reflects user interview |
+| Verified Autonomy OS framing | Proposed as North Star | Adopted as canonical product identity | Reflects user interview |
+| Anti-bets | 6 "non-goals" | 6 anti-bets in a dedicated §6 | Emphasis differs |
 
-본 문서는 Feature Radar를 *대체*하지 않는다. Feature Radar의 카탈로그/protocol 흡수 작업은 그대로 유효하고 P0 셋은 본 문서 베팅의 기반이다. 두 문서를 한 묶음으로 stakeholder review.
+This document does *not* replace Feature Radar. Feature Radar's catalog/protocol absorption work remains valid, and its three P0s are the foundation of this document's bets. Review both as a single bundle with stakeholders.
 
-## Appendix C — Bet 1 implementation sketch (실 wrapper)
+## Appendix C — Bet 1 implementation sketch (actual wrappers)
 
-다음은 Bet 1을 *구체적*으로 어떻게 시작할지 보여주는 sketch. 본 문서가 "추상적 strategy일 뿐"이 되지 않도록 박아둔다. 실제 코드는 spec PR 후에 `bin/ct2-forge-run`(Claude 측 wrapper) 형태로 머지.
+The following sketch shows *concretely* how to begin Bet 1. We pin it in to keep this document from being "just abstract strategy." Real code will merge after the spec PR as `bin/ct2-forge-run` (Claude-side wrapper) and friends.
 
-`bin/ct2-role-run` (provider-agnostic, 새 스크립트):
+`bin/ct2-role-run` (provider-agnostic, new script):
 
 ```bash
 #!/usr/bin/env bash
@@ -980,9 +980,9 @@ effort = "high"
 personality = "terse"
 fast_mode = false
 enable_request_compression = true
-# budget는 codex 측에서 별도 surface — 0.130.0 기준 직접적 cap은 없음.
-# CT2는 wrapper에서 `tool_call_mcp_elicitation` event count로 간접 측정 후
-# .ct2/telemetry/cost.jsonl에 기록한다.
+# Budget is a separate surface on the Codex side — no direct cap as of 0.130.0.
+# CT2 measures it indirectly via `tool_call_mcp_elicitation` event counts in the wrapper,
+# then records into .ct2/telemetry/cost.jsonl.
 
 [profiles.ct2-lens-cx]
 model = "gpt-5-codex"
@@ -998,7 +998,7 @@ personality = "terse"
 fast_mode = true
 ```
 
-Telemetry sink (post-run, hook으로 호출되는 `bin/ct2-cost-record`):
+Telemetry sink (`bin/ct2-cost-record`, post-run, called via hook):
 
 ```bash
 #!/usr/bin/env bash
@@ -1048,13 +1048,13 @@ for role, b in sorted(by_role.items()):
 PY
 ```
 
-`ct2-status` 통합: 마지막 줄에 `bin/ct2-cost --brief` 한 줄. 기존 status 출력의 모양을 깨지 않는 *부가* 정보로.
+`ct2-status` integration: the final line is a single `bin/ct2-cost --brief`. *Supplementary* information that does not break the existing status output shape.
 
 ## Appendix D — Bet 4 eval case example (full)
 
-다음은 lens-cc 역할에 대한 eval case 하나의 *완전한* 모습. 본 문서가 Bet 4를 *구상*만 한 것이 아님을 박아두는 부록.
+The following is the *complete* shape of one eval case for the lens-cc role. An appendix pinned in to show this document is not *only* a sketch of Bet 4.
 
-`.ct2/evals/ct2-lens-cc/case-001-missing-test/` 디렉터리:
+`.ct2/evals/ct2-lens-cc/case-001-missing-test/` directory:
 
 `ticket.md`:
 
@@ -1119,26 +1119,26 @@ new file mode 100644
 +    return {"token": token}
 ```
 
-`expected-sidecar.json` (subset matcher; lens-cc의 sidecar가 *최소* 다음을 만족해야):
+`expected-sidecar.json` (subset matcher; the lens-cc sidecar must *at minimum* satisfy):
 
 ```json
 {
   "verdict": "rejected",
   "issues_must_contain_keywords": [
-    "test",                   // AC 2가 unchecked인데 패치에 테스트 없음
+    "test",                   // AC 2 is unchecked but the patch has no tests
     "unit test",
     "missing"
   ],
   "blocking_issues_count_min": 1,
   "ac_check_must_have_failed": ["Unit tests cover success and 401 cases", "Existing test suite passes"],
   "must_not_contain_phrases": [
-    "approved",            // verdict가 rejected여야 한다
+    "approved",            // verdict must be rejected
     "looks good"
   ]
 }
 ```
 
-`rubric.md` (정성 채점 기준; LLM-as-judge 시 사용):
+`rubric.md` (qualitative scoring criteria; used by LLM-as-judge):
 
 ```markdown
 ## Rubric — case-001 (lens-cc rejecting an obvious AC miss)
@@ -1163,7 +1163,7 @@ new file mode 100644
 - Should sum ≥ 4/6
 ```
 
-`runner.sh` invocation (간소화):
+`runner.sh` invocation (simplified):
 
 ```bash
 case_dir="$1"
@@ -1184,35 +1184,35 @@ judge_out=$(claude --bare --model haiku --max-budget-usd 0.10 \
 echo "$judge_out" | tee -a "$case_dir/results-$(date +%s).json"
 ```
 
-해석:
+Interpretation:
 
-- `--bare`로 hook/auto-memory를 끊어 *해당 role MD*만의 결과를 얻는다(외부 변수 격리).
-- `--max-budget-usd 0.50`은 Bet 1 contract와 다른 envelope (eval 별도).
-- `--json-schema`로 결과 구조를 fix해 subset matcher가 작동.
-- judge LLM은 더 싼 모델(haiku) — 결정의 *합리성*만 채점.
-- 결과는 case 디렉터리에 누적되어 시간에 따른 회귀 추적.
+- `--bare` cuts hooks/auto-memory to get the result of *only the role MD in question* (external-variable isolation).
+- `--max-budget-usd 0.50` is a different envelope from the Bet 1 contract (separate eval).
+- `--json-schema` fixes the result structure so the subset matcher works.
+- The judge LLM uses a cheaper model (haiku) — it grades only the *plausibility* of the decision.
+- Results accumulate in the case directory to trace regression over time.
 
-## Appendix E — 구체적 다음 7일
+## Appendix E — concrete next 7 days
 
-본 문서를 *읽은 직후* 무엇을 시작하나.
+What to start *right after* reading this document.
 
-| Day | 작업 | 결과물 |
+| Day | Task | Deliverable |
 |---|---|---|
-| 1 | Bet 1 spike: `personality`/`fast_mode`/`enable_request_compression` 실측 | `.ct2/runtime/codex-flags-actual.md` (실측 보고) |
-| 1 | `bin/ct2-baseline` 1회용 스크립트 작성 | `.ct2/telemetry/baseline-2026-05.json` |
-| 2 | `harness.yaml`에 `role_contracts` 블록 1차 초안 | spec PR draft (`spec/role-contracts.md`) |
-| 3 | `bin/ct2-role-run` 첫 구현(Claude only) | 실 ticket 1건 처리; cost.jsonl 기록 확인 |
-| 4 | Codex profile 작성, `bin/ct2-role-run` codex 분기 | 동일 ticket을 양 provider로 처리 비교 |
-| 5 | Bet 4 baseline: lens-cc/lens-cx 각 1 case 작성 | `.ct2/evals/ct2-lens-{cc,cx}/case-001-...` |
-| 6 | runner.sh 1차 작동, baseline 측정 | `.ct2/evals/results-2026-05-XX.jsonl` |
-| 7 | retro + spec PR 머지 의사결정 | spec/role-contracts.md PR open or revise |
+| 1 | Bet 1 spike: measure `personality`/`fast_mode`/`enable_request_compression` | `.ct2/runtime/codex-flags-actual.md` (measurement report) |
+| 1 | Write the one-off `bin/ct2-baseline` script | `.ct2/telemetry/baseline-2026-05.json` |
+| 2 | First draft of the `role_contracts` block in `harness.yaml` | spec PR draft (`spec/role-contracts.md`) |
+| 3 | First implementation of `bin/ct2-role-run` (Claude only) | Process 1 real ticket; verify cost.jsonl recording |
+| 4 | Write Codex profiles, add codex branch to `bin/ct2-role-run` | Process the same ticket via both providers for comparison |
+| 5 | Bet 4 baseline: 1 case each for lens-cc/lens-cx | `.ct2/evals/ct2-lens-{cc,cx}/case-001-...` |
+| 6 | First-working runner.sh, baseline measurement | `.ct2/evals/results-2026-05-XX.jsonl` |
+| 7 | Retro + spec-PR merge decision | spec/role-contracts.md PR open or revise |
 
-7일 후 stakeholder review에 가져갈 것: (a) baseline 숫자, (b) cost.jsonl 표본 ≥ 5건, (c) eval case ≥ 4건, (d) Codex flag 실측 보고. 이 4개가 없으면 6주 sprint 진입을 미룬다.
+What to bring to the stakeholder review after 7 days: (a) baseline numbers, (b) cost.jsonl samples ≥ 5, (c) eval cases ≥ 4, (d) Codex flag measurement report. Without these four, defer entering the 6-week sprint.
 
 ---
 
-*작성: 2026-05-10. v3 — 3-turn 반복 iteration:*
-*  v1: 5개 bet + 6개 anti-bet + framing + roadmap (turn 1)*
-*  v2: empirical baseline, kill criteria, spec PR list, subagent/memory, 경쟁비교, stakeholder, Bet 1 wrapper, Bet 4 eval case, 7-day plan (turn 2)*
-*  v3: Feature Radar diff 한눈에 (§0.1), Layered architecture diagram (§2.1) (turn 3)*
-*다음 갱신: Bet 1 spike 완료 후(예상 1주 차).*
+*Authored: 2026-05-10. v3 — three iterative turns:*
+*  v1: 5 bets + 6 anti-bets + framing + roadmap (turn 1)*
+*  v2: empirical baseline, kill criteria, spec PR list, subagent/memory, competitive comparison, stakeholders, Bet 1 wrapper, Bet 4 eval case, 7-day plan (turn 2)*
+*  v3: Feature Radar diff at a glance (§0.1), Layered architecture diagram (§2.1) (turn 3)*
+*Next update: after the Bet 1 spike completes (estimated week 1).*
