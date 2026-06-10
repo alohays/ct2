@@ -10,6 +10,33 @@ from pathlib import Path
 from _ct2_vao import ensure_ct2, read_jsonl, now
 
 
+def read_fanout_records(ct2_dir: Path) -> list[dict]:
+    """Load advisory fan-out records (spec/balanced-scorecard.md). Advisory only."""
+    records: list[dict] = []
+    fanout_dir = ct2_dir / "runtime" / "fanout"
+    if not fanout_dir.is_dir():
+        return records
+    for path in sorted(fanout_dir.glob("fanout-*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict):
+            records.append(data)
+    return records
+
+
+def fanout_summary(records: list[dict]) -> dict:
+    agent_counts = [int(row["agent_count"]) for row in records if isinstance(row.get("agent_count"), (int, float))]
+    widths = [row["fanout_width"] for row in records if isinstance(row.get("fanout_width"), (int, float))]
+    return {
+        "advisory": True,
+        "runs": len(records),
+        "agent_count_total": sum(agent_counts),
+        "fanout_width_max": max(widths) if widths else None,
+    }
+
+
 def summarize(rows: list[dict]) -> dict:
     clean = [row for row in rows if "_invalid" not in row]
     roles: dict[str, dict] = {}
@@ -45,6 +72,9 @@ def main() -> int:
     project_dir = Path(args.project_dir).resolve()
     ct2_dir = ensure_ct2(project_dir)
     report = summarize(read_jsonl(ct2_dir / "telemetry" / "cost.jsonl"))
+    fanout_records = read_fanout_records(ct2_dir)
+    if fanout_records:
+        report["fanout"] = fanout_summary(fanout_records)
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:
@@ -53,6 +83,13 @@ def main() -> int:
         print(f"  total_usd: {report['total_usd']}")
         for role, bucket in report["roles"].items():
             print(f"  {role}: events={bucket['events']} usd={bucket['total_usd']} failures={bucket['failures']}")
+        fanout = report.get("fanout")
+        if fanout:
+            print(
+                f"  fanout (advisory): runs={fanout['runs']}"
+                f" agents={fanout['agent_count_total']}"
+                f" width_max={fanout['fanout_width_max']}"
+            )
     return 0
 
 
