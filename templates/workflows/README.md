@@ -79,17 +79,18 @@ you author; the right column shows where this template satisfies each rule.
 
 | Rule | Requirement | Where this template satisfies it |
 |---|---|---|
-| Named ticket | The run is launched for a specific ticket id; unattributed output is advisory noise that can never move state. | `args.ticket` is required; the run throws without it, and every evidence record and inbox message carries the ticket id. |
+| Named ticket | The run is launched for a specific ticket id, and the ticket is in a non-terminal state at launch: `backlog/` or `rejected/` for work-producing runs, `in-progress/` for forge-as-workflow, `in-review/` for verification-only runs. Unattributed output is advisory noise that can never move state. | `args.ticket` is required; the run throws without it, and every evidence record and inbox message carries the ticket id. As a verification-only run, this template's launch state is `in-review/` — the ingest step searches it first. |
 | Isolated write target | Workflow edits land only in an isolated write target, never on the working/target branch (the worktree form is gated on Phase 1.5+; today the guard is forge's branch-per-ticket plus the single in-progress slot). | Satisfied by writing nothing: every verifier and the ingest step are read-only, so there are no edits to isolate. A workflow that *does* edit must route edits per this rule. |
-| Single recognized return channel | Output re-enters as exactly one of patch, PR, inbox message, or evidence artifact — never by mutating ticket state. | Findings re-enter through one channel: `bin/ct2-evidence verifier` (a `claims.jsonl` row). The `bin/ct2-bridge notify` message is a pointer-only advisory notification citing the claim id, evidence path, and ticket id — it carries no findings payload and is not a second channel. The script contains no ticket `mv` and no state write. |
+| Single recognized return channel | Output re-enters as exactly one of patch, PR, inbox message, or evidence artifact — never by mutating ticket state. | Findings re-enter through one channel: `ct2-evidence verifier` (a `claims.jsonl` row). The `ct2-bridge notify` message is a pointer-only advisory notification citing the claim id, evidence path, and ticket id — it carries no findings payload and is not a second channel. The script contains no ticket `mv` and no state write. |
 | Non-role-holding subagents | No subagent writes `ct2-active-role`, claims the in-progress slot, or holds ticket authority. | All subagents are read-only except the re-entry writer; its prompt restates the forbidden list (no ticket moves between state directories, no `ct2-active-role`, no in-progress claim, no reconciler/seal/revise calls). |
 | Parent-owns-writes | Only one designated writer performs the CT2 write; fan-out workers never write CT2 state. | Exactly one re-entry subagent writes, serially, at the end of the run: the evidence record plus its pointer-only notification, nothing else. |
 
 The kernel-side rules need no checklist because no workflow can satisfy or
 waive them: dual review (cc AND cx) stays terminal authority, a workflow's
 self-verification is evidence rather than a verdict, and the reconciler is the
-sole automatic mover into terminal states. `spec/` remains authoritative for
-all conformance rules.
+sole automatic mover to `done/` (escalation breakers such as the review
+watchdog may still move tickets to `escalated/`). `spec/` remains
+authoritative for all conformance rules.
 
 A run intended for conformance validation should also record a
 `ct2-workflow-run/v1` manifest, as described in the Workflow-Run Manifest

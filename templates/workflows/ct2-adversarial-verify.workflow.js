@@ -237,9 +237,9 @@ function buildCodexRunnerPrompt(verifierPrompt) {
 // rule, and the parent-owns-writes rule; strategy G10).
 //
 // Exactly one subagent in this workflow may write. The evidence record
-// (bin/ct2-evidence, a claims.jsonl row) is THE single recognized return
-// channel for this run's findings. The inbox message (bin/ct2-bridge
-// notify — the notify-only advisory bridge; bin/ct2-inbox is the
+// (ct2-evidence, a claims.jsonl row) is THE single recognized return
+// channel for this run's findings. The inbox message (ct2-bridge
+// notify — the notify-only advisory bridge; ct2-inbox is the
 // recipient-side claim/ack tool and writes no messages) is a pointer-only
 // advisory notification: its body cites the claim id, the evidence path,
 // and the ticket id, never the findings payload, so it is not a second
@@ -253,6 +253,9 @@ function buildReentryPrompt(runId, ticketId, summaryLine, detailsText, exitCode)
     "Run exactly the two commands below from the project root, then report.",
     "Pass the summary line and details text from the sections at the bottom,",
     "shell-quoted, as the corresponding argument values.",
+    "Both CT2 tools are invoked by bare name (the CT2 installer puts",
+    "~/.ct2/bin on PATH); if a bare name is not found, fall back to",
+    '"$HOME/.ct2/bin/<tool>".',
     "",
     "1. Append the evidence record — the single recognized return channel",
     "   for this run's findings. An exit status of 1 from this command",
@@ -261,7 +264,7 @@ function buildReentryPrompt(runId, ticketId, summaryLine, detailsText, exitCode)
     "   Note the claim id and evidence path the command prints; step 2",
     "   needs both:",
     "",
-    "   bin/ct2-evidence verifier \\",
+    "   ct2-evidence verifier \\",
     "     --ticket " + ticketId + " \\",
     "     --name ct2-adversarial-verify \\",
     "     --produced-by-agent ct2-adversarial-verify/" + runId + " \\",
@@ -274,7 +277,7 @@ function buildReentryPrompt(runId, ticketId, summaryLine, detailsText, exitCode)
     "   the claim id, the evidence path, and the ticket id — never the",
     "   findings themselves:",
     "",
-    "   bin/ct2-bridge notify \\",
+    "   ct2-bridge notify \\",
     "     --source ct2-adversarial-verify \\",
     "     --to ct2-helm \\",
     "     --ticket " + ticketId + " \\",
@@ -373,15 +376,17 @@ export default async function ct2AdversarialVerify(args) {
   // every verifier prompt. They merge into evidence; they are never fed
   // back into another verifier.
   const findings = [];
+  const failedLenses = [];
   let blocking = 0;
   for (let i = 0; i < skepticResults.length; i += 1) {
     const result = skepticResults[i];
     const lensId = SKEPTIC_LENSES[i].id;
     if (result === null) {
-      // parallel() yields null for a thunk that threw.
-      findings.push(
-        "[" + lensId + "] verifier failed to report (no finding recorded; rerun if this persists)"
-      );
+      // parallel() yields null for a thunk that threw. A skeptic that never
+      // reported is missing evidence, not a clean pass and not a finding:
+      // count it separately so it fails the evidence record closed below
+      // instead of folding into the finding totals.
+      failedLenses.push(lensId);
       continue;
     }
     for (const finding of result.findings) {
@@ -399,7 +404,11 @@ export default async function ct2AdversarialVerify(args) {
       );
     }
   }
-  const exitCode = blocking > 0 ? 1 : 0;
+  // Fail closed: a run in which any skeptic crashed must not land as
+  // ok=true evidence — exit code 1 makes ct2-evidence record the claim
+  // with ok=false (zero findings from a crashed verifier is absence of
+  // evidence, not evidence of absence).
+  const exitCode = blocking > 0 || failedLenses.length > 0 ? 1 : 0;
   const summaryLine =
     "adversarial-verify " +
     runId +
@@ -407,7 +416,11 @@ export default async function ct2AdversarialVerify(args) {
     blocking +
     " blocking / " +
     findings.length +
-    " total finding(s); cross-vendor pass " +
+    " total finding(s); " +
+    (failedLenses.length > 0
+      ? failedLenses.length + " verifier(s) failed to report; "
+      : "") +
+    "cross-vendor pass " +
     (crossVendorRan
       ? "run (advisory)"
       : "NOT RUN — NON-SUFFICIENT for CT2 dual review") +
@@ -422,6 +435,10 @@ export default async function ct2AdversarialVerify(args) {
       (crossVendorRan
         ? "run via codex exec --sandbox read-only (advisory cross-vendor evidence, not a lens-cx sidecar)"
         : "not-run (" + crossVendor.note + "); this run is NON-SUFFICIENT for CT2 dual review"),
+    "verifiers failed to report: " +
+      (failedLenses.length > 0
+        ? failedLenses.join(", ") + " (no finding recorded; rerun if this persists)"
+        : "none"),
     "",
     "findings:",
   ]
@@ -451,6 +468,7 @@ export default async function ct2AdversarialVerify(args) {
     round: round,
     blockingFindings: blocking,
     totalFindings: findings.length,
+    failedVerifiers: failedLenses.length,
     crossVendorPass: crossVendorRan ? "run" : "not-run",
     sufficientForCt2DualReview: false,
     verdictAuthority: "none",
