@@ -14,8 +14,9 @@
  *   Whatever this workflow concludes, the ticket still requires independent
  *   cross-vendor dual review (lens-cc AND lens-cx sidecars; either reviewer
  *   rejecting means rejected), and only ct2-reconcile moves a ticket to
- *   done/. This run only appends an evidence record and sends an advisory
- *   inbox message. It never moves a ticket, never writes
+ *   done/. This run re-enters CT2 through exactly one return channel — an
+ *   evidence record — plus a pointer-only advisory inbox notification that
+ *   carries no findings. It never moves a ticket, never writes
  *   .ct2/.meta/ct2-active-role, and never claims the in-progress slot.
  *
  * SURFACE — Claude Code dynamic workflows (research preview, v2.1.154+).
@@ -31,14 +32,14 @@
 export const meta = {
   name: "ct2-adversarial-verify",
   description:
-    "Adversarial self-verification of one CT2 ticket artifact. Findings re-enter CT2 as an evidence record plus an advisory inbox message; the run is evidence only, never a verdict.",
+    "Adversarial self-verification of one CT2 ticket artifact. Findings re-enter CT2 through one return channel — an evidence record — with a pointer-only advisory inbox notification; the run is evidence only, never a verdict.",
   version: "0.1.0",
   args: {
     ticket: {
       type: "string",
       required: true,
       description:
-        "CT2 ticket id this run is attributed to (re-entry contract clause 1), e.g. 042-fix-reconciler-lock",
+        "CT2 ticket id this run is attributed to (the Named-ticket rule of the Native-Workflow Re-Entry Contract, spec/conformance.md), e.g. 042-fix-reconciler-lock",
     },
     artifact: {
       type: "string",
@@ -136,7 +137,8 @@ const REENTRY_SCHEMA = {
 };
 
 // ---------------------------------------------------------------------------
-// INDEPENDENCE BY CONSTRUCTION (strategy G3; re-entry contract clause 5).
+// INDEPENDENCE BY CONSTRUCTION (strategy G3; spec/conformance.md,
+// Prompt-Construction Independence).
 //
 // This is the only function that produces a verifier prompt, and its
 // signature is the invariant: a verifier prompt is a pure function of
@@ -186,7 +188,10 @@ function buildIngestPrompt(ticketId, artifactRef) {
   return [
     "You are a read-only ingest subagent for CT2 ticket " + ticketId + ".",
     "",
-    "1. Locate the ticket file whose name starts with '" + ticketId + "' under .ct2/tickets/ and read it in full.",
+    "1. Locate the ticket file whose name starts with '" + ticketId + "'.",
+    "   Tickets live directly in the .ct2/ state directories; search them in",
+    "   order — in-review/, in-progress/, backlog/, then draft/, rejected/,",
+    "   escalated/, done/ — and read the first match in full.",
     "2. Read the artifact under review: '" + artifactRef + "'.",
     "   If it is a git ref, use read-only git (show/diff/log); if it is a path, read the file(s).",
     "3. Return both texts verbatim. Do not summarize detail away; verifiers see only what you return.",
@@ -227,16 +232,20 @@ function buildCodexRunnerPrompt(verifierPrompt) {
 }
 
 // ---------------------------------------------------------------------------
-// RE-ENTRY (re-entry contract clause 3; non-role-holding subagents and
-// parent-owns-writes, clause 4 / strategy G10).
+// RE-ENTRY (spec/conformance.md, Native-Workflow Re-Entry Contract: the
+// single-recognized-return-channel rule, the non-role-holding-subagents
+// rule, and the parent-owns-writes rule; strategy G10).
 //
-// Exactly one subagent in this workflow may write, and it writes only
-// through the two sanctioned return channels: an evidence record
-// (bin/ct2-evidence) and an inbox message (bin/ct2-bridge notify — the
-// notify-only advisory bridge; bin/ct2-inbox is the recipient-side
-// claim/ack tool and writes no messages). Every other subagent is
-// read-only. The forbidden list is restated to the subagent because
-// workflow subagents run with auto-approved edits (forced acceptEdits).
+// Exactly one subagent in this workflow may write. The evidence record
+// (bin/ct2-evidence, a claims.jsonl row) is THE single recognized return
+// channel for this run's findings. The inbox message (bin/ct2-bridge
+// notify — the notify-only advisory bridge; bin/ct2-inbox is the
+// recipient-side claim/ack tool and writes no messages) is a pointer-only
+// advisory notification: its body cites the claim id, the evidence path,
+// and the ticket id, never the findings payload, so it is not a second
+// return channel. Every other subagent is read-only. The forbidden list is
+// restated to the subagent because workflow subagents run with
+// auto-approved edits (forced acceptEdits).
 // ---------------------------------------------------------------------------
 function buildReentryPrompt(runId, ticketId, summaryLine, detailsText, exitCode) {
   return [
@@ -245,28 +254,37 @@ function buildReentryPrompt(runId, ticketId, summaryLine, detailsText, exitCode)
     "Pass the summary line and details text from the sections at the bottom,",
     "shell-quoted, as the corresponding argument values.",
     "",
-    "1. Append the evidence record. An exit status of 1 from this command",
+    "1. Append the evidence record — the single recognized return channel",
+    "   for this run's findings. An exit status of 1 from this command",
     "   means the record was written with ok=false — expected when blocking",
-    "   findings exist, not a command failure (exit status 2 is a failure):",
+    "   findings exist, not a command failure (exit status 2 is a failure).",
+    "   Note the claim id and evidence path the command prints; step 2",
+    "   needs both:",
     "",
     "   bin/ct2-evidence verifier \\",
     "     --ticket " + ticketId + " \\",
     "     --name ct2-adversarial-verify \\",
+    "     --produced-by-agent ct2-adversarial-verify/" + runId + " \\",
     "     --exit-code " + exitCode + " \\",
     "     --summary <summary line> \\",
     "     --details <details text>",
     "",
-    "2. Send the advisory inbox message:",
+    "2. Send the advisory inbox notification. It is a pointer to the",
+    "   evidence record, not a second return channel: the body cites only",
+    "   the claim id, the evidence path, and the ticket id — never the",
+    "   findings themselves:",
     "",
     "   bin/ct2-bridge notify \\",
     "     --source ct2-adversarial-verify \\",
     "     --to ct2-helm \\",
     "     --ticket " + ticketId + " \\",
     "     --subject <summary line> \\",
-    "     --body <details text>",
+    "     --body 'evidence claim <claim id> at <evidence path> for ticket " + ticketId + "'",
     "",
     "Forbidden — this run holds no role and no ticket authority:",
-    "- never mv/cp/rm anything under .ct2/tickets/",
+    "- never move/copy/delete any ticket file between or out of the .ct2/",
+    "  state directories (draft/, backlog/, in-progress/, in-review/,",
+    "  rejected/, escalated/, done/)",
     "- never write .ct2/.meta/ct2-active-role",
     "- never claim the in-progress slot (no ct2-pickup, no lifecycle locks)",
     "- never call ct2-reconcile, ct2-seal, or ct2-revise",

@@ -13,8 +13,9 @@ the sanctioned alternative.
 A reference Claude Code dynamic-workflow script (research preview,
 `v2.1.154+`) that runs an adversarial self-verification pass over one CT2
 ticket artifact: parallel skeptic subagents, a fail-soft cross-vendor pass
-through the Codex CLI, and re-entry of all findings into CT2 as evidence plus
-an advisory inbox message.
+through the Codex CLI, and re-entry of all findings into CT2 through a single
+return channel — an evidence record — plus a pointer-only advisory inbox
+notification.
 
 Its output is **evidence, never a verdict**. Whatever the workflow concludes,
 the ticket still requires independent cross-vendor dual review (lens-cc AND
@@ -34,8 +35,10 @@ args: { ticket: "042-fix-reconciler-lock", artifact: "src/reconciler.py", round:
 The template exists because a workflow orchestrator script holds every
 subagent's return value, so the session-era no-peek rule (do not read the
 partner sidecar) no longer constrains prompt construction: a careless script
-can inject one reviewer's output into another reviewer's prompt. The template
-makes that leak structurally impossible rather than merely discouraged:
+can inject one reviewer's output into another reviewer's prompt. The
+Prompt-Construction Independence section of `spec/conformance.md` forbids
+exactly that leak; the template makes it structurally impossible rather than
+merely discouraged:
 
 - **One prompt builder, sealed signature.** `buildVerifierPrompt(artifactText,
   ticketText, lens)` is the only function that produces a verifier prompt. Its
@@ -67,24 +70,32 @@ check happens at review time, outside any workflow.
 
 ## Re-Entry Contract Compliance Checklist
 
-The re-entry contract (`docs/ct2-dynamic-workflow-strategy-2026-06.md` §3.3)
-is what makes a workflow's output count in CT2. Use this checklist for any
-workflow you author; the right column shows where this template satisfies each
-clause.
+The Native-Workflow Re-Entry Contract section of `spec/conformance.md` is the
+normative source for what makes a workflow's output count in CT2 (the
+strategy doc, `docs/ct2-dynamic-workflow-strategy-2026-06.md` §3.3, is its
+background; its clause numbering differs from the spec's, so cite the spec's
+rule names, never bare clause numbers). Use this checklist for any workflow
+you author; the right column shows where this template satisfies each rule.
 
-| Clause | Requirement | Where this template satisfies it |
+| Rule | Requirement | Where this template satisfies it |
 |---|---|---|
 | Named ticket | The run is launched for a specific ticket id; unattributed output is advisory noise that can never move state. | `args.ticket` is required; the run throws without it, and every evidence record and inbox message carries the ticket id. |
-| Isolated writes | Workflow edits land only in an isolated write target, never on the working/target branch (worktree clause gated on Phase 1.5+; today the guard is forge's branch-per-ticket plus the single in-progress slot). | Satisfied by writing nothing: every verifier and the ingest step are read-only, so there are no edits to isolate. A workflow that *does* edit must route edits per this clause. |
-| Return channels | Output re-enters as exactly one of patch, PR, inbox message, or evidence artifact — never by mutating ticket state. | Findings re-enter via `bin/ct2-evidence verifier` (a `claims.jsonl` row) and `bin/ct2-bridge notify` (an advisory inbox message). The script contains no ticket `mv` and no state write. |
-| Non-role-holding subagents | No subagent writes `ct2-active-role`, claims the in-progress slot, or holds ticket authority. | All subagents are read-only except the re-entry writer; its prompt restates the forbidden list (no ticket moves, no `ct2-active-role`, no in-progress claim, no reconciler/seal/revise calls). |
-| Parent-owns-writes | Only one designated writer performs the CT2 write; fan-out workers never write CT2 state. | Exactly one re-entry subagent writes, serially, at the end of the run, and only through the two sanctioned return channels above. |
+| Isolated write target | Workflow edits land only in an isolated write target, never on the working/target branch (the worktree form is gated on Phase 1.5+; today the guard is forge's branch-per-ticket plus the single in-progress slot). | Satisfied by writing nothing: every verifier and the ingest step are read-only, so there are no edits to isolate. A workflow that *does* edit must route edits per this rule. |
+| Single recognized return channel | Output re-enters as exactly one of patch, PR, inbox message, or evidence artifact — never by mutating ticket state. | Findings re-enter through one channel: `bin/ct2-evidence verifier` (a `claims.jsonl` row). The `bin/ct2-bridge notify` message is a pointer-only advisory notification citing the claim id, evidence path, and ticket id — it carries no findings payload and is not a second channel. The script contains no ticket `mv` and no state write. |
+| Non-role-holding subagents | No subagent writes `ct2-active-role`, claims the in-progress slot, or holds ticket authority. | All subagents are read-only except the re-entry writer; its prompt restates the forbidden list (no ticket moves between state directories, no `ct2-active-role`, no in-progress claim, no reconciler/seal/revise calls). |
+| Parent-owns-writes | Only one designated writer performs the CT2 write; fan-out workers never write CT2 state. | Exactly one re-entry subagent writes, serially, at the end of the run: the evidence record plus its pointer-only notification, nothing else. |
 
-The kernel-side clauses need no checklist because no workflow can satisfy or
+The kernel-side rules need no checklist because no workflow can satisfy or
 waive them: dual review (cc AND cx) stays terminal authority, a workflow's
 self-verification is evidence rather than a verdict, and the reconciler is the
 sole automatic mover into terminal states. `spec/` remains authoritative for
 all conformance rules.
+
+A run intended for conformance validation should also record a
+`ct2-workflow-run/v1` manifest, as described in the Workflow-Run Manifest
+section of `spec/conformance.md`, so the conformance suite can validate the
+re-entry contract and the prompt-construction independence invariant after
+the fact.
 
 ## Determinism Notes
 
