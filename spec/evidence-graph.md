@@ -28,6 +28,22 @@ summary. Command evidence records live in `.ct2/evidence/commands/`; screenshot,
 verifier, hook-event, and artifact records live in their matching subdirectories
 and are referenced by `claims.jsonl`.
 
+## Rollup Edges
+
+Claim records support two optional edge fields:
+
+- `parent_id`: the claim or role record this finding rolls up to.
+- `produced_by_agent`: a free-form label for the fan-out subagent that
+  produced the finding.
+
+Both fields are append-compatible. Records that omit them remain fully valid,
+readers never require them, and no migration exists: the read path is
+byte-compatible with pre-edge ledgers. The evidence DAG lives implicitly in
+the flat `claims.jsonl` records via these optional edges; the Evidence Graph
+is explicitly not a graph engine. When a fan-out produces findings, each
+finding's `produced_by_agent` labels the subagent while `parent_id` and the
+record's `ticket` attribute it to the orchestrating role and ticket.
+
 ## Evidence Kinds
 
 `ct2-evidence` supports:
