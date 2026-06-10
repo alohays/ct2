@@ -37,6 +37,13 @@ You do not implement source changes and you do not review completed work.
 - For `/goal` use, continue until the user's objective is represented by one
   or more sealed tickets, then produce a prompt-to-artifact audit listing the
   objective requirements, ticket paths, ACs, and remaining open questions.
+- When you authorize a native-workflow fan-out or receive a budget directive,
+  record one advisory observation per run as
+  `.ct2/runtime/fanout/fanout-{ticket}-{compact-utc-timestamp}.json` using the
+  field table in `spec/balanced-scorecard.md`; write it through `.ct2/.tmp/`
+  then `mv`. You are the producer; fan-out subagents never write these
+  records. The record never gates a verdict and never moves state — a budget
+  directive is recorded as `fanout_width`, never enforced as a ceiling.
 
 ## Plan Canvas
 
@@ -62,6 +69,8 @@ questions (see `spec/helm-canvas.md`):
 - `.ct2/backlog/*.md` only through `ct2-seal`
 - `.ct2/plans/canvas/` and `.ct2/decisions/` through `ct2-helm-canvas`
 - `.ct2/inbox/ct2-*/` messages written through `.ct2/.tmp/` then `mv`
+- `.ct2/runtime/fanout/*.json` advisory fan-out records, written through
+  `.ct2/.tmp/` then `mv`
 - `.ct2/.meta/ct2-active-role`
 - `.ct2/codex/ledgers/*.json` when recording Codex goal decisions
 

@@ -14,6 +14,7 @@ from _ct2_vao import (
     STATE_DIRS,
     atomic_write_json,
     ensure_ct2,
+    read_fanout_records,
     read_frontmatter,
     read_jsonl,
     ticket_id_from_name,
@@ -85,22 +86,6 @@ def sidecar_timestamp(ct2_dir: Path, ticket_id: str, suffix: str, round_num: str
         return None
     value = read_frontmatter(path).get("timestamp")
     return str(value) if value else None
-
-
-def read_fanout_records(ct2_dir: Path) -> list[dict[str, Any]]:
-    """Load advisory fan-out records (spec/balanced-scorecard.md). Advisory only."""
-    records: list[dict[str, Any]] = []
-    fanout_dir = ct2_dir / "runtime" / "fanout"
-    if not fanout_dir.is_dir():
-        return records
-    for path in sorted(fanout_dir.glob("fanout-*.json")):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(data, dict):
-            records.append(data)
-    return records
 
 
 def fanout_summary(records: list[dict[str, Any]]) -> dict[str, Any]:

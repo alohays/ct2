@@ -49,6 +49,13 @@ run, named `fanout-<ticket>-<compact-utc-timestamp>.json` (for example
 under `.ct2/runtime/` are an advisory runtime twin: they never become source
 of truth and never move terminal states.
 
+The producer is the orchestrating parent role — normally the planner
+(`ct2-helm`, including `ct2-helm-auto-cx`). When that role authorizes a
+native-workflow fan-out or receives a budget directive, it writes one record
+per run with a plain file write or bash heredoc; there is no dedicated bin
+tool. Fan-out subagents never write these records, consistent with the
+parent-owns-writes rule in `spec/role-contracts.md`.
+
 | Field | Required | Meaning |
 |-------|----------|---------|
 | `schema_version` | yes | `"1"` |
@@ -63,7 +70,16 @@ of truth and never move terminal states.
 `ct2-baseline` folds these records into the Cost/Latency section as a
 `fanout` summary and `ct2-cost` surfaces a fan-out summary when records
 exist. When no records exist, both outputs are unchanged. Unreadable or
-malformed record files are skipped, never fatal.
+malformed record files are skipped, never fatal. Both tools load records
+through the shared `read_fanout_records` helper in `bin/_ct2_vao.py`.
+
+The two summaries intentionally expose different aggregates. Both set
+`advisory: true` and `runs`:
+
+| Tool | Location | Additional fields |
+|------|----------|-------------------|
+| `ct2-baseline` | `scorecard.cost_latency.fanout` | `agent_count_p50`, `agent_count_max`, `fanout_width_max`, `speedup_vs_serial_p50` |
+| `ct2-cost` | top-level `fanout` | `agent_count_total`, `fanout_width_max` |
 
 ## Baseline Rules
 

@@ -7,23 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-from _ct2_vao import ensure_ct2, read_jsonl, now
-
-
-def read_fanout_records(ct2_dir: Path) -> list[dict]:
-    """Load advisory fan-out records (spec/balanced-scorecard.md). Advisory only."""
-    records: list[dict] = []
-    fanout_dir = ct2_dir / "runtime" / "fanout"
-    if not fanout_dir.is_dir():
-        return records
-    for path in sorted(fanout_dir.glob("fanout-*.json")):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if isinstance(data, dict):
-            records.append(data)
-    return records
+from _ct2_vao import ensure_ct2, read_fanout_records, read_jsonl, now
 
 
 def fanout_summary(records: list[dict]) -> dict:

@@ -49,8 +49,16 @@ constraints are missing, write a blocked inbox message and stop before sealing.
 8. If auto-seal policy is explicit, run `ct2-seal`; its static ticket quality
    gate must pass before any ticket enters `backlog/`. Otherwise leave tickets
    in draft and record why.
-9. Continue until the initial goal's ticket count, quality bar, and planning
-   coverage are satisfied.
+9. If the user explicitly authorized a parallel-planning fan-out, or the goal
+   carries a budget directive, record one advisory observation per run as
+   `.ct2/runtime/fanout/fanout-{ticket}-{compact-utc-timestamp}.json` using
+   the field table in `spec/balanced-scorecard.md`, written through
+   `.ct2/.tmp/` then `mv`. You are the producer; read-only explorer subagents
+   never write these records. The record never gates a verdict and never
+   moves state — a budget directive is recorded as `fanout_width`, never
+   enforced as a ceiling.
+10. Continue until the initial goal's ticket count, quality bar, and planning
+    coverage are satisfied.
 
 ## Ticket Quality Bar
 
@@ -69,6 +77,8 @@ Every produced ticket must include:
 - `.ct2/backlog/*.md` only through `ct2-seal`
 - `.ct2/codex/ledgers/*.json` or `.md`
 - `.ct2/inbox/ct2-helm/*.md` and downstream clarification messages through
+  `.ct2/.tmp/` then `mv`
+- `.ct2/runtime/fanout/*.json` advisory fan-out records, written through
   `.ct2/.tmp/` then `mv`
 - `.ct2/.meta/ct2-active-role`
 

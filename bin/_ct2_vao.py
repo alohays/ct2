@@ -112,6 +112,22 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def read_fanout_records(ct2_dir: Path) -> list[dict[str, Any]]:
+    """Load advisory fan-out records (spec/balanced-scorecard.md). Advisory only."""
+    records: list[dict[str, Any]] = []
+    fanout_dir = ct2_dir / "runtime" / "fanout"
+    if not fanout_dir.is_dir():
+        return records
+    for path in sorted(fanout_dir.glob("fanout-*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict):
+            records.append(data)
+    return records
+
+
 def read_frontmatter(path: Path) -> dict[str, Any]:
     try:
         content = path.read_text(encoding="utf-8")

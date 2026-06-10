@@ -158,5 +158,38 @@ class CostFanoutTest(unittest.TestCase):
         self.assertIn("fanout (advisory): runs=1 agents=6 width_max=8", cost_text.stdout)
 
 
+class SharedFanoutReaderTest(unittest.TestCase):
+    """The record reader lives once in bin/_ct2_vao.py, not per consumer."""
+
+    def shared_module(self):
+        sys.path.insert(0, str(REPO_ROOT / "bin"))
+        try:
+            import _ct2_vao
+        finally:
+            sys.path.remove(str(REPO_ROOT / "bin"))
+        return _ct2_vao
+
+    def test_consumers_import_the_shared_reader_instead_of_redefining_it(self):
+        for script in ("ct2-baseline", "ct2-cost"):
+            text = (REPO_ROOT / "bin" / script).read_text(encoding="utf-8")
+            self.assertNotIn("def read_fanout_records", text, script)
+            self.assertIn("read_fanout_records", text, script)
+
+    def test_shared_reader_skips_malformed_records_and_tolerates_absence(self):
+        vao = self.shared_module()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ct2 = Path(tmp.name) / ".ct2"
+
+        self.assertEqual([], vao.read_fanout_records(ct2))
+
+        write_fanout_record(ct2)
+        broken = ct2 / "runtime" / "fanout" / "fanout-002-20260610T130000Z.json"
+        broken.write_text("{not json", encoding="utf-8")
+        records = vao.read_fanout_records(ct2)
+        self.assertEqual(1, len(records))
+        self.assertEqual("001", records[0]["ticket"])
+
+
 if __name__ == "__main__":
     unittest.main()
