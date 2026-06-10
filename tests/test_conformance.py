@@ -25,62 +25,157 @@ def run_cmd(args, cwd=None):
     )
 
 
+MANIFEST_FORMAT = "ct2-workflow-run/v1"
+SUBAGENT_KINDS = ("worker", "verifier")
+# Anchor identities fixed by spec/reconciler.md (Terms): cc is Claude,
+# cx is Codex. Violation code 4 binds the keys to these vendors.
+ANCHOR_VENDORS = {"cc": "claude", "cx": "codex"}
+# Sibling-output containment is a substring heuristic; outputs shorter than
+# this (after whitespace normalization) are too terse to be a reliable
+# containment signal and are never flagged (spec/conformance.md, code 2).
+SIBLING_OUTPUT_MIN_CHARS = 20
+
+
+def _normalize_ws(value):
+    return " ".join(value.split()) if isinstance(value, str) else ""
+
+
+def _manifest_is_malformed(manifest):
+    """Schema check behind the `malformed-manifest` violation code.
+
+    Covers the top-level and subagent shapes; quorum shapes are checked in
+    _validate_quorum, which reports the same code.
+    """
+    if not isinstance(manifest, dict):
+        return True
+    if manifest.get("manifest") != MANIFEST_FORMAT:
+        return True
+    subagents = manifest.get("subagents")
+    if not isinstance(subagents, list):
+        return True
+    for record in subagents:
+        if not isinstance(record, dict):
+            return True
+        for field in ("id", "kind", "prompt"):
+            value = record.get(field)
+            if not isinstance(value, str) or not value:
+                return True
+        if record["kind"] not in SUBAGENT_KINDS:
+            return True
+        writes = record.get("writes", [])
+        if not isinstance(writes, list):
+            return True
+        if any(not isinstance(path, str) for path in writes):
+            return True
+    return False
+
+
 def validate_workflow_run_manifest(manifest):
     """Reference validator for `ct2-workflow-run/v1` records.
 
     Implements the violation codes specified in spec/conformance.md
     ("Workflow-Run Manifest"). Returns a list of stable violation codes;
-    an empty list means the record conforms.
+    an empty list means the record conforms. Fails closed: a malformed
+    record is reported as `malformed-manifest` and the remaining checks
+    still run on whatever can be read.
     """
     violations = []
+    if _manifest_is_malformed(manifest):
+        violations.append("malformed-manifest")
+    if not isinstance(manifest, dict):
+        return violations
     ticket = manifest.get("ticket")
     if not isinstance(ticket, str) or not ticket.strip():
         violations.append("missing-ticket")
-    subagents = manifest.get("subagents") or []
-    verifiers = [agent for agent in subagents if agent.get("kind") == "verifier"]
-    for agent in verifiers:
-        prompt = agent.get("prompt", "")
-        leaked = any(
-            sibling.get("output", "") and sibling.get("output", "") in prompt
-            for sibling in verifiers
-            if sibling is not agent
-        )
+    subagents = manifest.get("subagents")
+    if not isinstance(subagents, list):
+        subagents = []
+    subagents = [record for record in subagents if isinstance(record, dict)]
+    # Reviewer-class rule (spec code 2): every record whose kind is not
+    # exactly "worker" is held to the sibling-output check, so a reviewer
+    # relabeled "skeptic", "judge", or any future label cannot evade it.
+    reviewers = [agent for agent in subagents if agent.get("kind") != "worker"]
+    for agent in reviewers:
+        prompt = _normalize_ws(agent.get("prompt"))
+        leaked = False
+        for sibling in reviewers:
+            if sibling is agent:
+                continue
+            output = _normalize_ws(sibling.get("output"))
+            if len(output) >= SIBLING_OUTPUT_MIN_CHARS and output in prompt:
+                leaked = True
+                break
         if leaked:
             violations.append("sibling-output-in-verifier-prompt")
             break
     for agent in subagents:
+        writes = agent.get("writes", [])
+        if not isinstance(writes, list):
+            writes = []
         wrote_role = any(
-            path.rstrip("/").split("/")[-1] == "ct2-active-role"
-            for path in agent.get("writes", [])
+            isinstance(path, str)
+            and path.rstrip("/").split("/")[-1] == "ct2-active-role"
+            for path in writes
         )
         if wrote_role:
             violations.append("subagent-wrote-active-role")
             break
     violations.extend(_validate_quorum(manifest.get("quorum")))
-    return violations
+    deduped = []
+    for code in violations:
+        if code not in deduped:
+            deduped.append(code)
+    return deduped
 
 
 def _validate_quorum(quorum):
     """Vendor-symmetry checks for the optional `quorum` declaration.
 
     Implements violation codes 4-5 of spec/conformance.md ("Workflow-Run
-    Manifest"). Absence of a quorum means the protocol default — the
-    cross-vendor cc AND cx anchors — which always conforms.
+    Manifest"), plus the quorum-shape half of code 6 (`malformed-manifest`).
+    Absence of a quorum means the protocol default — the cross-vendor cc
+    AND cx anchors — which always conforms. Malformed records fail closed:
+    they contribute neither key nor vendor toward the floor.
     """
     if quorum is None:
         return []
+    if not isinstance(quorum, dict):
+        return ["malformed-manifest", "quorum-single-vendor-satisfiable"]
     violations = []
-    binding = quorum.get("binding") or []
+    malformed = False
+    binding = quorum.get("binding")
+    if not isinstance(binding, list):
+        malformed = True
+        binding = []
+    advisory = quorum.get("advisory", [])
+    if not isinstance(advisory, list):
+        malformed = True
+        advisory = []
+    if any(not isinstance(record, dict) for record in advisory):
+        malformed = True
     keys = set()
     vendors = set()
+    anchor_vendors = {key: set() for key in ANCHOR_VENDORS}
     for record in binding:
+        if not isinstance(record, dict):
+            malformed = True
+            continue
         key = record.get("key")
         if isinstance(key, str):
             keys.add(key)
         vendor = record.get("vendor")
-        if isinstance(vendor, str) and vendor.strip():
-            vendors.add(vendor.strip())
-    if not {"cc", "cx"} <= keys or len(vendors) < 2:
+        vendor = vendor.strip() if isinstance(vendor, str) else ""
+        if vendor:
+            vendors.add(vendor)
+        if key in anchor_vendors:
+            anchor_vendors[key].add(vendor)
+    if malformed:
+        violations.append("malformed-manifest")
+    anchors_bound = all(
+        anchor_vendors[key] == {required}
+        for key, required in ANCHOR_VENDORS.items()
+    )
+    if not {"cc", "cx"} <= keys or len(vendors) < 2 or not anchors_bound:
         violations.append("quorum-single-vendor-satisfiable")
     rejection_rule = quorum.get("rejection_rule", "any-binding-rejects")
     if rejection_rule != "any-binding-rejects" or "threshold" in quorum:
@@ -243,6 +338,7 @@ class WorkflowRunManifestTest(unittest.TestCase):
             "missing-ticket",
             "sibling-output-in-verifier-prompt",
             "subagent-wrote-active-role",
+            "malformed-manifest",
         ):
             with self.subTest(code=code):
                 self.assertIn(code, spec)
@@ -250,8 +346,19 @@ class WorkflowRunManifestTest(unittest.TestCase):
     def test_conforming_manifest_passes(self):
         # The conforming fixture deliberately places WORKER output inside
         # both verifier prompts: a verifier may see the work product, only
-        # a sibling reviewer's output is forbidden.
+        # a sibling reviewer's output is forbidden. Assert that precondition
+        # first so this stays a regression guard against an over-broad
+        # sibling-output check.
         manifest = self.load_fixture("workflow-run-conforming.json")
+        worker = next(
+            agent for agent in manifest["subagents"] if agent["kind"] == "worker"
+        )
+        verifiers = [
+            agent for agent in manifest["subagents"] if agent["kind"] == "verifier"
+        ]
+        self.assertGreaterEqual(len(verifiers), 2)
+        for verifier in verifiers:
+            self.assertIn(worker["output"], verifier["prompt"])
         self.assertEqual(validate_workflow_run_manifest(manifest), [])
 
     def test_missing_ticket_id_fails(self):
@@ -268,6 +375,60 @@ class WorkflowRunManifestTest(unittest.TestCase):
         self.assertEqual(
             validate_workflow_run_manifest(manifest),
             ["sibling-output-in-verifier-prompt"],
+        )
+
+    def test_relabeled_reviewer_cannot_evade_sibling_output_check(self):
+        # A reviewer declared with kind "skeptic" is reviewer-class for the
+        # sibling-output check; the undeclared label also fails the schema.
+        manifest = self.load_fixture("workflow-run-skeptic-evasion.json")
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["malformed-manifest", "sibling-output-in-verifier-prompt"],
+        )
+
+    def test_unknown_kind_without_leak_fails_schema_only(self):
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        manifest["subagents"][2]["kind"] = "judge"
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest), ["malformed-manifest"]
+        )
+
+    def test_terse_sibling_output_is_not_flagged(self):
+        # Bare "approve" inside an instruction template is below the
+        # normalized-length floor for the substring heuristic (spec code 2).
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        manifest["subagents"][1]["output"] = "approve"
+        manifest["subagents"][2]["prompt"] = (
+            "Reply with the single word approve if nothing blocks: "
+            "diff --git a/src/parser.py b/src/parser.py"
+        )
+        self.assertEqual(validate_workflow_run_manifest(manifest), [])
+
+    def test_wrong_manifest_identifier_fails(self):
+        manifest = self.load_fixture("workflow-run-malformed.json")
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest), ["malformed-manifest"]
+        )
+
+    def test_missing_subagents_key_fails(self):
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        del manifest["subagents"]
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest), ["malformed-manifest"]
+        )
+
+    def test_subagent_record_missing_prompt_fails(self):
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        del manifest["subagents"][1]["prompt"]
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest), ["malformed-manifest"]
+        )
+
+    def test_non_string_writes_entry_fails_without_crashing(self):
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        manifest["subagents"][0]["writes"] = ["src/parser.py", 42]
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest), ["malformed-manifest"]
         )
 
     def test_subagent_active_role_write_fails(self):
@@ -326,6 +487,40 @@ class WorkflowRunManifestTest(unittest.TestCase):
         self.assertEqual(
             validate_workflow_run_manifest(manifest),
             ["quorum-single-vendor-satisfiable"],
+        )
+
+    def test_quorum_swapped_anchor_vendors_fail(self):
+        # Anchor keys are bound to fixed vendors (spec/reconciler.md, Terms):
+        # cc is claude and cx is codex. Swapping them spans two vendors but
+        # breaks the anchor identities.
+        manifest = self.load_fixture("workflow-run-quorum-swapped-anchors.json")
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["quorum-single-vendor-satisfiable"],
+        )
+
+    def test_quorum_same_vendor_anchor_fails_despite_extra_vendor(self):
+        # cx declaring claude is single-vendor drift even when a codex
+        # skeptic makes the binding set span two vendors.
+        manifest = self.load_fixture("workflow-run-quorum-conforming.json")
+        manifest["quorum"]["binding"] = [
+            {"key": "cc", "vendor": "claude"},
+            {"key": "cx", "vendor": "claude"},
+            {"key": "sk1", "vendor": "codex"},
+        ]
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["quorum-single-vendor-satisfiable"],
+        )
+
+    def test_quorum_non_dict_binding_records_fail_closed(self):
+        # A non-object binding record is malformed and contributes neither
+        # key nor vendor, so the floor violation fires as well.
+        manifest = self.load_fixture("workflow-run-quorum-conforming.json")
+        manifest["quorum"]["binding"] = ["cc", "cx"]
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["malformed-manifest", "quorum-single-vendor-satisfiable"],
         )
 
 

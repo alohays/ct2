@@ -42,23 +42,24 @@ objective and stop condition without project-specific implementation advice.
 
 ## Native-Workflow Re-Entry Contract
 
-A native runtime workflow (for example a Claude Code dynamic workflow, or any
-future vendor orchestration analog) is an ephemeral executor. Its output counts
+A native runtime workflow (a runtime-native dynamic workflow or any vendor's
+orchestration analog) is an ephemeral executor. Its output counts
 in CT2 only after it re-enters the protocol through this contract. The contract
 names no vendor; the same rules apply unchanged to every orchestration runtime.
 A native workflow never holds terminal authority over CT2 state.
 
 A CT2-wrapped workflow run conforms when it satisfies every numbered rule:
 
-1. **Named ticket.** The run MUST name an existing CT2 ticket at launch.
-   Output from a run that names no ticket is advisory evidence only and
-   MUST NOT move ticket state.
+1. **Named ticket.** The run MUST name an existing CT2 ticket — one in
+   `backlog/` or `rejected/` at launch. Output from a run that names no
+   ticket is advisory evidence only and MUST NOT move ticket state.
 2. **Isolated write target.** Workflow edits MUST land only in a per-run
    isolated branch. The worktree form of this rule (`.ct2/worktrees/`,
-   per-run worktree isolation) is gated on Phase-1.5 worktree support, which
-   is unimplemented today (see `spec/directory-structure.md`); until worktrees
-   ship, the equivalent guard is forge's branch-per-ticket plus the single
-   `in-progress/` slot.
+   per-ticket `{id}-{slug}/` worktree isolation) is gated on Phase-1.5
+   worktree support, which is unimplemented today (see
+   `spec/directory-structure.md`; final worktree granularity is settled when
+   Phase-1.5 ships); until worktrees ship, the equivalent guard is forge's
+   branch-per-ticket plus the single `in-progress/` slot.
 3. **Single recognized return channel.** Output MUST re-enter CT2 through
    exactly one of: a patch, a PR, an inbox message, or an evidence artifact
    (a `claims.jsonl` row). Output MUST NOT re-enter by mutating ticket state
@@ -68,6 +69,10 @@ A CT2-wrapped workflow run conforms when it satisfies every numbered rule:
    MUST NOT hold ticket authority.
 5. **Parent-owns-writes.** Only the parent role MAY perform authoritative CT2
    state writes (seal, sidecar, reconcile, ticket `mv`).
+
+Rules 1–5 cover state and writes; the verifier-prompt rule for runs under
+this contract is carried by the Prompt-Construction Independence section
+below.
 
 On the kernel side, three rules are unchanged by any workflow run:
 
@@ -90,11 +95,12 @@ round number), never from wall-clock time or randomness.
 
 Rationale: the workflow runtime disables nondeterministic time and random
 builtins so that a resumed or replayed script reproduces the same
-orchestration. CT2's breakers are wall-clock by design (`now −
+orchestration. CT2's time breakers are wall-clock by design (`now −
 .meta/{id}.started`, `now − .meta/{id}.in-review`; see
 `spec/state-machine.md`) and its stamps carry timestamps — both are sound
 precisely because they execute in the host session, where real time
-exists. A workflow that calls a timestamp- or randomness-minting CT2
+exists. The `max_review_rounds` cap is a deterministic counter, not a
+clock, but it too is enforced from outside the workflow. A workflow that calls a timestamp- or randomness-minting CT2
 script inside its own body breaks its resume; a breaker moved inside a
 workflow stops measuring real time. Each side keeps its guarantees only by
 staying on its own side of the boundary: the workflow stays replayable,
@@ -139,7 +145,8 @@ vendor-symmetric:
    the philosophy has been violated and that revision is non-conforming.
 2. **The quorum floor is cross-vendor 2, not any-2.** The immovable floor for
    `done/` is `lens-cc` (Claude) AND `lens-cx` (Codex). Extra same-vendor
-   skeptics are advisory: they MAY inform a verdict but MUST NOT override the
+   skeptics are advisory by default (promotion rules in `spec/reconciler.md`);
+   even when promoted they MAY add a rejection but MUST NOT override the
    cross-vendor disagreement rule. A same-vendor majority never outvotes a
    single cross-vendor rejection — "either reviewer rejects means rejected"
    dominates every configuration. The normative quorum rules (anchors,
@@ -186,7 +193,11 @@ Top-level fields:
 Each `subagents` record:
 
 - `id` (string, required): identifier unique within the run.
-- `kind` (string, required): `worker` or `verifier`.
+- `kind` (string, required): `worker` or `verifier`. Any other label fails
+  the schema (violation 6). Independently of the schema, every record whose
+  `kind` is not exactly `worker` is treated as reviewer-class by violation
+  check 2, so relabeling a reviewer (`skeptic`, `judge`, any future label)
+  cannot exempt it from the sibling-output check.
 - `prompt` (string, required): the exact prompt the parent orchestrator
   composed for this subagent.
 - `output` (string, optional): the text the subagent returned to the parent
@@ -209,22 +220,43 @@ A manifest fails conformance when any of the following holds, each reported
 as a stable violation code:
 
 1. `missing-ticket` — `ticket` is absent, not a string, or empty.
-2. `sibling-output-in-verifier-prompt` — a verifier record's `prompt`
-   contains the non-empty `output` of any other verifier record.
+2. `sibling-output-in-verifier-prompt` — a reviewer-class record's `prompt`
+   contains the non-empty `output` of any other reviewer-class record.
+   Every record whose `kind` is not exactly `worker` is reviewer-class for
+   this check (an unrecognized label additionally fails as
+   `malformed-manifest`). Containment is a substring heuristic, evaluated on
+   whitespace-normalized text (runs of whitespace collapsed to one space,
+   ends stripped); to avoid false positives on terse outputs — a bare
+   `approve` matching an instruction template, for example — an output
+   shorter than 20 normalized characters is never flagged.
 3. `subagent-wrote-active-role` — any record's `writes` contains a path
    whose final component is `ct2-active-role` (the canonical path is
    `.ct2/.meta/ct2-active-role`; re-entry rule 4).
 4. `quorum-single-vendor-satisfiable` — the declared binding set omits
-   either anchor key (`cc`, `cx`) or spans fewer than two distinct non-empty
-   `vendor` values. Such a configuration is satisfiable by a single vendor
+   either anchor key (`cc`, `cx`), spans fewer than two distinct non-empty
+   `vendor` values, or binds an anchor to the wrong vendor: the `cc` anchor
+   MUST declare vendor `claude` and the `cx` anchor MUST declare vendor
+   `codex`, the anchor identities fixed by `spec/reconciler.md` (Terms).
+   Such a configuration is satisfiable by a single vendor
    and breaks the cross-vendor floor (Vendor Symmetry rule 2). A missing or
    empty `vendor` fails closed: a reviewer whose vendor cannot be determined
-   never counts toward cross-vendor coverage.
+   never counts toward cross-vendor coverage. A binding record that is not
+   an object contributes neither key nor vendor (and additionally fails as
+   `malformed-manifest`).
 5. `quorum-overrides-cross-vendor-rejection` — the quorum declares a
    `rejection_rule` other than `any-binding-rejects`, or declares any
    `threshold`. Vote or threshold semantics is exactly the mechanism that
    would let a same-vendor majority outvote a single cross-vendor rejection
    (`spec/reconciler.md`, Verdict Rule Under A Quorum).
+6. `malformed-manifest` — the record fails the schema: `manifest` is absent
+   or not exactly `ct2-workflow-run/v1`; `subagents` is absent or not an
+   array; a subagent record is not an object or lacks a non-empty string
+   `id`, `kind`, or `prompt`; a `kind` is outside the declared vocabulary
+   (`worker`, `verifier`); a `writes` value is not an array of strings; or
+   a declared `quorum`, its `binding` array, or any of its
+   `binding`/`advisory` records is not the specified shape. The validator
+   fails closed: a malformed record is reported, never silently skipped,
+   and the remaining checks still run on whatever can be read.
 
 The reference validator and fixture manifests live in the conformance suite
 (`tests/test_conformance.py`, `tests/fixtures/`).
