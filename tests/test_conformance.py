@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import unittest
 from pathlib import Path
 
@@ -38,34 +39,35 @@ ANCHOR_VENDORS = {"cc": "claude", "cx": "codex"}
 # when they appear in the prompt as a standalone word-boundary token
 # sequence. Empty outputs never flag: nothing leaked.
 SIBLING_OUTPUT_MIN_CHARS = 20
-# Authoritative .ct2/ surfaces a workflow subagent may never touch
-# (spec/conformance.md, code 7): ticket state directories, review
-# sidecars, and .meta markers.
-PROTECTED_CT2_SEGMENTS = frozenset({
-    "draft",
-    "backlog",
-    "in-progress",
-    "in-review",
-    "done",
-    "rejected",
-    "escalated",
-    "reviews",
-    ".meta",
-})
 # Sanctioned .ct2/ surfaces, explicitly exempt from code 7: evidence/ and
 # inbox/ are the re-entry contract's return channels; runtime/ is
-# advisory; logs/ and telemetry/ are observability.
+# advisory; logs/ and telemetry/ are observability; worktrees/ is the
+# Phase-1.5 isolated write target named by re-entry rule 2. Every other
+# .ct2/ child is protected — the model is default-protected, so an
+# unenumerated child (config/, .protocol-version, .migrations/, anything
+# future) fails closed rather than open.
 EXEMPT_CT2_SEGMENTS = frozenset({
     "evidence",
     "inbox",
     "runtime",
     "logs",
     "telemetry",
+    "worktrees",
 })
 
 
 def _normalize_ws(value):
-    return " ".join(value.split()) if isinstance(value, str) else ""
+    """Normalization behind violation code 2 (spec/conformance.md).
+
+    Unicode format code points (category Cf: ZWSP, ZWJ, BOM, ...) are
+    stripped before whitespace is collapsed, so an invisible separator
+    inserted into a leaked sibling output cannot break the token apart
+    while a downstream model reads straight through it.
+    """
+    if not isinstance(value, str):
+        return ""
+    value = "".join(ch for ch in value if unicodedata.category(ch) != "Cf")
+    return " ".join(value.split())
 
 
 def _sibling_output_leaked(output, prompt):
@@ -116,7 +118,10 @@ def _is_protected_ct2_write(path):
     """True when a write path lands on an authoritative `.ct2/` surface.
 
     Implements violation code 7 of spec/conformance.md ("Workflow-Run
-    Manifest"). Matching is on normalized path segments:
+    Manifest"). The model is default-protected: any `.ct2/` child not in
+    EXEMPT_CT2_SEGMENTS is protected, so an unenumerated child (config/,
+    .protocol-version, .migrations/, anything future) fails closed
+    rather than open. Matching is on normalized path segments:
     posixpath.normpath resolves a leading `./`, `..` hops, duplicate
     slashes, and a trailing slash, and every `.ct2` segment is checked so
     absolute paths containing `/.ct2/` are covered. Backslash separators
@@ -140,10 +145,7 @@ def _is_protected_ct2_write(path):
             continue
         if index + 1 >= len(segments):
             return True
-        child = segments[index + 1]
-        if child in EXEMPT_CT2_SEGMENTS:
-            continue
-        if child in PROTECTED_CT2_SEGMENTS:
+        if segments[index + 1] not in EXEMPT_CT2_SEGMENTS:
             return True
     return False
 
@@ -253,7 +255,10 @@ def _validate_quorum(quorum):
     Manifest"), plus the quorum-shape half of code 6 (`malformed-manifest`).
     Absence of a quorum means the protocol default — the cross-vendor cc
     AND cx anchors — which always conforms. Malformed records fail closed:
-    they contribute neither key nor vendor toward the floor.
+    they contribute neither key nor vendor toward the floor, and a record
+    that is not the specified shape (an object with a non-empty string
+    `key` and a non-empty string `vendor`) is reported, never silently
+    skipped.
     """
     if quorum is None:
         return []
@@ -269,8 +274,16 @@ def _validate_quorum(quorum):
     if not isinstance(advisory, list):
         malformed = True
         advisory = []
-    if any(not isinstance(record, dict) for record in advisory):
-        malformed = True
+    for record in advisory:
+        if not isinstance(record, dict):
+            malformed = True
+            continue
+        key = record.get("key")
+        if not isinstance(key, str) or not key:
+            malformed = True
+        vendor = record.get("vendor")
+        if not isinstance(vendor, str) or not vendor.strip():
+            malformed = True
     keys = set()
     vendors = set()
     anchor_vendors = {key: set() for key in ANCHOR_VENDORS}
@@ -279,12 +292,20 @@ def _validate_quorum(quorum):
             malformed = True
             continue
         key = record.get("key")
-        if isinstance(key, str):
+        if isinstance(key, str) and key:
             keys.add(key)
+        else:
+            # A hostile non-string key (a list or object) must not reach
+            # the anchor membership test below — hashing it would raise —
+            # and a missing or empty key is not the specified shape.
+            malformed = True
+            key = None
         vendor = record.get("vendor")
         vendor = vendor.strip() if isinstance(vendor, str) else ""
         if vendor:
             vendors.add(vendor)
+        else:
+            malformed = True
         if key in anchor_vendors:
             anchor_vendors[key].add(vendor)
     if malformed:
@@ -751,6 +772,32 @@ class WorkflowRunManifestTest(unittest.TestCase):
                     ["sibling-output-in-verifier-prompt"],
                 )
 
+    def test_zero_width_separator_in_leak_is_still_flagged(self):
+        # Unicode format code points (Cf: ZWSP, ZWJ) are invisible to the
+        # downstream model but break naive substring containment, so a
+        # single one inserted into the leaked copy would defeat spec
+        # code 2 while keeping the manifest faithful to the real prompt.
+        # Normalization strips them; both the substring path (long
+        # output) and the lookaround path (terse verdict) must still
+        # fire (ultracode review finding).
+        long_output = "verdict: approve. Findings: none blocking."
+        for zero_width in ("\u200b", "\u200d"):
+            for output in ("reject", long_output):
+                with self.subTest(
+                    zero_width=f"U+{ord(zero_width):04X}", output=output
+                ):
+                    manifest = self.load_fixture("workflow-run-conforming.json")
+                    manifest["subagents"][1]["output"] = output
+                    middle = len(output) // 2
+                    leaked = output[:middle] + zero_width + output[middle:]
+                    manifest["subagents"][2]["prompt"] = (
+                        "Review the diff. Context note: " + leaked
+                    )
+                    self.assertEqual(
+                        validate_workflow_run_manifest(manifest),
+                        ["sibling-output-in-verifier-prompt"],
+                    )
+
     def test_sanctioned_return_channel_writes_pass(self):
         # evidence/ and inbox/ are the re-entry contract's sanctioned
         # return channels; runtime/, logs/, and telemetry/ are advisory
@@ -763,6 +810,38 @@ class WorkflowRunManifestTest(unittest.TestCase):
             ".ct2/runtime/fanout/record.json",
             ".ct2/logs/ct2-forge.log",
             ".ct2/telemetry/events.jsonl",
+        ]
+        self.assertEqual(validate_workflow_run_manifest(manifest), [])
+
+    def test_unenumerated_ct2_children_fail_closed(self):
+        # Default-protected (spec code 7): a .ct2/ child outside the
+        # exempt list is authoritative — config/ parameterizes the
+        # reconciler's verdict table (max_review_rounds) and skeptic
+        # promotion, .protocol-version gates the state-mutating helpers —
+        # so an unenumerated child reports, never validates clean
+        # (ultracode review finding).
+        for path in (
+            ".ct2/config/harness.yaml",
+            ".ct2/.protocol-version",
+            ".ct2/.migrations/0001-layout.sh",
+            ".ct2/decisions/pending/d1.md",
+            ".ct2/plans/plan.md",
+        ):
+            with self.subTest(path=path):
+                manifest = self.load_fixture("workflow-run-conforming.json")
+                manifest["subagents"][0]["writes"] = ["src/parser.py", path]
+                self.assertEqual(
+                    validate_workflow_run_manifest(manifest),
+                    ["subagent-wrote-protected-path"],
+                )
+
+    def test_worktree_writes_pass(self):
+        # .ct2/worktrees/ is the Phase-1.5 isolated write target named by
+        # re-entry rule 2 — exactly where workflow edits are supposed to
+        # land, so it is exempt from code 7.
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        manifest["subagents"][0]["writes"] = [
+            ".ct2/worktrees/001-fanout/src/parser.py",
         ]
         self.assertEqual(validate_workflow_run_manifest(manifest), [])
 
@@ -806,7 +885,8 @@ class WorkflowRunManifestTest(unittest.TestCase):
 
     def test_quorum_unknown_vendor_fails_closed(self):
         # A reviewer whose vendor cannot be determined never counts toward
-        # cross-vendor coverage.
+        # cross-vendor coverage, and an empty vendor is not the specified
+        # record shape (spec code 6), so the record is also malformed.
         manifest = self.load_fixture("workflow-run-quorum-conforming.json")
         manifest["quorum"]["binding"] = [
             {"key": "cc", "vendor": "claude"},
@@ -814,7 +894,7 @@ class WorkflowRunManifestTest(unittest.TestCase):
         ]
         self.assertEqual(
             validate_workflow_run_manifest(manifest),
-            ["quorum-single-vendor-satisfiable"],
+            ["malformed-manifest", "quorum-single-vendor-satisfiable"],
         )
 
     def test_quorum_swapped_anchor_vendors_fail(self):
@@ -849,6 +929,130 @@ class WorkflowRunManifestTest(unittest.TestCase):
         self.assertEqual(
             validate_workflow_run_manifest(manifest),
             ["malformed-manifest", "quorum-single-vendor-satisfiable"],
+        )
+
+    def test_non_dict_quorum_fails_closed(self):
+        # A quorum that is not an object at all is malformed and cannot
+        # demonstrate the cross-vendor floor (spec code 6).
+        for quorum in ("any-two", ["cc", "cx"]):
+            with self.subTest(quorum=quorum):
+                manifest = self.load_fixture(
+                    "workflow-run-quorum-conforming.json"
+                )
+                manifest["quorum"] = quorum
+                self.assertEqual(
+                    validate_workflow_run_manifest(manifest),
+                    ["malformed-manifest", "quorum-single-vendor-satisfiable"],
+                )
+
+    def test_quorum_non_list_binding_fails_closed(self):
+        # A non-array binding declaration contributes no anchors, so the
+        # floor violation fires alongside the shape report (spec code 6).
+        manifest = self.load_fixture("workflow-run-quorum-conforming.json")
+        manifest["quorum"]["binding"] = "cc,cx"
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["malformed-manifest", "quorum-single-vendor-satisfiable"],
+        )
+
+    def test_quorum_off_shape_advisory_fails_closed(self):
+        # A non-array advisory declaration, or an advisory record that is
+        # not the specified shape, is malformed (spec code 6); the intact
+        # binding set keeps the floor satisfied, isolating the report.
+        for advisory in ("none", ["sk1"], [{"foo": 1}]):
+            with self.subTest(advisory=advisory):
+                manifest = self.load_fixture(
+                    "workflow-run-quorum-conforming.json"
+                )
+                manifest["quorum"]["advisory"] = advisory
+                self.assertEqual(
+                    validate_workflow_run_manifest(manifest),
+                    ["malformed-manifest"],
+                )
+
+    def test_quorum_dict_records_off_shape_fail_closed(self):
+        # A record that is an object but lacks a non-empty string key or
+        # a non-empty string vendor is not the specified shape (spec
+        # code 6) and must be reported, never silently skipped. The
+        # intact anchors keep the floor satisfied, isolating the report.
+        anchors = [
+            {"key": "cc", "vendor": "claude"},
+            {"key": "cx", "vendor": "codex"},
+        ]
+        for label, extra_record in (
+            ("missing vendor", {"key": "sk1"}),
+            ("non-string key", {"key": 42, "vendor": "codex"}),
+            ("empty key", {"key": "", "vendor": "codex"}),
+        ):
+            with self.subTest(label=label):
+                manifest = self.load_fixture(
+                    "workflow-run-quorum-conforming.json"
+                )
+                manifest["quorum"]["binding"] = anchors + [extra_record]
+                self.assertEqual(
+                    validate_workflow_run_manifest(manifest),
+                    ["malformed-manifest"],
+                )
+
+    def test_hostile_quorum_binding_key_fails_closed_without_crashing(self):
+        # A binding key declared as a JSON array or object must not crash
+        # the anchor membership test (hashing an unhashable key raises
+        # TypeError); the record is off-shape, so it reports malformed and
+        # contributes nothing toward the floor (ultracode review finding).
+        for hostile_key in (["cc"], {"x": 1}):
+            with self.subTest(key=hostile_key):
+                manifest = self.load_fixture(
+                    "workflow-run-quorum-conforming.json"
+                )
+                manifest["quorum"]["binding"] = [
+                    {"key": hostile_key, "vendor": "claude"},
+                    {"key": "cx", "vendor": "codex"},
+                ]
+                self.assertEqual(
+                    validate_workflow_run_manifest(manifest),
+                    ["malformed-manifest", "quorum-single-vendor-satisfiable"],
+                )
+
+    def test_hostile_quorum_key_does_not_discard_other_violations(self):
+        # _validate_quorum runs last; a crash there would throw away every
+        # violation already collected. A manifest that both writes done/
+        # and carries a list-typed key must report all three codes.
+        manifest = self.load_fixture("workflow-run-quorum-conforming.json")
+        manifest["subagents"][0]["writes"] = [".ct2/done/001-bypass.md"]
+        manifest["quorum"]["binding"] = [
+            {"key": ["cc"], "vendor": "claude"},
+            {"key": "cx", "vendor": "codex"},
+        ]
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            [
+                "subagent-wrote-protected-path",
+                "malformed-manifest",
+                "quorum-single-vendor-satisfiable",
+            ],
+        )
+
+    def test_quorum_threshold_alone_fails(self):
+        # Threshold semantics is the override mechanism even when the
+        # rejection rule is left conforming (spec code 5): a threshold is
+        # exactly what would let a same-vendor majority outvote a single
+        # cross-vendor rejection.
+        manifest = self.load_fixture("workflow-run-quorum-conforming.json")
+        manifest["quorum"]["threshold"] = 2
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["quorum-overrides-cross-vendor-rejection"],
+        )
+
+    def test_quorum_rejection_rule_alone_fails(self):
+        # A vote-style rejection rule fails on its own, without any
+        # declared threshold (spec code 5).
+        manifest = self.load_fixture("workflow-run-quorum-conforming.json")
+        manifest["quorum"]["rejection_rule"] = "binding-majority"
+        self.assertNotIn("threshold", manifest["quorum"])
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["quorum-overrides-cross-vendor-rejection"],
         )
 
 

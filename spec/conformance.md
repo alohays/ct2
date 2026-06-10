@@ -50,9 +50,12 @@ A native workflow never holds terminal authority over CT2 state.
 
 A CT2-wrapped workflow run conforms when it satisfies every numbered rule:
 
-1. **Named ticket.** The run MUST name an existing CT2 ticket — one in
-   `backlog/` or `rejected/` at launch. Output from a run that names no
-   ticket is advisory evidence only and MUST NOT move ticket state.
+1. **Named ticket.** The run MUST name an existing CT2 ticket in a
+   non-terminal state at launch — `backlog/` or `rejected/` for
+   work-producing runs, `in-progress/` for forge-as-workflow
+   implementation, `in-review/` for verification-only runs. Output from a
+   run that names no ticket is advisory evidence only and MUST NOT move
+   ticket state.
 2. **Isolated write target.** Workflow edits MUST land only in a per-run
    isolated branch. The worktree form of this rule (`.ct2/worktrees/`,
    per-ticket `{id}-{slug}/` worktree isolation) is gated on Phase-1.5
@@ -224,8 +227,11 @@ as a stable violation code:
    contains the non-empty `output` of any other reviewer-class record.
    Every record whose `kind` is not exactly `worker` is reviewer-class for
    this check (an unrecognized label additionally fails as
-   `malformed-manifest`). Containment is evaluated on whitespace-normalized
-   text (runs of whitespace collapsed to one space, ends stripped). An
+   `malformed-manifest`). Containment is evaluated on normalized text:
+   Unicode format code points (category Cf — the zero-width separators,
+   ZWSP, ZWNJ/ZWJ, BOM) are stripped, so an invisible character inserted
+   into a leaked output cannot break the token apart, then runs of
+   whitespace are collapsed to one space and ends stripped. An
    output of 20 or more normalized characters is flagged on substring
    containment; a shorter non-empty output — a terse verdict such as
    `reject` — is flagged when it appears in the prompt bounded by string
@@ -254,9 +260,10 @@ as a stable violation code:
    Such a configuration is satisfiable by a single vendor
    and breaks the cross-vendor floor (Vendor Symmetry rule 2). A missing or
    empty `vendor` fails closed: a reviewer whose vendor cannot be determined
-   never counts toward cross-vendor coverage. A binding record that is not
-   an object contributes neither key nor vendor (and additionally fails as
-   `malformed-manifest`).
+   never counts toward cross-vendor coverage (the off-shape record
+   additionally fails as `malformed-manifest`, code 6). A binding record
+   that is not an object contributes neither key nor vendor (and
+   additionally fails as `malformed-manifest`).
 5. `quorum-overrides-cross-vendor-rejection` — the quorum declares a
    `rejection_rule` other than `any-binding-rejects`, or declares any
    `threshold`. Vote or threshold semantics is exactly the mechanism that
@@ -268,24 +275,34 @@ as a stable violation code:
    `id`, `kind`, or `prompt`; a `kind` is outside the declared vocabulary
    (`worker`, `verifier`); a `writes` value is not an array of strings; or
    a declared `quorum`, its `binding` array, or any of its
-   `binding`/`advisory` records is not the specified shape. The validator
-   fails closed: a malformed record is reported, never silently skipped,
-   and the remaining checks still run on whatever can be read.
+   `binding`/`advisory` records is not the specified shape — a record
+   conforms only as an object carrying a non-empty string `key` and a
+   non-empty string `vendor`. The validator fails closed: a malformed
+   record is reported, never silently skipped, and the remaining checks
+   still run on whatever can be read.
 7. `subagent-wrote-protected-path` — any record's `writes` contains a path
-   under a `.ct2/` ticket state directory (`draft/`, `backlog/`,
-   `in-progress/`, `in-review/`, `done/`, `rejected/`, `escalated/`),
-   under `.ct2/reviews/`, or under `.ct2/.meta/` (re-entry rules 3-5):
-   ticket state, review sidecars, and meta markers are authoritative
-   surfaces a workflow subagent may never touch. Two exemption classes,
-   each on its own justification: `.ct2/evidence/` and `.ct2/inbox/` are
+   under any `.ct2/` child not on the exempt list below (re-entry rules
+   3-5). The model is default-protected: the ticket state directories
+   (`draft/`, `backlog/`, `in-progress/`, `in-review/`, `done/`,
+   `rejected/`, `escalated/`), the review sidecars (`reviews/`), the meta
+   markers (`.meta/`), the reconciler configuration (`config/`, which
+   parameterizes `max_review_rounds` and skeptic promotion), the
+   `.protocol-version` marker, `.migrations/`, and any `.ct2/` child this
+   spec has not enumerated are all authoritative surfaces a workflow
+   subagent may never touch — an unenumerated child fails closed, never
+   open. Three exemption classes, each on its own justification:
+   `.ct2/evidence/` and `.ct2/inbox/` are
    exempt as the sanctioned return channels of the re-entry contract
    (rule 3), so a subagent appending a claim or notify message is
    conforming; `.ct2/runtime/`, `.ct2/logs/`, and `.ct2/telemetry/` are
    exempt on a separate ground — they are advisory and observability
    surfaces that are non-authoritative by design (`spec/runtime-mirror.md`:
    advisory metadata, never ticket state), so a subagent write there
-   cannot mint protocol authority. Any path not under `.ct2/` at all is
-   out of scope for this code (workspace edits are governed by re-entry
+   cannot mint protocol authority; `.ct2/worktrees/` is exempt on a third
+   ground — re-entry rule 2 designates it as the Phase-1.5 isolated write
+   target, exactly where workflow edits are supposed to land. Any path
+   not under `.ct2/` at all is out of scope for this code (workspace
+   edits are governed by re-entry
    rule 2, the isolated write target). Matching is on normalized
    path segments — a leading `./`, an absolute path containing `/.ct2/`,
    `..` hops, and a trailing slash all resolve before matching;
