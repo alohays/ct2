@@ -75,8 +75,9 @@ rather than restating it.
 A workflow never holds terminal authority over CT2 state. Its
 self-verification is evidence, not a verdict; the ticket still requires
 independent dual review (lens-cc and lens-cx), and only the reconciler
-performs terminal moves. This rule is vendor-neutral: it applies unchanged
-to any runtime orchestration analog, present or future.
+performs the automatic move to `done/` (the watchdog and duration circuit
+breakers may still escalate). This rule is vendor-neutral: it applies
+unchanged to any runtime orchestration analog, present or future.
 
 ## Optional Executables
 

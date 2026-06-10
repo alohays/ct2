@@ -161,7 +161,7 @@ A native workflow run that wants its output to count in CT2 must satisfy a **re-
 
 A conforming CT2-wrapped workflow run **MUST**:
 
-1. **Name a CT2 ticket.** The workflow is launched for a specific `{ticket-id}` in `backlog/` or `rejected/`; its output is attributed to that ticket. A workflow that names no ticket produces advisory evidence only and can never move state.
+1. **Name a CT2 ticket.** The run MUST name an existing CT2 ticket in a non-terminal state at launch — `backlog/` or `rejected/` for work-producing runs, `in-progress/` for forge-as-workflow implementation, `in-review/` for verification-only runs — and its output is attributed to that ticket. A run that names no ticket is advisory only.
 2. **Write only into an isolated worktree.** Forced-`acceptEdits` edits land *only* in a per-run worktree branch (`isolation:"worktree"`, `baseRef` derived from ticket frontmatter). The working/target branch is never touched by the workflow. *(Depends on CT2 worktree support — Phase 1.5+, unimplemented today; see §5.G2. Until then, the equivalent guard is forge's branch-per-ticket plus the single in-progress slot.)*
 3. **Return through a CT2-recognized channel.** Output re-enters as exactly one of: a **patch** (worktree branch), a **PR**, an **inbox message**, or an **evidence artifact** (`claims.jsonl` row). It never re-enters by mutating ticket state directly. (This is the VAO advisory-runtime rule — "cloud/remote outputs return as patch, PR, inbox message, evidence artifact, or advisory report"; VAO §6.5 — generalized to workflows.)
 4. **Keep its subagents non-role-holding (§5.G10).** No subagent writes `ct2-active-role`, claims the in-progress slot, or holds ticket authority. Only the parent role performs the authoritative CT2 write.
@@ -170,7 +170,7 @@ A conforming CT2-wrapped workflow run **MUST**:
 And the kernel side is **non-negotiable**:
 
 6. **Dual-review stays terminal authority.** The workflow's self-verification (its own adversarial-verify pass) is *evidence*, not a verdict. The ticket still requires cc AND cx independent sidecars.
-7. **The reconciler is the sole automatic mover.** `ct2-reconcile` — not the workflow, not ultracode, not `/code-review ultra` — performs the `done/` / `rejected/` / `escalated/` transition, under its `O_EXCL` lock, after dual-approval.
+7. **The reconciler is the sole automatic verdict mover.** `ct2-reconcile` — not the workflow, not ultracode, not `/code-review ultra` — performs the verdict-driven `done/` / `rejected/` / `escalated/` transition, under its `O_EXCL` lock, after dual-approval. (The watchdog and duration circuit breakers may still escalate on timeout, per `spec/state-machine.md`.)
 
 ### 3.4 Boundary Decision Table (Extending Reframe §5.1)
 
@@ -227,7 +227,7 @@ Taken naively, ultracode says "spend more to parallelize" and CT2 says "spend le
 
 ### 4.3 Why The Two Postures Actually Compose
 
-Ultracode optimizes **throughput within a single executor session**; CT2 optimizes **trust across sessions and vendors**. The reframe and the harness-trends sibling both land on the same empirical signal: *speed is not the bottleneck, correctness is* (Faros AI: +91% review time despite 91% more PRs; the HN refrain "my limiting factor is whether Claude does the task correctly"; Willison's admission he no longer reviews every line). Ultracode makes the executor faster and more expensive; that is the vendor's axis to optimize. CT2's axis — the one the vendor structurally cannot ship for itself — is whether the fast, expensive output is *correct and certified*. The Cost axis in CT2 is therefore not "minimize ultracode's tokens" (CT2 cannot and should not); it is "keep cost-per-*verified*-ticket visible, and never let a Cost-axis gain collapse Trust or Evidence" (VAO §4 cross-axis rule).
+Ultracode optimizes **throughput within a single executor session**; CT2 optimizes **trust across sessions and vendors**. The reframe and the harness-trends sibling both land on the same empirical signal: *speed is not the bottleneck, correctness is* (Faros AI: +91% review time despite +98% more merged PRs; the HN refrain "my limiting factor is whether Claude does the task correctly"; Willison's admission he no longer reviews every line). Ultracode makes the executor faster and more expensive; that is the vendor's axis to optimize. CT2's axis — the one the vendor structurally cannot ship for itself — is whether the fast, expensive output is *correct and certified*. The Cost axis in CT2 is therefore not "minimize ultracode's tokens" (CT2 cannot and should not); it is "keep cost-per-*verified*-ticket visible, and never let a Cost-axis gain collapse Trust or Evidence" (VAO §4 cross-axis rule).
 
 ---
 

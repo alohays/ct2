@@ -52,8 +52,9 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   check that flags Claude-primary drift.
 - Added a CT2-blessed adversarial-verify workflow template under
   `templates/workflows/` that wires reviewer independence by construction.
-- Added a network-free workflow-class capability probe to
-  `ct2-runtime-doctor`; absence degrades to the serial fallback and never
+- Added a network-free workflow-class hint to `ct2-runtime-doctor` —
+  version-derived (`authority: hint`) pending a directly observable
+  workflow surface; absence degrades to the serial fallback and never
   errors.
 - Added optional `parent_id`/`produced_by_agent` attribution to
   `claims.jsonl` evidence records so fan-out findings roll up to the
@@ -90,6 +91,44 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   against Codex multi-agent v2.
 
 ### Fixed
+
+- Hardened the conformance reference validator's quorum checks: a hostile
+  non-string binding `key` (list/object) no longer crashes validation and
+  discards collected violations; binding/advisory records that are objects
+  but lack a non-empty string `key` or `vendor` now report
+  `malformed-manifest` as code 6 promises; the threshold and
+  rejection-rule halves of code 5 and the non-dict-quorum branch gained
+  independent regression tests.
+- Inverted violation code 7 to default-protected: any `.ct2/` child not
+  on the justified exempt list (`evidence/`, `inbox/`, `runtime/`,
+  `logs/`, `telemetry/`, `worktrees/`) now reports
+  `subagent-wrote-protected-path`, closing the fail-open hole where a
+  workflow subagent could write `.ct2/config/harness.yaml` (the live
+  reconciler verdict table and skeptic-promotion surface) or
+  `.ct2/.protocol-version` and validate clean.
+- Code 2 normalization now strips Unicode format code points (Cf), so a
+  zero-width separator inserted into a leaked sibling output no longer
+  defeats the reviewer-independence check.
+- Reconciled re-entry rule 1's launch-state clause with the flows this
+  release sanctions: `backlog/`/`rejected/` for work-producing runs,
+  `in-progress/` for forge-as-workflow implementation, `in-review/` for
+  verification-only runs (spec, strategy doc, and template README now
+  agree).
+- The shared fan-out reader now skips records carrying non-finite numbers
+  (`1e400`, `NaN`) and files that are not valid UTF-8, instead of crashing
+  `ct2-cost` or writing literal `NaN`/`Infinity` into the baseline
+  scorecard JSON; consumers gained coverage for width-only records.
+- The blessed adversarial-verify template now invokes `ct2-evidence` and
+  `ct2-bridge` by bare name (with a `$HOME/.ct2/bin` fallback) so the
+  re-entry channel works in host projects, and records `ok=false`
+  evidence when any skeptic fails to report instead of letting a
+  zero-verifier run land as passing evidence.
+- Scoped reconciler-authority wording in `spec/adapter-format.md`, the
+  template README, and the strategy doc to "sole automatic mover to
+  `done/`" (the watchdog and duration circuit breakers may still
+  escalate), matching conformance kernel rule 8; corrected the Faros AI
+  figure to +98% merged PRs and annotated the remaining superseded
+  0.136.0 re-pin rows with the 2026-06-10 decision.
 
 ### Deprecated
 
