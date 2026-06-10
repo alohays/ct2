@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CT2 Dynamic-Workflow Strategy — Decision Report (2026-06)</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1f2429; --muted:#6b747d; --line:#e3e7eb;
+    --p0:#d6336c; --p1:#f08c00; --p2:#868e96;
+    --go:#2b8a3e; --go-bg:#ebfbee; --defer:#e8810c; --defer-bg:#fff4e6; --cut:#c92a2a; --cut-bg:#fff0f0;
+    --accent:#1c7ed6; --accent-bg:#e7f5ff;
+    --shadow:0 1px 2px rgba(16,24,32,.06),0 4px 16px rgba(16,24,32,.05);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;padding-bottom:96px}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86em}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+
+  header.top{background:linear-gradient(135deg,#11181f,#1f2d3a);color:#fff;padding:30px 0 24px}
+  header.top .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#9fb3c8;font-weight:600}
+  header.top h1{margin:8px 0 6px;font-size:25px;line-height:1.2;font-weight:700}
+  header.top .thesis{font-size:16px;color:#dbe6f0;max-width:760px;border-left:3px solid var(--accent);padding-left:12px;margin-top:12px}
+  header.top .meta{margin-top:14px;font-size:12.5px;color:#9fb3c8;display:flex;flex-wrap:wrap;gap:6px 18px}
+  header.top .docs{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px}
+  header.top .docs a{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);color:#e9f2fa;
+    padding:5px 10px;border-radius:7px;font-size:12.5px}
+  header.top .docs a:hover{background:rgba(255,255,255,.16);text-decoration:none}
+
+  /* sticky decision tally */
+  .tally{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.94);backdrop-filter:saturate(160%) blur(6px);
+    border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+  .tally .wrap{display:flex;align-items:center;gap:14px;padding:9px 20px;flex-wrap:wrap;font-size:13px}
+  .tally b{font-weight:700}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:20px;font-weight:600;font-size:12.5px}
+  .chip .dot{width:8px;height:8px;border-radius:50%}
+  .chip.go{background:var(--go-bg);color:var(--go)} .chip.go .dot{background:var(--go)}
+  .chip.df{background:var(--defer-bg);color:var(--defer)} .chip.df .dot{background:var(--defer)}
+  .chip.ct{background:var(--cut-bg);color:var(--cut)} .chip.ct .dot{background:var(--cut)}
+  .tally .spacer{flex:1}
+  .btn{border:1px solid var(--line);background:#fff;color:var(--ink);padding:7px 13px;border-radius:8px;
+    font-size:13px;font-weight:600;cursor:pointer;transition:.12s}
+  .btn:hover{border-color:#c4ccd4;background:#fbfcfd}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{background:#1971c2}
+
+  section{padding:30px 0 8px}
+  h2{font-size:19px;margin:0 0 4px;display:flex;align-items:center;gap:10px}
+  h2 .n{font-size:12px;color:#fff;background:var(--ink);width:24px;height:24px;border-radius:7px;
+    display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+  .lead{color:var(--muted);margin:0 0 18px;max-width:820px}
+
+  .grid{display:grid;gap:14px}
+  .facts{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+  .fact{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 15px;box-shadow:var(--shadow)}
+  .fact .k{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .fact .v{font-size:15px;margin-top:5px;font-weight:600}
+  .fact .s{font-size:12.5px;color:var(--muted);margin-top:6px}
+  .fact .src{font-size:11px;color:#9aa4ad;margin-top:8px}
+
+  /* position decision */
+  .position{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;box-shadow:var(--shadow)}
+  .position .opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:6px}
+  .opt{border:1.5px solid var(--line);border-radius:10px;padding:13px;cursor:pointer;transition:.12s;background:#fff}
+  .opt:hover{border-color:#b9c2cb}
+  .opt.sel{border-color:var(--accent);background:var(--accent-bg);box-shadow:0 0 0 3px rgba(28,126,214,.12)}
+  .opt .t{font-weight:700;display:flex;align-items:center;gap:8px}
+  .opt .t .mk{width:16px;height:16px;border-radius:50%;border:2px solid #c4ccd4;flex:none}
+  .opt.sel .t .mk{border-color:var(--accent);background:radial-gradient(circle,#fff 0 32%,var(--accent) 42% 100%)}
+  .opt .d{font-size:12.5px;color:var(--muted);margin-top:6px}
+
+  /* bets */
+  .bets{grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
+  .bet{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px;box-shadow:var(--shadow);
+    display:flex;flex-direction:column;gap:10px;transition:.15s;border-left:4px solid var(--p2)}
+  .bet[data-prio="P0"]{border-left-color:var(--p0)}
+  .bet[data-prio="P1"]{border-left-color:var(--p1)}
+  .bet.st-cut{opacity:.6}
+  .bet.st-cut .bet-title{text-decoration:line-through;text-decoration-color:#c92a2a99}
+  .bet-head{display:flex;align-items:flex-start;gap:9px}
+  .bet-id{font-weight:800;font-size:13px;color:#fff;background:var(--ink);border-radius:6px;padding:2px 7px;flex:none}
+  .bet-title{font-weight:700;font-size:14.5px;line-height:1.32}
+  .bet-body{font-size:13px;color:#414b54}
+  .tags{display:flex;flex-wrap:wrap;gap:6px;font-size:11.5px}
+  .tag{background:#f1f3f5;border:1px solid var(--line);border-radius:6px;padding:2px 7px;color:#495057;font-weight:600}
+  .tag.prio.P0{background:#ffe3ec;border-color:#ffc9de;color:var(--p0)}
+  .tag.prio.P1{background:#fff3e0;border-color:#ffe0b3;color:#b35900}
+  .tag.prio.P2{background:#f1f3f5;color:#5c636a}
+  .gaprefs{font-size:11.5px;color:var(--muted)}
+  .seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin-top:auto}
+  .seg button{flex:1;border:0;background:#fff;padding:8px 4px;font-size:12.5px;font-weight:700;cursor:pointer;
+    color:var(--muted);transition:.1s;border-right:1px solid var(--line)}
+  .seg button:last-child{border-right:0}
+  .seg button:hover{background:#f8f9fa}
+  .seg button.on.go{background:var(--go-bg);color:var(--go)}
+  .seg button.on.df{background:var(--defer-bg);color:var(--defer)}
+  .seg button.on.ct{background:var(--cut-bg);color:var(--cut)}
+
+  /* generic table */
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px;background:var(--panel);box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;font-size:13px;min-width:680px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f4f6f8;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:#52606b;font-weight:700;position:sticky;top:0}
+  tr:last-child td{border-bottom:0}
+  .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:700}
+  .pill.P0{background:#ffe3ec;color:var(--p0)} .pill.P1{background:#fff3e0;color:#b35900} .pill.P2{background:#eef0f2;color:#5c636a}
+
+  details.fold{background:var(--panel);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow);overflow:hidden}
+  details.fold>summary{cursor:pointer;padding:13px 16px;font-weight:700;list-style:none;display:flex;align-items:center;gap:9px}
+  details.fold>summary::-webkit-details-marker{display:none}
+  details.fold>summary .car{transition:.2s;color:var(--muted)}
+  details.fold[open]>summary .car{transform:rotate(90deg)}
+  details.fold .inner{padding:0 16px 16px}
+
+  /* collision compare */
+  .compare{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+  .compare .col{padding:16px;background:var(--panel)}
+  .compare .col.l{background:#fff7f7;border-right:1px solid var(--line)}
+  .compare .col h4{margin:0 0 10px;font-size:13.5px}
+  .compare .col.l h4{color:var(--cut)} .compare .col.r h4{color:var(--go)}
+  .compare ul{margin:0;padding-left:18px;font-size:13px;color:#414b54}
+  .compare li{margin:6px 0}
+  .resolve{margin-top:12px;background:var(--accent-bg);border:1px solid #b6dbf7;border-radius:10px;padding:13px 15px;font-size:13.5px}
+
+  /* roadmap */
+  .road{position:relative;margin-left:8px;padding-left:22px;border-left:2px solid var(--line)}
+  .road .step{position:relative;padding:0 0 16px 4px}
+  .road .step::before{content:"";position:absolute;left:-29px;top:3px;width:12px;height:12px;border-radius:50%;
+    background:#fff;border:2.5px solid var(--accent)}
+  .road .step .w{font-weight:700;font-size:14px}
+  .road .step .win{font-size:11.5px;color:var(--muted);font-weight:600;margin-left:6px}
+  .road .step .dl{font-size:13px;color:#414b54;margin-top:3px}
+  .road .step .ex{font-size:12px;color:var(--muted);margin-top:3px}
+
+  /* open questions */
+  .oq{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 15px;box-shadow:var(--shadow);margin-bottom:12px}
+  .oq .q{font-weight:700;font-size:14px}
+  .oq .picks{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 8px}
+  .oq .pick{border:1.5px solid var(--line);background:#fff;border-radius:18px;padding:4px 12px;font-size:12.5px;cursor:pointer;font-weight:600;color:#495057;transition:.1s}
+  .oq .pick:hover{border-color:#b9c2cb}
+  .oq .pick.sel{border-color:var(--accent);background:var(--accent-bg);color:#1565a8}
+  .oq .pick.rec::after{content:" ★";color:var(--p1)}
+  .oq textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;resize:vertical;min-height:38px;margin-top:4px}
+  .oq textarea:focus{outline:2px solid rgba(28,126,214,.25);border-color:var(--accent)}
+
+  .nongoals{list-style:none;padding:0;margin:0;display:grid;gap:8px}
+  .nongoals li{background:#fff;border:1px solid var(--line);border-left:4px solid var(--cut);border-radius:9px;padding:10px 13px;font-size:13px}
+  .nongoals li b{color:var(--cut)}
+
+  /* export bar */
+  .exportbar{position:fixed;bottom:0;left:0;right:0;z-index:40;background:rgba(255,255,255,.95);
+    backdrop-filter:saturate(160%) blur(6px);border-top:1px solid var(--line);box-shadow:0 -2px 12px rgba(16,24,32,.07)}
+  .exportbar .wrap{display:flex;align-items:center;gap:12px;padding:11px 20px}
+  .exportbar .summ{font-size:13px;color:var(--muted);flex:1}
+  .exportbar .summ b{color:var(--ink)}
+
+  /* modal */
+  .modal{position:fixed;inset:0;z-index:60;background:rgba(16,24,32,.55);display:none;align-items:center;justify-content:center;padding:20px}
+  .modal.open{display:flex}
+  .modal .box{background:#fff;border-radius:14px;max-width:780px;width:100%;max-height:86vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .modal .box h3{margin:0;padding:16px 18px;border-bottom:1px solid var(--line);font-size:16px;display:flex;align-items:center}
+  .modal .box h3 .x{margin-left:auto;cursor:pointer;color:var(--muted);font-size:22px;line-height:1}
+  .modal textarea{flex:1;margin:0;border:0;border-radius:0;padding:16px 18px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.5;resize:none;min-height:340px}
+  .modal .foot{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
+  .note{font-size:12px;color:var(--muted)}
+
+  @media (max-width:680px){.compare{grid-template-columns:1fr}.compare .col.l{border-right:0;border-bottom:1px solid var(--line)}}
+  @media print{
+    .tally,.exportbar,.seg,.oq .picks,header.top .docs{display:none!important}
+    body{background:#fff;padding:0} .bet,.fact,.position,.oq,.tablewrap{box-shadow:none}
+    header.top{background:#11181f!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="eyebrow">CT2 · Decision Report · v0.3.0</div>
+    <h1>Dynamic Workflows &amp; Ultracode — Should CT2 become the verification kernel above native orchestration?</h1>
+    <div class="thesis">“Native workflows carry the work; <b>CT2 carries the outcome.</b>” A dynamic workflow is an ephemeral executor — it cannot do review-before-merge. CT2’s durable value is the protocol kernel a workflow must <i>re-enter</i>.</div>
+    <div class="meta">
+      <span>Survey window: <b>May–Jun 2026</b></span>
+      <span>Produced by a 27-agent dynamic workflow (1.8M tokens, adversarially verified)</span>
+      <span>Decide: 1 position · 9 bets · 7 open questions</span>
+    </div>
+    <div class="docs">
+      <a href="ct2-dynamic-workflow-strategy-2026-06.md">📄 Flagship strategy (source)</a>
+      <a href="agent-platform-feature-radar-2026-06.md">📡 Feature radar 2026-06</a>
+      <a href="agentic-harness-trends-2026-06.md">📈 Harness/agentic/vibe trends</a>
+      <a href="ct2-verified-autonomy-os-strategy-2026-05.md">🧭 VAO strategy (2026-05)</a>
+    </div>
+  </div>
+</header>
+
+<div class="tally">
+  <div class="wrap">
+    <span><b>Decisions:</b></span>
+    <span class="chip go"><span class="dot"></span><b id="cGo">0</b> greenlit</span>
+    <span class="chip df"><span class="dot"></span><b id="cDf">0</b> deferred</span>
+    <span class="chip ct"><span class="dot"></span><b id="cCt">0</b> cut</span>
+    <span class="spacer"></span>
+    <span class="note">Position: <b id="posTally">—</b></span>
+    <button class="btn" onclick="resetRec()">Reset to recommended</button>
+    <button class="btn primary" onclick="openExport()">Export decision ▸</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- 1. Key facts -->
+  <section>
+    <h2><span class="n">1</span> What changed (verified)</h2>
+    <p class="lead">The survey’s load-bearing facts, web-corroborated by an adversarial critic pass. These are the reason a decision is needed now.</p>
+    <div class="grid facts" id="facts"></div>
+  </section>
+
+  <!-- 2. The core position -->
+  <section>
+    <h2><span class="n">2</span> The core call</h2>
+    <p class="lead">Everything below depends on this. Do we adopt the <b>“CT2-as-kernel, workflow-as-executor”</b> position — i.e. CT2 stops competing on orchestration and doubles down on durable verification (re-entry contract + dual review + reconciler)?</p>
+    <div class="position">
+      <div class="opts" id="positionOpts"></div>
+    </div>
+  </section>
+
+  <!-- 3. Collision -->
+  <section>
+    <h2><span class="n">3</span> The collision it resolves</h2>
+    <p class="lead">Ultracode says “orchestrate by default, token cost is not a constraint.” CT2 says “stay lean and serial.” Read carefully they optimize <i>different axes</i> — and that is the whole strategy.</p>
+    <div class="compare">
+      <div class="col l">
+        <h4>⚡ Ultracode / dynamic workflow — the executor</h4>
+        <ul>
+          <li>State lives in <b>script variables</b>, not files</li>
+          <li>Resume is <b>session-scoped</b> — a CC exit restarts it fresh</li>
+          <li>Subagents forced into <code>acceptEdits</code>, <b>no mid-run sign-off</b></li>
+          <li>Budget is a <b>soft hint / fan-out lever</b>, not a stop</li>
+          <li>Optimizes <b>throughput within one session</b></li>
+        </ul>
+      </div>
+      <div class="col r">
+        <h4>🛡️ CT2 — the persistent judge</h4>
+        <ul>
+          <li>Durable <code>.ct2/</code> file ledger = cold-restart system of record</li>
+          <li><b>Independent dual review</b> (cc AND cx), no sibling output in prompts</li>
+          <li>Reconciler is the <b>sole</b> automatic path to <code>done/</code></li>
+          <li>Bounds blast radius by <b>agent count + worktree isolation + scope</b></li>
+          <li>Optimizes <b>trust across sessions and vendors</b></li>
+        </ul>
+      </div>
+    </div>
+    <div class="resolve">✅ <b>They compose.</b> The vendor makes the executor faster/cheaper; CT2 certifies whether the fast output is <i>correct</i> — the one axis a single vendor structurally won’t ship (dual-independent review dilutes its own session). And CT2’s check is <b>structurally deeper</b> than the vendor’s own self-verification: only a <b>different model family</b> (Codex reviewing Claude, and vice-versa) neutralizes self-preferential bias — so Claude’s orchestration lead is a reason to <b>strengthen lens-cx, not retire it</b>. Market signal agrees: <b>“speed isn’t the bottleneck, correctness is”</b> (Faros AI: +91% review time despite 91% more PRs).</div>
+  </section>
+
+  <!-- 4. Bets -->
+  <section>
+    <h2><span class="n">4</span> The bets — greenlight / defer / cut</h2>
+    <p class="lead">Nine bets, pre-set to a recommended default (P0 → greenlight, P1 → greenlight, P2 → defer). Override any; the tally and export update live. ★ = recommended default. <b>B9 protects the dual-vendor moat (T0)</b>.</p>
+    <div class="grid bets" id="bets"></div>
+  </section>
+
+  <!-- 5. Gap analysis -->
+  <section>
+    <h2><span class="n">5</span> Gap analysis (reference)</h2>
+    <p class="lead">The 11 gaps the bets address — CT2’s current state vs the dynamic-workflow era.</p>
+    <details class="fold" id="gapfold">
+      <summary><span class="car">▶</span> Show 11 gaps (G1–G11)</summary>
+      <div class="inner"><div class="tablewrap"><table id="gapTable"></table></div></div>
+    </details>
+  </section>
+
+  <!-- 6. Roadmap -->
+  <section>
+    <h2><span class="n">6</span> Roadmap (if greenlit)</h2>
+    <p class="lead">Forward-looking targets, not commitments. Spec/positioning precedes code; cheap network-free detection comes before anything that mutates state.</p>
+    <div class="road" id="road"></div>
+  </section>
+
+  <!-- 7. Open questions -->
+  <section>
+    <h2><span class="n">7</span> Open questions to resolve</h2>
+    <p class="lead">Seven honest unknowns that gate the spec text. Pick a stance (★ = the strategy’s recommended default) and add a note where you have one.</p>
+    <div id="oqs"></div>
+  </section>
+
+  <!-- 8. Non-goals -->
+  <section>
+    <h2><span class="n">8</span> Non-goals (what we refuse)</h2>
+    <p class="lead">Refusals a maintainer may invoke without further debate.</p>
+    <ul class="nongoals" id="nongoals"></ul>
+  </section>
+
+  <p class="note" style="margin:24px 0 8px">Self-contained · no external assets · no server · your selections never leave this page until you export them. This report summarizes the three 2026-06 strategy docs; the markdown docs remain the source of truth.</p>
+</div>
+
+<div class="exportbar">
+  <div class="wrap">
+    <div class="summ">Ready when you are — <b id="barSumm">no decisions recorded yet</b></div>
+    <button class="btn" onclick="window.print()">🖨 Print / PDF</button>
+    <button class="btn primary" onclick="openExport()">Export decision record ▸</button>
+  </div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="box">
+    <h3>Decision record <span class="x" onclick="closeExport()">×</span></h3>
+    <textarea id="exportText" readonly></textarea>
+    <div class="foot">
+      <span class="note" style="margin-right:auto;align-self:center">Paste this back to me to act on it, or drop it into a ticket.</span>
+      <button class="btn" onclick="closeExport()">Close</button>
+      <button class="btn primary" id="copyBtn" onclick="copyExport()">Copy to clipboard</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------------- data (faithful to docs/ct2-dynamic-workflow-strategy-2026-06.md) ---------------- */
+const FACTS = [
+  {k:"The moat (T0)",v:"Cross-vendor = the mechanism",s:"Only a DIFFERENT model family neutralizes self-preferential bias. lens-cc (Claude) AND lens-cx (Codex) is that — not 'any 2 reviewers'. The faster Claude self-verifies (ultracode), the MORE the independent Codex check is required.",src:"strategy T0 / §3.5"},
+  {k:"Codex stable",v:"0.137.0 — 2026-06-04",s:"Remote-control v2, CODEX_API_KEY / short-lived tokens. Ships NO independent dual-reviewer.",src:"web-corroborated"},
+  {k:"Claude Code workflows",v:"Research preview · v2.1.154+",s:"Launched 2026-05-28. 16-concurrent / 1000-total caps. In-workflow subagents forced into acceptEdits.",src:"official docs + harness"},
+  {k:"No mid-run sign-off",v:"Structurally true",s:"Review-before-merge cannot happen inside a workflow — docs say split each stage into its own workflow. This is the seam CT2 occupies.",src:"official docs"},
+  {k:"Budget = soft hint",v:"Not a hard ceiling",s:"Anthropic Task-budgets: soft hint, only max_tokens hard, NOT supported on CC surfaces. CT2 must not promise a token enforcer.",src:"adversarial-verify correction"},
+  {k:"Market bottleneck",v:"Correctness, not speed",s:"Faros AI: +91% review time despite 91% more PRs. Anthropic's own failure modes: laziness, self-preferential bias, goal drift.",src:"trends survey"},
+  {k:"2026-05 silence",v:"Zero prior coverage",s:"Grep of all three 2026-05 strategy docs returns 0 hits for 'dynamic workflow / ultracode / fan-out'. This doc fills the whitespace.",src:"repo grep"},
+];
+
+const POSITION = [
+  {id:"accept",t:"Accept — CT2 as kernel",d:"Adopt the position wholesale: CT2 stops competing on orchestration; embraces workflows in the content tier while core gets thinner. (Recommended)"},
+  {id:"modify",t:"Accept with modifications",d:"Agree with the direction but want changes to scope/sequencing/specific bets before committing. Note them in the open questions."},
+  {id:"reject",t:"Reject / not now",d:"Do not adopt this framing this cycle — keep the 2026-05 posture unchanged and revisit later."},
+];
+
+const BETS = [
+  {id:"B1",prio:"P0",impact:"High",conf:"High",effort:"low",gaps:"G1",rec:"go",
+   title:"Ship the position + Boundary Decision Table row",
+   body:"Merge this strategy note; add the §3.4 row declaring CT2 the verification kernel above workflows. Zero core LOC."},
+  {id:"B2",prio:"P0",impact:"High",conf:"Medium",effort:"medium",gaps:"G2, G9, G10",rec:"go",
+   title:"Codify the re-entry contract",
+   body:"Named ticket, worktree-isolated write target (gated on Phase-1.5), return-as-patch/PR/inbox/evidence, non-role-holding subagents, parent-owns-writes — as an adapter rule."},
+  {id:"B3",prio:"P0",impact:"High",conf:"Medium",effort:"medium",gaps:"G3",rec:"go",
+   title:"Independence → prompt-construction invariant",
+   body:"Elevate 'don't read the sibling sidecar' to 'a verifier's prompt MUST NOT contain any sibling output' in spec/conformance.md; ship a CT2-blessed verify template."},
+  {id:"B4",prio:"P1",impact:"Medium",conf:"High",effort:"low",gaps:"G6, G7",rec:"go",
+   title:"Workflow-class probe + evidence parent edge",
+   body:"Network-free capability probe in ct2-runtime-doctor (not a version gate) + optional parent_id/produced_by_agent edge in claims.jsonl so fan-out evidence rolls up."},
+  {id:"B5",prio:"P1",impact:"Medium",conf:"Medium",effort:"medium",gaps:"G4",rec:"go",
+   title:"Reconciler M-of-N quorum (2-of-2 floor)",
+   body:"Optional M-of-N quorum keeping cc AND cx as the canonical floor; K skeptics advisory. Multi-file change — explicitly NOT LOC-neutral."},
+  {id:"B6",prio:"P1",impact:"Medium",conf:"High",effort:"low",gaps:"G5",rec:"go",
+   title:"Reconcile budget honestly",
+   body:"No token enforcer; budget recorded as advisory fan-out width; add per-run agent count + fan-out-vs-serial speedup to the Cost-Latency scorecard axis."},
+  {id:"B7",prio:"P2",impact:"Medium",conf:"High",effort:"low",gaps:"G8, G9",rec:"df",
+   title:"Spec the determinism boundary",
+   body:"CT2 time/round breakers and ID generation run OUTSIDE the workflow; CT2-emitted scripts derive IDs from stable inputs (content hash + ticket id + round)."},
+  {id:"B8",prio:"P2",impact:"Medium",conf:"Medium",effort:"low",gaps:"G11",rec:"df",
+   title:"Adopt native surfaces as evidence producers",
+   body:"lens-cc may cite /code-review ultra; helm-auto-cx may invoke /deep-research; forge pacing → native /loop+Monitor. All fail-soft; none can move a ticket."},
+  {id:"B9",prio:"P0",impact:"High",conf:"High",effort:"low",gaps:"G3, G4 (+T0)",rec:"go",
+   title:"Vendor-symmetry guard — protect the moat",
+   body:"Make the re-entry contract + quorum floor vendor-neutral (cross-vendor 2 is the floor, not any-2); keep lens-cx first-class at parity with lens-cc; conformance check flags Claude-primary drift. This is the philosophy-protecting bet."},
+];
+
+const GAPS = [
+  ["G1","Dynamic workflows: deterministic JS orchestrator over many subagents","No committed stance; reframe covers single-agent continuation only","Claim the whitespace: declare CT2 the verification kernel above workflows","P0","medium"],
+  ["G2","In-workflow subagents forced into acceptEdits, no mid-run sign-off","Review-before-state-moves; worktrees are an empty Phase 1.5+ dir","Worktree isolation as the mandatory write target for CT2-wrapped workflows","P0","medium"],
+  ["G3","One script holds every subagent return; verifier prompt composed by parent","Independence = session-era no-peek rule; nothing constrains a parent script","Prompt-construction invariant: no sibling output in a verifier prompt","P0","medium"],
+  ["G4","Native verify is N-of-M (kill-on-majority skeptics, judge panels)","Reconciler hard-codes exactly two reviewers (cc AND cx)","Optional M-of-N quorum, 2-of-2 as the canonical floor","P1","medium"],
+  ["G5","Budget is a fan-out lever; directives soft; 1000-agent cap is the only hard guard","budget_usd is null for all roles; cost read post-hoc","Budget as advisory fan-out width; Cost axis sees parallelism","P1","low"],
+  ["G6","Native Workflow runtime / Task / Agent / Monitor / worktree / ultracode","ct2-runtime-doctor probes only versions; can't see native fan-out","Network-free workflow-class capability probe","P1","low"],
+  ["G7","Fan-out attributes findings to dozens of subagents; must roll up","claims.jsonl is a flat per-ticket list; no parent/child edge","One optional parent_id/produced_by_agent field — the durable evidence graph","P1","low"],
+  ["G8","Workflows forbid Date/random; meta must be pure literal; plain JS","CT2 breakers/IDs use wall-clock timestamps","Run CT2 time/ID logic outside the workflow; derive IDs from stable inputs","P2","low"],
+  ["G9","Ultracode expects the planner to author+run fan-out workflows by default","helm-auto-cx forbids subagent fan-out for state writes","Rule: fan out for read-only/impl-in-worktree; state writes stay parent-owned","P1","low"],
+  ["G10","agent()/parallel() spawn many peer subagents at once","Single-value active-role marker; singleton in-progress slot assume one forge","Fan-out subagents are non-role-holding workers; only parent writes CT2 state","P1","low"],
+  ["G11","/deep-research + /code-review ultra are first-class native surfaces","CT2 reimplements bespoke versions; no bridge","Adopt as evidence producers, not verdict authorities (fail-soft)","P2","low"],
+];
+
+const ROAD = [
+  ["W0 — Position","2026-06","Strategy note merged; Boundary Decision Table row added","A contributor can answer 'what must a workflow do to land work in CT2?' without reading code."],
+  ["W1 — Re-entry contract spec","2026-06 → 07","conformance.md gains the re-entry contract + independence invariant","Conformance test fails a workflow that omits a ticket id, injects a sibling sidecar, or has a subagent write ct2-active-role."],
+  ["W2 — Detection + evidence edge","2026-07","Workflow-class probe (graceful fallback) + parent_id edge in claims.jsonl","Doctor reports workflow availability without network; fan-out claims attribute to the role/ticket; absence never errors."],
+  ["W3 — Quorum generalization","2026-07 → 08","Reconciler accepts optional M-of-N; 2-of-2 stays default floor","2-of-2 behavior byte-for-byte unchanged; opt-in quorum passes new tests."],
+  ["W4 — Cost visibility + native adoption","2026-08","Cost axis gains agent count + speedup; ultra/deep-research as cited evidence; forge pacing → native /loop","Scorecard renders a parallel run's width; native calls fail-soft to bespoke paths."],
+  ["W5 — Worktree write target","gated on Phase 1.5+","Re-entry contract's worktree clause becomes a hard requirement","A workflow's acceptEdits edits provably cannot touch the working branch; only the reconciler merges."],
+];
+
+const OQS = [
+  {id:"Q1",q:"Is the CC workflow budget object a hard ceiling in Claude Code specifically?",
+   picks:[["soft","Assume soft — no enforcer (rec)",true],["confirm","Block spec until directly confirmed",false],["hard","Treat as hard ceiling",false]]},
+  {id:"Q2",q:"Can reviewer independence be mechanically enforced for in-workflow verifiers, or only conformance-tested?",
+   picks:[["template","Blessed template + conformance test (rec)",true],["hook","Pursue a tool-layer read-block hook",false],["both","Both — test now, hook if it fires",false]]},
+  {id:"Q3",q:"Do CC hooks (and CT2 heartbeat-via-hooks) fire for subagents inside a workflow?",
+   picks:[["test","Test empirically before relying on it (rec)",true],["reentry","Assume no — rely on re-entry checks only",false]]},
+  {id:"Q4",q:"What is the cold-restart rehydration contract when a workflow dies mid-run?",
+   picks:[["spec","Spec a 'resume-from-ledger' contract (rec)",true],["defer","Defer — acceptable to restart fresh for now",false]]},
+  {id:"Q5",q:"Should CT2 emit/consume .claude/workflows/ scripts directly?",
+   picks:[["protocol","Stay at the file-protocol layer (rec)",true],["template","Ship an optional blessed template only",false],["emit","Emit vendor scripts as CT2 surface",false]]},
+  {id:"Q6",q:"How should an M-of-N quorum treat a cross-vendor split when K same-vendor skeptics are added?",
+   picks:[["dominate","Cross-vendor disagreement dominates: either reviewer rejects ⇒ rejected (rec)",true],["promote","Allow a spec'd promotion rule for advisory skeptics",false]]},
+  {id:"Q7",q:"Will a major runtime ship a file-first workflow-state convention natively (differentiator risk)?",
+   picks:[["monitor","Monitor; re-evaluate on first vendor announcement (rec)",true],["hedge","Accelerate durability work as a hedge now",false]]},
+];
+
+const NONGOALS = [
+  ["Become an orchestrator / re-implement fan-out in CT2 core","the runtime owns orchestration deterministically; re-implementing it violates subtraction."],
+  ["Enforce a live token budget / stop-on-tokens breaker","CT2 cannot live-meter tokens; budgets are soft hints. Promising it would be thicker AND false."],
+  ["Let a workflow / ultracode / ultra move a ticket to done/","terminal authority is the reconciler's alone, after independent dual-approval."],
+  ["Replace dual-independent review with N-of-M same-vendor judges","M-of-N is additive/advisory; cross-vendor cc AND cx stays the trust anchor."],
+  ["Make agent teams / SendMessage / TaskCreate load-bearing inbox transport","experimental, non-resumable, no on-disk audit trail; .ct2/ inbox stays authoritative."],
+  ["Run any CT2 daemon / poller to babysit workflows","the loop belongs to the agent; native /loop+Monitor cover pacing."],
+];
+
+/* ---------------- state ---------------- */
+const state = { position:"accept", bets:{}, oq:{}, oqNotes:{} };
+BETS.forEach(b=>state.bets[b.id]=b.rec);
+OQS.forEach(q=>{ const r=q.picks.find(p=>p[2]); state.oq[q.id]=r?r[0]:null; state.oqNotes[q.id]=""; });
+
+const LABEL = {go:"Greenlight",df:"Defer",ct:"Cut"};
+
+/* ---------------- render ---------------- */
+function el(t,c,h){const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;}
+
+function renderFacts(){
+  const g=document.getElementById('facts');
+  FACTS.forEach(f=>{
+    g.appendChild(el('div','fact',
+      `<div class="k">${f.k}</div><div class="v">${f.v}</div><div class="s">${f.s}</div><div class="src">↳ ${f.src}</div>`));
+  });
+}
+function renderPosition(){
+  const g=document.getElementById('positionOpts');
+  POSITION.forEach(o=>{
+    const d=el('div','opt'+(state.position===o.id?' sel':''),
+      `<div class="t"><span class="mk"></span>${o.t}</div><div class="d">${o.d}</div>`);
+    d.onclick=()=>{state.position=o.id;[...g.children].forEach(c=>c.classList.remove('sel'));d.classList.add('sel');update();};
+    g.appendChild(d);
+  });
+}
+function renderBets(){
+  const g=document.getElementById('bets');
+  BETS.forEach(b=>{
+    const card=el('div','bet');card.dataset.prio=b.prio;card.id='card-'+b.id;
+    card.innerHTML=
+      `<div class="bet-head"><span class="bet-id">${b.id}</span><span class="bet-title">${b.title}</span></div>
+       <div class="bet-body">${b.body}</div>
+       <div class="tags">
+         <span class="tag prio ${b.prio}">${b.prio}</span>
+         <span class="tag">Impact ${b.impact}</span>
+         <span class="tag">Conf ${b.conf}</span>
+         <span class="tag">Effort ${b.effort}</span>
+       </div>
+       <div class="gaprefs">Closes ${b.gaps}</div>
+       <div class="seg" id="seg-${b.id}">
+         <button data-v="go">Greenlight${b.rec==='go'?' ★':''}</button>
+         <button data-v="df">Defer${b.rec==='df'?' ★':''}</button>
+         <button data-v="ct">Cut</button>
+       </div>`;
+    g.appendChild(card);
+    const seg=card.querySelector('#seg-'+b.id);
+    seg.querySelectorAll('button').forEach(btn=>{
+      btn.onclick=()=>{state.bets[b.id]=btn.dataset.v;paintBet(b.id);update();};
+    });
+    paintBet(b.id);
+  });
+}
+function paintBet(id){
+  const v=state.bets[id];const seg=document.getElementById('seg-'+id);const card=document.getElementById('card-'+id);
+  seg.querySelectorAll('button').forEach(btn=>{
+    btn.classList.remove('on','go','df','ct');
+    if(btn.dataset.v===v){btn.classList.add('on',v);}
+  });
+  card.classList.toggle('st-cut',v==='ct');
+}
+function renderGaps(){
+  const t=document.getElementById('gapTable');
+  t.innerHTML=`<thead><tr><th>ID</th><th>New capability</th><th>CT2 today</th><th>Opportunity</th><th>Prio</th><th>Effort</th></tr></thead>`;
+  const tb=el('tbody');
+  GAPS.forEach(r=>{
+    tb.appendChild(el('tr',null,
+      `<td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td><span class="pill ${r[4]}">${r[4]}</span></td><td>${r[5]}</td>`));
+  });
+  t.appendChild(tb);
+}
+function renderRoad(){
+  const g=document.getElementById('road');
+  ROAD.forEach(s=>{
+    g.appendChild(el('div','step',
+      `<div><span class="w">${s[0]}</span><span class="win">${s[1]}</span></div>
+       <div class="dl">${s[2]}</div><div class="ex">Exit: ${s[3]}</div>`));
+  });
+}
+function renderOQ(){
+  const g=document.getElementById('oqs');
+  OQS.forEach(q=>{
+    const box=el('div','oq');
+    let picks='<div class="picks">';
+    q.picks.forEach(p=>{picks+=`<span class="pick${p[2]?' rec':''}${state.oq[q.id]===p[0]?' sel':''}" data-q="${q.id}" data-v="${p[0]}">${p[1]}</span>`;});
+    picks+='</div>';
+    box.innerHTML=`<div class="q">${q.id}. ${q.q}</div>${picks}<textarea placeholder="Optional note / your answer…" data-note="${q.id}"></textarea>`;
+    g.appendChild(box);
+    box.querySelectorAll('.pick').forEach(pk=>{
+      pk.onclick=()=>{state.oq[q.id]=pk.dataset.v;box.querySelectorAll('.pick').forEach(x=>x.classList.remove('sel'));pk.classList.add('sel');update();};
+    });
+    box.querySelector('textarea').oninput=(e)=>{state.oqNotes[q.id]=e.target.value;};
+  });
+}
+function renderNonGoals(){
+  const g=document.getElementById('nongoals');
+  NONGOALS.forEach(n=>g.appendChild(el('li',null,`<b>${n[0]}.</b> — ${n[1]}`)));
+}
+
+/* ---------------- tally + export ---------------- */
+function counts(){
+  let go=0,df=0,ct=0;Object.values(state.bets).forEach(v=>{if(v==='go')go++;else if(v==='df')df++;else ct++;});
+  return {go,df,ct};
+}
+function posLabel(){return POSITION.find(p=>p.id===state.position).t;}
+function update(){
+  const c=counts();
+  document.getElementById('cGo').textContent=c.go;
+  document.getElementById('cDf').textContent=c.df;
+  document.getElementById('cCt').textContent=c.ct;
+  document.getElementById('posTally').textContent=posLabel();
+  document.getElementById('barSumm').innerHTML=
+    `<b>${posLabel()}</b> · ${c.go} greenlit, ${c.df} deferred, ${c.ct} cut · ${OQS.length} open questions`;
+}
+function resetRec(){
+  state.position='accept';
+  BETS.forEach(b=>{state.bets[b.id]=b.rec;paintBet(b.id);});
+  OQS.forEach(q=>{const r=q.picks.find(p=>p[2]);state.oq[q.id]=r?r[0]:null;});
+  document.querySelectorAll('#positionOpts .opt').forEach(o=>o.classList.toggle('sel',false));
+  document.querySelectorAll('#positionOpts .opt')[0].classList.add('sel');
+  document.querySelectorAll('.oq').forEach((box,i)=>{
+    const q=OQS[i];box.querySelectorAll('.pick').forEach(pk=>pk.classList.toggle('sel',pk.dataset.v===state.oq[q.id]));
+  });
+  update();
+}
+function buildExport(){
+  const c=counts();
+  const lines=[];
+  lines.push("# CT2 Dynamic-Workflow Strategy — Decision Record");
+  lines.push("");
+  lines.push("Source: docs/ct2-dynamic-workflow-strategy-2026-06.md (+ 2026-06 radar & trends)");
+  lines.push("");
+  lines.push("## Position");
+  lines.push("- **"+posLabel()+"**");
+  lines.push("");
+  lines.push("## Bets ("+c.go+" greenlit · "+c.df+" deferred · "+c.ct+" cut)");
+  ["go","df","ct"].forEach(v=>{
+    const list=BETS.filter(b=>state.bets[b.id]===v);
+    if(!list.length)return;
+    lines.push("");
+    lines.push("### "+LABEL[v]);
+    list.forEach(b=>lines.push("- "+b.id+" ["+b.prio+"] "+b.title+"  _(closes "+b.gaps+")_"));
+  });
+  lines.push("");
+  lines.push("## Open questions");
+  OQS.forEach(q=>{
+    const pick=q.picks.find(p=>p[0]===state.oq[q.id]);
+    let lab=pick?pick[1].replace(" (rec)",""):"(unanswered)";
+    lines.push("- **"+q.id+"** "+q.q);
+    lines.push("  - Stance: "+lab);
+    if(state.oqNotes[q.id] && state.oqNotes[q.id].trim()) lines.push("  - Note: "+state.oqNotes[q.id].trim());
+  });
+  lines.push("");
+  lines.push("---");
+  lines.push("_Generated from the CT2 decision report (self-contained HTML). Paste back to act on it._");
+  return lines.join("\n");
+}
+function openExport(){document.getElementById('exportText').value=buildExport();document.getElementById('modal').classList.add('open');}
+function closeExport(){document.getElementById('modal').classList.remove('open');}
+function copyExport(){
+  const ta=document.getElementById('exportText');ta.select();
+  navigator.clipboard.writeText(ta.value).then(()=>{
+    const b=document.getElementById('copyBtn');b.textContent="Copied ✓";setTimeout(()=>b.textContent="Copy to clipboard",1500);
+  }).catch(()=>{document.execCommand('copy');});
+}
+document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')closeExport();});
+
+/* init */
+renderFacts();renderPosition();renderBets();renderGaps();renderRoad();renderOQ();renderNonGoals();update();
+</script>
+</body>
+</html>
