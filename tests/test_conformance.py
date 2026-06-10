@@ -10,6 +10,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
+FIXTURES = REPO_ROOT / "tests" / "fixtures"
 
 
 def run_cmd(args, cwd=None):
@@ -22,6 +23,40 @@ def run_cmd(args, cwd=None):
         timeout=30,
         check=False,
     )
+
+
+def validate_workflow_run_manifest(manifest):
+    """Reference validator for `ct2-workflow-run/v1` records.
+
+    Implements the violation codes specified in spec/conformance.md
+    ("Workflow-Run Manifest"). Returns a list of stable violation codes;
+    an empty list means the record conforms.
+    """
+    violations = []
+    ticket = manifest.get("ticket")
+    if not isinstance(ticket, str) or not ticket.strip():
+        violations.append("missing-ticket")
+    subagents = manifest.get("subagents") or []
+    verifiers = [agent for agent in subagents if agent.get("kind") == "verifier"]
+    for agent in verifiers:
+        prompt = agent.get("prompt", "")
+        leaked = any(
+            sibling.get("output", "") and sibling.get("output", "") in prompt
+            for sibling in verifiers
+            if sibling is not agent
+        )
+        if leaked:
+            violations.append("sibling-output-in-verifier-prompt")
+            break
+    for agent in subagents:
+        wrote_role = any(
+            path.rstrip("/").split("/")[-1] == "ct2-active-role"
+            for path in agent.get("writes", [])
+        )
+        if wrote_role:
+            violations.append("subagent-wrote-active-role")
+            break
+    return violations
 
 
 class ConformanceTest(unittest.TestCase):
@@ -166,6 +201,52 @@ class ConformanceTest(unittest.TestCase):
         repo = self._write_role_doc(body)
         ok, evidence = module.role_docs_no_done_bypass(repo)
         self.assertTrue(ok, evidence)
+
+
+class WorkflowRunManifestTest(unittest.TestCase):
+    def load_fixture(self, name):
+        return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+    def test_manifest_format_is_specified(self):
+        spec = (REPO_ROOT / "spec" / "conformance.md").read_text(encoding="utf-8")
+        self.assertIn("ct2-workflow-run/v1", spec)
+        for code in (
+            "missing-ticket",
+            "sibling-output-in-verifier-prompt",
+            "subagent-wrote-active-role",
+        ):
+            with self.subTest(code=code):
+                self.assertIn(code, spec)
+
+    def test_conforming_manifest_passes(self):
+        # The conforming fixture deliberately places WORKER output inside
+        # both verifier prompts: a verifier may see the work product, only
+        # a sibling reviewer's output is forbidden.
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        self.assertEqual(validate_workflow_run_manifest(manifest), [])
+
+    def test_missing_ticket_id_fails(self):
+        manifest = self.load_fixture("workflow-run-missing-ticket.json")
+        self.assertEqual(validate_workflow_run_manifest(manifest), ["missing-ticket"])
+
+    def test_absent_ticket_key_fails(self):
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        del manifest["ticket"]
+        self.assertEqual(validate_workflow_run_manifest(manifest), ["missing-ticket"])
+
+    def test_sibling_reviewer_output_in_verifier_prompt_fails(self):
+        manifest = self.load_fixture("workflow-run-sibling-output.json")
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["sibling-output-in-verifier-prompt"],
+        )
+
+    def test_subagent_active_role_write_fails(self):
+        manifest = self.load_fixture("workflow-run-role-write.json")
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["subagent-wrote-active-role"],
+        )
 
 
 if __name__ == "__main__":

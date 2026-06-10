@@ -79,6 +79,70 @@ On the kernel side, three rules are unchanged by any workflow run:
 An adapter that wraps or invokes a native workflow documents this contract
 following `spec/adapter-format.md`.
 
+## Prompt-Construction Independence
+
+The lens no-peek rule (Conforming Lens Reviewer, rule 2) constrains
+independence at file-read time. That is a session-era mechanism: it assumes a
+reviewer can only see a sibling's conclusion by reading a file. In the
+fan-out era a parent orchestrator script holds every child subagent's return
+value, so it can leak one reviewer's conclusion into another reviewer's
+prompt without any file read occurring. Independence must therefore also be
+constrained at prompt-construction time:
+
+1. A verifier subagent's prompt MUST NOT contain any sibling reviewer's
+   output — not the verdict, not the sidecar text, not the findings.
+2. A verifier prompt MAY contain the work product under review (ticket text,
+   the diff or patch, worker-subagent output). The boundary is what a
+   sibling reviewer concluded, not what the work produced.
+3. The rule is vendor-neutral and applies to in-workflow verifier subagents
+   and to lens reviewers alike. For lens reviewers it extends — it does not
+   replace — the file-read no-peek rule.
+
+CT2 cannot mechanically block a non-conforming orchestration script (the
+script is opaque to the protocol). The rule is conformance-tested after the
+fact through the workflow-run manifest below.
+
+## Workflow-Run Manifest
+
+A workflow-run record is one JSON document, parseable with the Python stdlib
+`json` module, describing a finished CT2-wrapped workflow run so the
+conformance suite can validate the re-entry contract and the
+prompt-construction independence invariant. It is declarative evidence about
+a run, never a control surface: a manifest MUST NOT move ticket state.
+
+Top-level fields:
+
+- `manifest` (string, required): format identifier; this revision is
+  `ct2-workflow-run/v1`.
+- `ticket` (string, required): the CT2 ticket id the run was launched for.
+  A missing or empty value makes the run non-conforming (re-entry rule 1).
+- `subagents` (array, required, may be empty): one record per spawned
+  subagent.
+
+Each `subagents` record:
+
+- `id` (string, required): identifier unique within the run.
+- `kind` (string, required): `worker` or `verifier`.
+- `prompt` (string, required): the exact prompt the parent orchestrator
+  composed for this subagent.
+- `output` (string, optional): the text the subagent returned to the parent
+  (for a verifier: its verdict and findings).
+- `writes` (array of strings, optional): repo-relative paths the subagent
+  wrote.
+
+A manifest fails conformance when any of the following holds, each reported
+as a stable violation code:
+
+1. `missing-ticket` — `ticket` is absent, not a string, or empty.
+2. `sibling-output-in-verifier-prompt` — a verifier record's `prompt`
+   contains the non-empty `output` of any other verifier record.
+3. `subagent-wrote-active-role` — any record's `writes` contains a path
+   whose final component is `ct2-active-role` (the canonical path is
+   `.ct2/.meta/ct2-active-role`; re-entry rule 4).
+
+The reference validator and fixture manifests live in the conformance suite
+(`tests/test_conformance.py`, `tests/fixtures/`).
+
 ## Reference Verification
 
 The reference repository provides:
