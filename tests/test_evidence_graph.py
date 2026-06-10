@@ -147,6 +147,19 @@ class EvidenceGraphEdgeTest(unittest.TestCase):
         self.assertNotIn("parent_id", persisted[0])
         self.assertNotIn("produced_by_agent", persisted[0])
 
+    def test_empty_edge_flags_mean_fields_absent(self):
+        project = self.make_project()
+        result = self.record_command(project, ("--parent-id", "", "--produced-by-agent", ""))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        claim = json.loads(result.stdout)
+        self.assertNotIn("parent_id", claim)
+        self.assertNotIn("produced_by_agent", claim)
+
+        persisted = self.read_claims(project)
+        self.assertEqual(1, len(persisted))
+        self.assertNotIn("parent_id", persisted[0])
+        self.assertNotIn("produced_by_agent", persisted[0])
+
     def test_all_structured_subcommands_accept_edge_flags(self):
         project = self.make_project()
         ct2 = project / ".ct2"
