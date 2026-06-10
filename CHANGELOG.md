@@ -89,6 +89,10 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   than guessed versions; Codex stable is 0.137.0 (2026-06-04) and CT2's
   serial-by-default, no-fan-out-for-state-writes stance is unchanged
   against Codex multi-agent v2.
+- Translated all remaining Korean content to English for OSS readiness:
+  specs, docs, skill files, templates, and inline comments are now
+  English-only. Behavior is unchanged; this is a content-language pass
+  with no protocol-surface edits.
 
 ### Fixed
 
