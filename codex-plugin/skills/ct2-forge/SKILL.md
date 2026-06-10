@@ -100,7 +100,16 @@ blocked or budget-limited evidence.
 
 ## Fallbacks
 
+Fail-soft fallback rules, plus runtime-conditional preferences that name
+their fallback leg here:
+
 - If Codex `/goal` is unavailable, continue the CT2 ticket loop without goal
   continuation; CT2 state remains authoritative.
+- On runtimes with a native self-paced loop and a Monitor-style tool, prefer
+  them for loop pacing over the hand-rolled `loop_interval_active_sec` /
+  `loop_interval_idle_sec` / `loop_interval_dormant_sec` values in
+  `.ct2/config/harness.yaml`; those values remain the fallback when no
+  native pacing surface exists. Absence of a native surface is never an
+  error.
 - If git helpers fail soft, record the warning and continue only when the CT2
   ticket contract still permits review.

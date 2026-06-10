@@ -49,6 +49,7 @@ This directory is excluded from git via `.git/info/exclude` (never via `.gitigno
 │   ├── capabilities.json              # Written by ct2-runtime-doctor
 │   ├── degradations.md                # Human-readable degraded paths
 │   ├── provider-hooks/                # ct2-policy-compile output
+│   ├── fanout/                        # Advisory fan-out observation records (spec/balanced-scorecard.md)
 │   └── artifacts/                     # Runtime probe artifacts
 ├── evidence/                          # Evidence graph records
 │   ├── claims.jsonl                   # Stable evidence claim ids

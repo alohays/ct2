@@ -18,6 +18,13 @@ verdict = rejected  iff  lens-claude.status = rejected
 
 Both reviewers complete their reviews **independently**. Neither reviewer has visibility into the other's result at the time of their review. Independence is enforced by the session separation and by the sidecar file format (each reviewer writes only their own file).
 
+A forward-looking M-of-N quorum extension — up to K additional skeptic
+reviewers, advisory by default, with cross-vendor `cc` AND `cx` as the
+immovable floor — is specified in `spec/reconciler.md` under "Review Quorum
+(M-of-N)". That section is proposed and not implemented (roadmap W3): the
+dual-approval rule above is the only current behavior, and either reviewer
+rejecting means rejected in every proposed quorum configuration.
+
 ## Review Work (Adapter-Owned Continuation)
 
 The agent runtime owns continuation. Each lens adapter uses the runtime's native

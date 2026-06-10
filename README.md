@@ -470,6 +470,10 @@ Full protocol specifications are in [`spec/`](spec/):
 | [`docs/ct2-verified-autonomy-os-full-phase-audit-2026-05-11.md`](docs/ct2-verified-autonomy-os-full-phase-audit-2026-05-11.md) | Full strategy phase audit confirming local phase-exit evidence and separating it from production claims |
 | [`docs/ct2-vao-phase-completion-report-2026-05-11.md`](docs/ct2-vao-phase-completion-report-2026-05-11.md) | Local pilot report showing every VAO phase gate completed with runtime evidence |
 | [`docs/ct2-helm-canvas-plan-2026-05.md`](docs/ct2-helm-canvas-plan-2026-05.md) | Helm Canvas development plan — HTML planning GUI direction and phased roadmap |
+| [`docs/agent-platform-feature-radar-2026-06.md`](docs/agent-platform-feature-radar-2026-06.md) | 2026-06 vendor-surface delta map — dynamic workflows, ultracode, native orchestration surfaces, and the Codex post-0.130.0 line |
+| [`docs/agentic-harness-trends-2026-06.md`](docs/agentic-harness-trends-2026-06.md) | 2026-06 field survey of harness engineering, agentic engineering, and vibe-coding trends |
+| [`docs/ct2-dynamic-workflow-strategy-2026-06.md`](docs/ct2-dynamic-workflow-strategy-2026-06.md) | Flagship 2026-06 strategy note — CT2 as the verification kernel that native dynamic workflows re-enter |
+| [`docs/ct2-dynamic-workflow-strategy-2026-06-decision.html`](docs/ct2-dynamic-workflow-strategy-2026-06-decision.html) | Decision report companion (HTML) to the 2026-06 dynamic-workflow strategy note |
 
 ## Requirements
 
@@ -477,7 +481,7 @@ Full protocol specifications are in [`spec/`](spec/):
 - Python 3.9+
 - Git 2.5+
 - [Claude Code](https://claude.ai/claude-code) (for helm, forge, lens-cc roles)
-- [Codex CLI](https://github.com/openai/codex) 0.128.0+ (for Codex role skills, goal/app-server preflight, and lens-cx)
+- [Codex CLI](https://github.com/openai/codex) 0.130.0+ (observation-verified baseline, 2026-06-10; the 0.128.0 capability floor still defines the goal/app-server schema) — for Codex role skills, goal/app-server preflight, and lens-cx
 
 ## License
 

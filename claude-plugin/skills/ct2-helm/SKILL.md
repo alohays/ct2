@@ -309,6 +309,48 @@ If the user wants to reorder the backlog or interrupt the current in-progress ti
 
 ---
 
+<workflow id="fanout-observation">
+
+## Advisory Fan-Out Recording
+
+You are the producer of advisory fan-out records (`spec/balanced-scorecard.md`).
+Whenever you authorize a native-workflow fan-out for a ticket, or receive a
+budget directive for one, you MUST record one observation per run under
+`.ct2/runtime/fanout/`:
+
+```bash
+mkdir -p .ct2/runtime/fanout
+ts=$(date -u +%Y%m%dT%H%M%SZ)
+tmp=$(mktemp ".ct2/.tmp/fanout-{ticket}-${ts}.XXXXXX")
+cat > "$tmp" <<FANEOF
+{
+  "schema_version": "1",
+  "ticket": "{ticket}",
+  "fanout_width": {authorized width},
+  "agent_count": {subagents the run actually used},
+  "source_directive": "{verbatim directive}",
+  "recorded_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+FANEOF
+mv -n "$tmp" ".ct2/runtime/fanout/fanout-{ticket}-${ts}.json"
+```
+
+Rules:
+- One file per run, named `fanout-{ticket}-{compact-utc-timestamp}.json`,
+  with the field meanings from the table in `spec/balanced-scorecard.md`.
+- Use `"source_directive": null` when no directive suggested the width. Add
+  `wall_ms` and `agent_ms_total` when the run's durations are known; together
+  they yield the fan-out-vs-serial speedup signal.
+- The record is advisory only. It never gates a verdict and never moves
+  ticket state; per the Token Honesty Rule, a budget directive becomes an
+  advisory `fanout_width`, never an enforced ceiling.
+- You — the orchestrating parent role — write the record. Fan-out subagents
+  never do.
+
+</workflow>
+
+---
+
 <access-matrix>
 
 ## What You See vs. What You Should Not Touch
@@ -325,5 +367,6 @@ If the user wants to reorder the backlog or interrupt the current in-progress ti
 | `.ct2/done/` | Yes (read only) | No |
 | `.ct2/inbox/ct2-helm/` | Yes | Yes (claim + ack only) |
 | `.ct2/inbox/ct2-forge/` | No | Yes (send clarification/priority-override) |
+| `.ct2/runtime/fanout/` | Yes | Yes (advisory fan-out records only) |
 
 </access-matrix>
