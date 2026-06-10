@@ -224,11 +224,18 @@ as a stable violation code:
    contains the non-empty `output` of any other reviewer-class record.
    Every record whose `kind` is not exactly `worker` is reviewer-class for
    this check (an unrecognized label additionally fails as
-   `malformed-manifest`). Containment is a substring heuristic, evaluated on
-   whitespace-normalized text (runs of whitespace collapsed to one space,
-   ends stripped); to avoid false positives on terse outputs — a bare
-   `approve` matching an instruction template, for example — an output
-   shorter than 20 normalized characters is never flagged.
+   `malformed-manifest`). Containment is evaluated on whitespace-normalized
+   text (runs of whitespace collapsed to one space, ends stripped). An
+   output of 20 or more normalized characters is flagged on substring
+   containment; a shorter non-empty output — a terse verdict such as
+   `reject` — is flagged when it appears in the prompt as a standalone
+   word-boundary token sequence. An empty or whitespace-only output is
+   never flagged: nothing leaked. The reference check is deliberately
+   conservative — a coincidental standalone occurrence of a terse sibling
+   output (a bare verdict token in an instruction template, for example)
+   is flagged; conforming producers SHOULD keep bare verdict tokens out
+   of verifier instruction text and SHOULD record substantive reviewer
+   outputs (structured findings, not single words).
 3. `subagent-wrote-active-role` — any record's `writes` contains a path
    whose final component is `ct2-active-role` (the canonical path is
    `.ct2/.meta/ct2-active-role`; re-entry rule 4).
@@ -257,6 +264,24 @@ as a stable violation code:
    `binding`/`advisory` records is not the specified shape. The validator
    fails closed: a malformed record is reported, never silently skipped,
    and the remaining checks still run on whatever can be read.
+7. `subagent-wrote-protected-path` — any record's `writes` contains a path
+   under a `.ct2/` ticket state directory (`draft/`, `backlog/`,
+   `in-progress/`, `in-review/`, `done/`, `rejected/`, `escalated/`),
+   under `.ct2/reviews/`, or under `.ct2/.meta/` (re-entry rules 3-5):
+   ticket state, review sidecars, and meta markers are authoritative
+   surfaces a workflow subagent may never touch. Explicitly exempt:
+   `.ct2/evidence/` and `.ct2/inbox/` — the sanctioned return channels of
+   the re-entry contract, so a subagent appending a claim or notify
+   message is conforming — plus `.ct2/runtime/` (advisory records),
+   `.ct2/logs/` and `.ct2/telemetry/` (observability), and any path not
+   under `.ct2/` at all (workspace edits are governed by re-entry rule 2,
+   the isolated write target, not this code). Matching is on normalized
+   path segments — a leading `./`, an absolute path containing `/.ct2/`,
+   `..` hops, and a trailing slash all resolve before matching — and
+   fails closed on ambiguity: a write naming `.ct2` itself, with no
+   resolvable child directory, is protected. A path whose final component
+   is the exact `ct2-active-role` marker is excluded here and reports as
+   `subagent-wrote-active-role` (code 3): one write maps to one code.
 
 The reference validator and fixture manifests live in the conformance suite
 (`tests/test_conformance.py`, `tests/fixtures/`).

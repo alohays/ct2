@@ -1,6 +1,8 @@
 import json
 import importlib.machinery
 import importlib.util
+import posixpath
+import re
 import subprocess
 import sys
 import tempfile
@@ -30,14 +32,91 @@ SUBAGENT_KINDS = ("worker", "verifier")
 # Anchor identities fixed by spec/reconciler.md (Terms): cc is Claude,
 # cx is Codex. Violation code 4 binds the keys to these vendors.
 ANCHOR_VENDORS = {"cc": "claude", "cx": "codex"}
-# Sibling-output containment is a substring heuristic; outputs shorter than
-# this (after whitespace normalization) are too terse to be a reliable
-# containment signal and are never flagged (spec/conformance.md, code 2).
+# Sibling-output containment threshold (spec/conformance.md, code 2):
+# outputs at or above this normalized length use substring containment;
+# shorter non-empty outputs (a terse verdict such as "reject") are flagged
+# when they appear in the prompt as a standalone word-boundary token
+# sequence. Empty outputs never flag: nothing leaked.
 SIBLING_OUTPUT_MIN_CHARS = 20
+# Authoritative .ct2/ surfaces a workflow subagent may never touch
+# (spec/conformance.md, code 7): ticket state directories, review
+# sidecars, and .meta markers.
+PROTECTED_CT2_SEGMENTS = frozenset({
+    "draft",
+    "backlog",
+    "in-progress",
+    "in-review",
+    "done",
+    "rejected",
+    "escalated",
+    "reviews",
+    ".meta",
+})
+# Sanctioned .ct2/ surfaces, explicitly exempt from code 7: evidence/ and
+# inbox/ are the re-entry contract's return channels; runtime/ is
+# advisory; logs/ and telemetry/ are observability.
+EXEMPT_CT2_SEGMENTS = frozenset({
+    "evidence",
+    "inbox",
+    "runtime",
+    "logs",
+    "telemetry",
+})
 
 
 def _normalize_ws(value):
     return " ".join(value.split()) if isinstance(value, str) else ""
+
+
+def _sibling_output_leaked(output, prompt):
+    """Containment check behind violation code 2 (spec/conformance.md).
+
+    Both arguments are whitespace-normalized. An output of at least
+    SIBLING_OUTPUT_MIN_CHARS characters uses plain substring containment;
+    a shorter non-empty output (a terse verdict such as "reject") is
+    flagged when it appears in the prompt as a standalone word-boundary
+    token sequence, so a leaked bare verdict cannot slip under the
+    substring floor while a fragment inside a longer word ("pass" in
+    "passport") does not fire. Empty outputs never flag: nothing leaked.
+    """
+    if not output:
+        return False
+    if len(output) >= SIBLING_OUTPUT_MIN_CHARS:
+        return output in prompt
+    return re.search(r"\b" + re.escape(output) + r"\b", prompt) is not None
+
+
+def _is_protected_ct2_write(path):
+    """True when a write path lands on an authoritative `.ct2/` surface.
+
+    Implements violation code 7 of spec/conformance.md ("Workflow-Run
+    Manifest"). Matching is on normalized path segments:
+    posixpath.normpath resolves a leading `./`, `..` hops, duplicate
+    slashes, and a trailing slash, and every `.ct2` segment is checked so
+    absolute paths containing `/.ct2/` are covered. Fails closed on
+    ambiguity: a write naming `.ct2` itself, with no resolvable child
+    directory, is protected. A path whose final component is the exact
+    `ct2-active-role` marker is excluded — that write reports as code 3
+    (`subagent-wrote-active-role`), so one write maps to one code.
+    """
+    segments = [
+        segment
+        for segment in posixpath.normpath(path.strip()).split("/")
+        if segment and segment != "."
+    ]
+    if not segments or segments[-1] == "ct2-active-role":
+        return False
+    for index, segment in enumerate(segments):
+        if segment != ".ct2":
+            continue
+        if index + 1 >= len(segments):
+            return True
+        child = segments[index + 1]
+        if child in EXEMPT_CT2_SEGMENTS:
+            continue
+        if child in PROTECTED_CT2_SEGMENTS:
+            return True
+    return False
 
 
 def _manifest_is_malformed(manifest):
@@ -102,7 +181,7 @@ def validate_workflow_run_manifest(manifest):
             if sibling is agent:
                 continue
             output = _normalize_ws(sibling.get("output"))
-            if len(output) >= SIBLING_OUTPUT_MIN_CHARS and output in prompt:
+            if _sibling_output_leaked(output, prompt):
                 leaked = True
                 break
         if leaked:
@@ -119,6 +198,17 @@ def validate_workflow_run_manifest(manifest):
         )
         if wrote_role:
             violations.append("subagent-wrote-active-role")
+            break
+    for agent in subagents:
+        writes = agent.get("writes", [])
+        if not isinstance(writes, list):
+            writes = []
+        wrote_protected = any(
+            isinstance(path, str) and _is_protected_ct2_write(path)
+            for path in writes
+        )
+        if wrote_protected:
+            violations.append("subagent-wrote-protected-path")
             break
     violations.extend(_validate_quorum(manifest.get("quorum")))
     deduped = []
@@ -338,6 +428,7 @@ class WorkflowRunManifestTest(unittest.TestCase):
             "missing-ticket",
             "sibling-output-in-verifier-prompt",
             "subagent-wrote-active-role",
+            "subagent-wrote-protected-path",
             "malformed-manifest",
         ):
             with self.subTest(code=code):
@@ -393,15 +484,56 @@ class WorkflowRunManifestTest(unittest.TestCase):
             validate_workflow_run_manifest(manifest), ["malformed-manifest"]
         )
 
-    def test_terse_sibling_output_is_not_flagged(self):
-        # Bare "approve" inside an instruction template is below the
-        # normalized-length floor for the substring heuristic (spec code 2).
+    def test_terse_sibling_output_in_instruction_template_is_flagged(self):
+        # Fail closed (spec code 2): a sibling output of bare "approve" is
+        # below the substring floor but appears as a standalone token in
+        # the verifier's instruction template, so it fires. The check is
+        # deliberately conservative — a coincidental standalone occurrence
+        # like this one is flagged; conforming producers keep bare verdict
+        # tokens out of verifier instruction text.
         manifest = self.load_fixture("workflow-run-conforming.json")
         manifest["subagents"][1]["output"] = "approve"
         manifest["subagents"][2]["prompt"] = (
             "Reply with the single word approve if nothing blocks: "
             "diff --git a/src/parser.py b/src/parser.py"
         )
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["sibling-output-in-verifier-prompt"],
+        )
+
+    def test_leaked_terse_verdict_tokens_are_flagged(self):
+        # A parent orchestrator leaking a sibling's one-word verdict into
+        # a verifier prompt is exactly the evasion the word-boundary rule
+        # closes (spec code 2).
+        for token in ("approve", "approved", "reject", "rejected"):
+            with self.subTest(token=token):
+                manifest = self.load_fixture("workflow-run-conforming.json")
+                manifest["subagents"][1]["output"] = token
+                manifest["subagents"][2]["prompt"] = (
+                    f"The sibling verdict was {token}. Now review: "
+                    "diff --git a/src/parser.py b/src/parser.py"
+                )
+                self.assertEqual(
+                    validate_workflow_run_manifest(manifest),
+                    ["sibling-output-in-verifier-prompt"],
+                )
+
+    def test_terse_output_inside_longer_word_is_not_flagged(self):
+        # Word-boundary negative: "pass" occurring only inside "passport"
+        # is not a standalone token sequence, so nothing fires.
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        manifest["subagents"][1]["output"] = "pass"
+        manifest["subagents"][2]["prompt"] = (
+            "Check the passport validation: "
+            "diff --git a/src/parser.py b/src/parser.py"
+        )
+        self.assertEqual(validate_workflow_run_manifest(manifest), [])
+
+    def test_empty_sibling_output_is_not_flagged(self):
+        # An empty or whitespace-only output leaks nothing (spec code 2).
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        manifest["subagents"][1]["output"] = "   "
         self.assertEqual(validate_workflow_run_manifest(manifest), [])
 
     def test_wrong_manifest_identifier_fails(self):
@@ -437,6 +569,69 @@ class WorkflowRunManifestTest(unittest.TestCase):
             validate_workflow_run_manifest(manifest),
             ["subagent-wrote-active-role"],
         )
+
+    def test_subagent_protected_path_write_fails(self):
+        # A subagent writing a ticket directly into done/ bypasses the
+        # reconciler; the manifest must fail closed (spec code 7).
+        manifest = self.load_fixture("workflow-run-protected-write.json")
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["subagent-wrote-protected-path"],
+        )
+
+    def test_protected_ct2_surface_writes_fail(self):
+        # Every ticket state directory, the review sidecars, and the .meta
+        # markers are authoritative surfaces (spec code 7).
+        for path in (
+            ".ct2/draft/001-wip.md",
+            ".ct2/backlog/001-queued.md",
+            ".ct2/in-progress/001-claimed.md",
+            ".ct2/in-review/001-pending.md",
+            ".ct2/rejected/001-rework.md",
+            ".ct2/escalated/001-stuck.md",
+            ".ct2/reviews/001-cx-r1.md",
+            ".ct2/.meta/anything",
+        ):
+            with self.subTest(path=path):
+                manifest = self.load_fixture("workflow-run-conforming.json")
+                manifest["subagents"][0]["writes"] = ["src/parser.py", path]
+                self.assertEqual(
+                    validate_workflow_run_manifest(manifest),
+                    ["subagent-wrote-protected-path"],
+                )
+
+    def test_protected_path_matching_normalizes_segments(self):
+        # A leading ./, an absolute prefix, a .. hop, and a trailing slash
+        # all resolve before matching; a bare .ct2 write fails closed.
+        for path in (
+            "./.ct2/done/001-bypass.md",
+            "/home/runner/project/.ct2/done/001-bypass.md",
+            ".ct2/done/",
+            ".ct2/evidence/../done/001-bypass.md",
+            ".ct2",
+        ):
+            with self.subTest(path=path):
+                manifest = self.load_fixture("workflow-run-conforming.json")
+                manifest["subagents"][0]["writes"] = [path]
+                self.assertEqual(
+                    validate_workflow_run_manifest(manifest),
+                    ["subagent-wrote-protected-path"],
+                )
+
+    def test_sanctioned_return_channel_writes_pass(self):
+        # evidence/ and inbox/ are the re-entry contract's sanctioned
+        # return channels; runtime/, logs/, and telemetry/ are advisory
+        # and observability surfaces (spec code 7 exemptions).
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        manifest["subagents"][0]["writes"] = [
+            "src/parser.py",
+            ".ct2/evidence/claims.jsonl",
+            ".ct2/inbox/helm/msg.md",
+            ".ct2/runtime/fanout/record.json",
+            ".ct2/logs/ct2-forge.log",
+            ".ct2/telemetry/events.jsonl",
+        ]
+        self.assertEqual(validate_workflow_run_manifest(manifest), [])
 
     def test_cross_vendor_quorum_with_advisory_skeptic_passes(self):
         # Anchors cc (claude) AND cx (codex) binding, plus a same-vendor

@@ -1,0 +1,19 @@
+{
+  "manifest": "ct2-workflow-run/v1",
+  "ticket": "ct2-example-fanout",
+  "subagents": [
+    {
+      "id": "worker-1",
+      "kind": "worker",
+      "prompt": "Implement the parser fix for ticket ct2-example-fanout.",
+      "output": "diff --git a/src/parser.py b/src/parser.py",
+      "writes": ["src/parser.py", ".ct2/done/001-bypass.md"]
+    },
+    {
+      "id": "verifier-cc",
+      "kind": "verifier",
+      "prompt": "Review this work product independently: diff --git a/src/parser.py b/src/parser.py",
+      "output": "verdict: approve. Findings: none blocking."
+    }
+  ]
+}
