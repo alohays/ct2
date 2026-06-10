@@ -241,8 +241,11 @@ as a stable violation code:
    outputs (structured findings, not single words).
 3. `subagent-wrote-active-role` — any record's `writes` contains a path
    whose final component is `ct2-active-role` (the canonical path is
-   `.ct2/.meta/ct2-active-role`; re-entry rule 4). The component is
-   matched casefolded, consistent with code 7.
+   `.ct2/.meta/ct2-active-role`; re-entry rule 4). Codes 3 and 7 consume
+   one shared normal form (outer whitespace stripped, backslash
+   separators normalized, segments casefolded), so a whitespace-padded
+   or case-variant marker write classifies as the trimmed canonical
+   marker — code 3 — and can never fall between the two codes.
 4. `quorum-single-vendor-satisfiable` — the declared binding set omits
    either anchor key (`cc`, `cx`), spans fewer than two distinct non-empty
    `vendor` values, or binds an anchor to the wrong vendor: the `cc` anchor

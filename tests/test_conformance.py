@@ -90,6 +90,28 @@ def _sibling_output_leaked(output, prompt):
     return re.search(pattern, prompt) is not None
 
 
+def _normalized_path_segments(path):
+    """Shared write-path normalization for codes 3 and 7.
+
+    One normal form feeds both codes so no path can fall between them:
+    outer whitespace stripped, backslash separators normalized to
+    slashes, posixpath.normpath applied, segments casefolded.
+    """
+    return [
+        segment.casefold()
+        for segment in posixpath.normpath(
+            path.strip().replace("\\", "/")
+        ).split("/")
+        if segment and segment != "."
+    ]
+
+
+def _is_active_role_write(path):
+    """Code 3: the write's final normalized component is the marker."""
+    segments = _normalized_path_segments(path)
+    return bool(segments) and segments[-1] == "ct2-active-role"
+
+
 def _is_protected_ct2_write(path):
     """True when a write path lands on an authoritative `.ct2/` surface.
 
@@ -105,15 +127,12 @@ def _is_protected_ct2_write(path):
     itself, with no resolvable child directory, is protected. A path
     whose final component is the `ct2-active-role` marker (casefolded)
     is excluded — that write reports as code 3
-    (`subagent-wrote-active-role`), so one write maps to one code.
+    (`subagent-wrote-active-role`), so one write maps to one code. Both
+    codes consume the same _normalized_path_segments form, so a
+    whitespace-padded or case-variant marker write cannot fall between
+    them.
     """
-    segments = [
-        segment.casefold()
-        for segment in posixpath.normpath(
-            path.strip().replace("\\", "/")
-        ).split("/")
-        if segment and segment != "."
-    ]
+    segments = _normalized_path_segments(path)
     if not segments or segments[-1] == "ct2-active-role":
         return False
     for index, segment in enumerate(segments):
@@ -202,9 +221,7 @@ def validate_workflow_run_manifest(manifest):
         if not isinstance(writes, list):
             writes = []
         wrote_role = any(
-            isinstance(path, str)
-            and path.replace("\\", "/").rstrip("/").split("/")[-1].casefold()
-            == "ct2-active-role"
+            isinstance(path, str) and _is_active_role_write(path)
             for path in writes
         )
         if wrote_role:
@@ -669,6 +686,35 @@ class WorkflowRunManifestTest(unittest.TestCase):
         self.assertEqual(
             validate_workflow_run_manifest(manifest),
             ["subagent-wrote-active-role"],
+        )
+
+    def test_whitespace_padded_active_role_write_reports_code_3(self):
+        # Codes 3 and 7 consume one shared normal form, so a
+        # whitespace-padded marker write cannot fall between them: it
+        # classifies as the trimmed canonical marker, code 3 (lens-cx
+        # round-3 finding).
+        for path in (
+            ".ct2/.meta/ct2-active-role ",
+            ".ct2/.meta/ct2-active-role\n",
+            ".ct2/.meta/ct2-active-role\t",
+            " .ct2/.meta/ct2-active-role",
+        ):
+            with self.subTest(path=repr(path)):
+                manifest = self.load_fixture("workflow-run-conforming.json")
+                manifest["subagents"][0]["writes"] = [path]
+                self.assertEqual(
+                    validate_workflow_run_manifest(manifest),
+                    ["subagent-wrote-active-role"],
+                )
+
+    def test_meta_write_with_internal_whitespace_reports_code_7(self):
+        # Internal whitespace stays significant: not the marker, but
+        # still under protected .ct2/.meta/ — code 7, never clean.
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        manifest["subagents"][0]["writes"] = [".ct2/.meta/ct2-active-role x"]
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["subagent-wrote-protected-path"],
         )
 
     def test_case_variant_exempt_channel_writes_pass(self):
