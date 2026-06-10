@@ -38,6 +38,11 @@ constraints are missing, write a blocked inbox message and stop before sealing.
    tmpfile-then-`mv`.
 5. Discover candidate improvements from code inspection, tests, docs, and
    allowed external sources. Cite or summarize every external source used.
+   You MAY invoke a native deep-research surface (such as `/deep-research`)
+   for discovery when the runtime exposes one and the goal's allowed sources
+   permit it. Its output is evidence to cite in the ledger, never a verdict:
+   it cannot seal tickets or move CT2 state. Fail-soft — if the surface is
+   absent, continue with the bespoke discovery path; never an error.
 6. Reject duplicate, overlapping, speculative, or over-broad ideas before
    ticket creation.
 7. Write bounded tickets to `.ct2/draft/{id}-{slug}.md`.

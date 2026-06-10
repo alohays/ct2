@@ -256,7 +256,14 @@ When all AC items are `[x]`:
 
 ### Step 8: Loop Pacing
 
-Use `/loop` (self-paced) with appropriate intervals from harness.yaml:
+On runtimes with a native self-paced loop and a `Monitor` tool (Claude Code
+`/loop` + `Monitor`), you SHOULD prefer them: let `/loop` self-pace and use
+`Monitor` to follow background tests/builds instead of sleeping on fixed
+intervals.
+
+The hand-rolled intervals from harness.yaml are the fallback when no native
+pacing surface exists (fail-soft — absence means fixed-interval pacing, never
+an error):
 - Active work in progress: `loop_interval_active_sec` (default 60s)
 - Backlog exists but nothing picked up yet: `loop_interval_idle_sec` (default 120s)
 - No tickets anywhere: `loop_interval_dormant_sec` (default 180s)
