@@ -79,6 +79,27 @@ On the kernel side, three rules are unchanged by any workflow run:
 An adapter that wraps or invokes a native workflow documents this contract
 following `spec/adapter-format.md`.
 
+## Workflow Determinism Boundary
+
+CT2's time and round circuit breakers (`ct2-duration-check`,
+`ct2-review-watchdog`, the `max_review_rounds` cap) and CT2 identifier
+generation run outside any deterministic native workflow — in the host
+session or as one-shot tools. A CT2-emitted workflow script MUST derive
+every identifier it mints from stable inputs only (content hash, ticket id,
+round number), never from wall-clock time or randomness.
+
+Rationale: the workflow runtime disables nondeterministic time and random
+builtins so that a resumed or replayed script reproduces the same
+orchestration. CT2's breakers are wall-clock by design (`now −
+.meta/{id}.started`, `now − .meta/{id}.in-review`; see
+`spec/state-machine.md`) and its stamps carry timestamps — both are sound
+precisely because they execute in the host session, where real time
+exists. A workflow that calls a timestamp- or randomness-minting CT2
+script inside its own body breaks its resume; a breaker moved inside a
+workflow stops measuring real time. Each side keeps its guarantees only by
+staying on its own side of the boundary: the workflow stays replayable,
+and the breakers keep bounding wall-clock and rework from outside it.
+
 ## Prompt-Construction Independence
 
 The lens no-peek rule (Conforming Lens Reviewer, rule 2) constrains
