@@ -420,6 +420,9 @@ When a new feature appears in an agent runtime, classify it before writing code:
 | Show progress, logs, session links, or remote task ids | Advisory runtime metadata | May live under `.ct2/runtime/` or `.ct2/telemetry/`; cannot move tickets. |
 | Ask the user for clarification or approval | Decision bridge | Write a `.ct2/decisions/` or inbox record; runtime UI is optional transport. |
 | Decide `done/`, `rejected/`, or `escalated/` | Reconciler authority | Only `ct2-reconcile` can do this automatically. |
+| Fan out / orchestrate a multi-agent task | Runtime workflow | Author or invoke a workflow in the adapter. It writes only into an isolated write target, names a CT2 ticket, and re-enters CT2 at the verify/commit boundary. Never terminal authority; the contract is vendor-neutral. |
+
+> **2026-06 amendment.** The *runtime workflow* row was added by the dynamic-workflow strategy note (`docs/ct2-dynamic-workflow-strategy-2026-06.md`, §3.3 re-entry contract and §3.4), which composes with this document and defines the full contract a workflow run must satisfy before its output can count.
 
 ---
 
