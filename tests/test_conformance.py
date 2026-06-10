@@ -74,16 +74,20 @@ def _sibling_output_leaked(output, prompt):
     Both arguments are whitespace-normalized. An output of at least
     SIBLING_OUTPUT_MIN_CHARS characters uses plain substring containment;
     a shorter non-empty output (a terse verdict such as "reject") is
-    flagged when it appears in the prompt as a standalone word-boundary
-    token sequence, so a leaked bare verdict cannot slip under the
-    substring floor while a fragment inside a longer word ("pass" in
-    "passport") does not fire. Empty outputs never flag: nothing leaked.
+    flagged when it appears in the prompt bounded by string edges or
+    non-word characters (lookaround boundaries, not bare \\b anchors —
+    a \\b around an output that starts or ends with punctuation such as
+    "reject!" or "[reject]" would silently fail to anchor), so a leaked
+    punctuation-wrapped verdict cannot slip under the substring floor
+    while a fragment inside a longer word ("pass" in "passport") does
+    not fire. Empty outputs never flag: nothing leaked.
     """
     if not output:
         return False
     if len(output) >= SIBLING_OUTPUT_MIN_CHARS:
         return output in prompt
-    return re.search(r"\b" + re.escape(output) + r"\b", prompt) is not None
+    pattern = r"(?<!\w)" + re.escape(output) + r"(?!\w)"
+    return re.search(pattern, prompt) is not None
 
 
 def _is_protected_ct2_write(path):
@@ -93,15 +97,21 @@ def _is_protected_ct2_write(path):
     Manifest"). Matching is on normalized path segments:
     posixpath.normpath resolves a leading `./`, `..` hops, duplicate
     slashes, and a trailing slash, and every `.ct2` segment is checked so
-    absolute paths containing `/.ct2/` are covered. Fails closed on
-    ambiguity: a write naming `.ct2` itself, with no resolvable child
-    directory, is protected. A path whose final component is the exact
-    `ct2-active-role` marker is excluded — that write reports as code 3
+    absolute paths containing `/.ct2/` are covered. Backslash separators
+    are normalized to slashes first, and segment comparisons are
+    casefolded — case-insensitive filesystems (the macOS default) resolve
+    `.CT2/Done/` onto the protected directories, so case variants must
+    not validate clean. Fails closed on ambiguity: a write naming `.ct2`
+    itself, with no resolvable child directory, is protected. A path
+    whose final component is the `ct2-active-role` marker (casefolded)
+    is excluded — that write reports as code 3
     (`subagent-wrote-active-role`), so one write maps to one code.
     """
     segments = [
-        segment
-        for segment in posixpath.normpath(path.strip()).split("/")
+        segment.casefold()
+        for segment in posixpath.normpath(
+            path.strip().replace("\\", "/")
+        ).split("/")
         if segment and segment != "."
     ]
     if not segments or segments[-1] == "ct2-active-role":
@@ -193,7 +203,8 @@ def validate_workflow_run_manifest(manifest):
             writes = []
         wrote_role = any(
             isinstance(path, str)
-            and path.rstrip("/").split("/")[-1] == "ct2-active-role"
+            and path.replace("\\", "/").rstrip("/").split("/")[-1].casefold()
+            == "ct2-active-role"
             for path in writes
         )
         if wrote_role:
@@ -616,6 +627,82 @@ class WorkflowRunManifestTest(unittest.TestCase):
                 self.assertEqual(
                     validate_workflow_run_manifest(manifest),
                     ["subagent-wrote-protected-path"],
+                )
+
+    def test_case_variant_protected_paths_fail(self):
+        # Case-insensitive filesystems (the macOS default) resolve case
+        # variants onto the protected directories; segment comparisons
+        # are casefolded so a relabeled case cannot validate clean
+        # (lens-cx round-2 finding).
+        for path in (
+            ".CT2/done/001-bypass.md",
+            ".ct2/Done/001-bypass.md",
+            ".Ct2/reviews/001-cx-r1.md",
+            ".ct2/IN-REVIEW/001-pending.md",
+            ".ct2/.META/anything",
+        ):
+            with self.subTest(path=path):
+                manifest = self.load_fixture("workflow-run-conforming.json")
+                manifest["subagents"][0]["writes"] = [path]
+                self.assertEqual(
+                    validate_workflow_run_manifest(manifest),
+                    ["subagent-wrote-protected-path"],
+                )
+
+    def test_backslash_separator_protected_paths_fail(self):
+        # Alternate separator forms are normalized before matching, not
+        # passed through (lens-cx round-2 finding).
+        for path in (".ct2\\done\\001-bypass.md", "\\.ct2\\reviews\\001.md"):
+            with self.subTest(path=path):
+                manifest = self.load_fixture("workflow-run-conforming.json")
+                manifest["subagents"][0]["writes"] = [path]
+                self.assertEqual(
+                    validate_workflow_run_manifest(manifest),
+                    ["subagent-wrote-protected-path"],
+                )
+
+    def test_case_variant_active_role_write_reports_code_3(self):
+        # The active-role marker match is casefolded consistently with
+        # code 7, so the case-variant marker write still maps to code 3.
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        manifest["subagents"][0]["writes"] = [".ct2/.meta/CT2-ACTIVE-ROLE"]
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["subagent-wrote-active-role"],
+        )
+
+    def test_case_variant_exempt_channel_writes_pass(self):
+        # Exemptions casefold symmetrically with protections: a case
+        # variant of a sanctioned channel is still that channel.
+        manifest = self.load_fixture("workflow-run-conforming.json")
+        manifest["subagents"][0]["writes"] = [
+            ".ct2/Evidence/claims.jsonl",
+            ".CT2/inbox/helm/msg.md",
+        ]
+        self.assertEqual(validate_workflow_run_manifest(manifest), [])
+
+    def test_punctuation_wrapped_terse_verdict_leak_is_flagged(self):
+        # \b around an escaped output that starts or ends with punctuation
+        # fails to anchor; lookaround boundaries do not (lens-cx round-2
+        # finding). Each output is copied verbatim into a sibling
+        # verifier's prompt and must fire spec code 2.
+        for output in (
+            "reject.",
+            "reject!",
+            '"reject"',
+            "[reject]",
+            "(reject)",
+            "**reject**",
+        ):
+            with self.subTest(output=output):
+                manifest = self.load_fixture("workflow-run-conforming.json")
+                manifest["subagents"][1]["output"] = output
+                manifest["subagents"][2]["prompt"] = (
+                    "Review the diff. Context note: " + output
+                )
+                self.assertEqual(
+                    validate_workflow_run_manifest(manifest),
+                    ["sibling-output-in-verifier-prompt"],
                 )
 
     def test_sanctioned_return_channel_writes_pass(self):

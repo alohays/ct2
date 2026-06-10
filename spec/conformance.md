@@ -228,8 +228,11 @@ as a stable violation code:
    text (runs of whitespace collapsed to one space, ends stripped). An
    output of 20 or more normalized characters is flagged on substring
    containment; a shorter non-empty output — a terse verdict such as
-   `reject` — is flagged when it appears in the prompt as a standalone
-   word-boundary token sequence. An empty or whitespace-only output is
+   `reject` — is flagged when it appears in the prompt bounded by string
+   edges or non-word characters (lookaround boundaries, not bare
+   word-boundary anchors: a punctuation-wrapped verdict such as
+   `reject!` or `[reject]` must still be detected). An empty or
+   whitespace-only output is
    never flagged: nothing leaked. The reference check is deliberately
    conservative — a coincidental standalone occurrence of a terse sibling
    output (a bare verdict token in an instruction template, for example)
@@ -238,7 +241,8 @@ as a stable violation code:
    outputs (structured findings, not single words).
 3. `subagent-wrote-active-role` — any record's `writes` contains a path
    whose final component is `ct2-active-role` (the canonical path is
-   `.ct2/.meta/ct2-active-role`; re-entry rule 4).
+   `.ct2/.meta/ct2-active-role`; re-entry rule 4). The component is
+   matched casefolded, consistent with code 7.
 4. `quorum-single-vendor-satisfiable` — the declared binding set omits
    either anchor key (`cc`, `cx`), spans fewer than two distinct non-empty
    `vendor` values, or binds an anchor to the wrong vendor: the `cc` anchor
@@ -269,19 +273,27 @@ as a stable violation code:
    `in-progress/`, `in-review/`, `done/`, `rejected/`, `escalated/`),
    under `.ct2/reviews/`, or under `.ct2/.meta/` (re-entry rules 3-5):
    ticket state, review sidecars, and meta markers are authoritative
-   surfaces a workflow subagent may never touch. Explicitly exempt:
-   `.ct2/evidence/` and `.ct2/inbox/` — the sanctioned return channels of
-   the re-entry contract, so a subagent appending a claim or notify
-   message is conforming — plus `.ct2/runtime/` (advisory records),
-   `.ct2/logs/` and `.ct2/telemetry/` (observability), and any path not
-   under `.ct2/` at all (workspace edits are governed by re-entry rule 2,
-   the isolated write target, not this code). Matching is on normalized
+   surfaces a workflow subagent may never touch. Two exemption classes,
+   each on its own justification: `.ct2/evidence/` and `.ct2/inbox/` are
+   exempt as the sanctioned return channels of the re-entry contract
+   (rule 3), so a subagent appending a claim or notify message is
+   conforming; `.ct2/runtime/`, `.ct2/logs/`, and `.ct2/telemetry/` are
+   exempt on a separate ground — they are advisory and observability
+   surfaces that are non-authoritative by design (`spec/runtime-mirror.md`:
+   advisory metadata, never ticket state), so a subagent write there
+   cannot mint protocol authority. Any path not under `.ct2/` at all is
+   out of scope for this code (workspace edits are governed by re-entry
+   rule 2, the isolated write target). Matching is on normalized
    path segments — a leading `./`, an absolute path containing `/.ct2/`,
-   `..` hops, and a trailing slash all resolve before matching — and
-   fails closed on ambiguity: a write naming `.ct2` itself, with no
+   `..` hops, and a trailing slash all resolve before matching;
+   backslash separators normalize to slashes; and segment comparisons
+   are casefolded, because case-insensitive filesystems (the macOS
+   default) resolve `.CT2/Done/` onto the protected directories. Fails
+   closed on ambiguity: a write naming `.ct2` itself, with no
    resolvable child directory, is protected. A path whose final component
-   is the exact `ct2-active-role` marker is excluded here and reports as
-   `subagent-wrote-active-role` (code 3): one write maps to one code.
+   is the `ct2-active-role` marker (casefolded) is excluded here and
+   reports as `subagent-wrote-active-role` (code 3): one write maps to
+   one code.
 
 The reference validator and fixture manifests live in the conformance suite
 (`tests/test_conformance.py`, `tests/fixtures/`).
