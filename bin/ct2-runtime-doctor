@@ -21,11 +21,11 @@ from _ct2_vao import atomic_write_json, atomic_write_text, ensure_ct2, now
 # Codex upstream stable was 0.137.0 (2026-06-04) at the 2026-06 radar survey
 # (docs/agent-platform-feature-radar-2026-06.md).
 #
-# MIN_CODEX stays at 0.130.0 deliberately: the minimum is the oldest version
-# delivering the capabilities CT2 actually requires (non-interactive exec,
-# `features list` probing, the 0.128.0 goals/app-server schema per
-# spec/codex-runtime-contract.md), and 0.130.0 is the 2026-05 radar's observed
-# baseline at or above that floor. The 0.136.0+ surfaces
+# MIN_CODEX stays at 0.130.0 deliberately: 0.128.0 is the historical
+# schema/capability floor (non-interactive exec, `features list` probing, the
+# goals/app-server schema per spec/codex-runtime-contract.md), and 0.130.0 is
+# the observation-verified enforced baseline at or above that floor (2026-05
+# radar; README and spec re-pinned to it on 2026-06-10). The 0.136.0+ surfaces
 # (`tools.experimental_request_user_input`, `app-server --stdio`,
 # thread-resume) are optional enhancements with graceful fallbacks, and
 # subagents TOML / multi-agent v2 (dogfood defaults through 0.137.0) ship no

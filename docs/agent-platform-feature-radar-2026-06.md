@@ -90,6 +90,8 @@ Treated as high-confidence ground truth for **capability facts**; version/date a
 | Claude Code | `2.1.138` (`MIN_CLAUDE` in `bin/ct2-runtime-doctor:20`) | Document `v2.1.154` as the **dynamic-workflows feature gate** (and `v2.1.160` for the `ultracode` keyword rename). **Do not** raise `MIN_CLAUDE` to it — prefer **capability-probing** the Workflow/ToolSearch surface over a version assertion (see G6). | Workflows require `v2.1.154`; that is the first release where the orchestration surface exists. |
 | Codex | `0.130.0` (`MIN_CODEX` in doctor; README still says `0.128.0+` at `README.md:480`) | Bump the documented minimum to `0.136.0` (for `tools.experimental_request_user_input` + `app-server --stdio` + thread-resume); note `0.137.0` is current stable. | README baseline (`0.128.0+`) is two stable-minor lines behind reality; `0.136.0` is the floor where the request-input toggle is consistent. |
 
+> **Decision 2026-06-10** — kept `0.130.0` per capability-not-version gating (`spec/runtime-capabilities.md`); the `0.136.0` surfaces are tracked as capabilities, not a version gate.
+
 > **Verification caveat carried forward** (per [`ct2-session-retrospective-2026-05-13.md`](ct2-session-retrospective-2026-05-13.md)): the version/date facts above were corroborated against GitHub release timestamps and official docs directly, **not** via WebFetch date-reasoning (which previously mis-flagged a real citation as fabricated). Every capability fact is tagged Primary / Official / Web-unconfirmed; nothing in the radar tables below depends on a web-only number.
 
 ---
@@ -254,7 +256,7 @@ Each gap states the new capability, CT2's current state (repo-verified), the opp
 
 | Phase | Timebox | Deliverables | Exit criteria |
 |---|---:|---|---|
-| 0 | 1 week | New strategy note "CT2 above native workflows" (composes_with the reframe) + Boundary Decision Table row + re-pinned baselines in README/doctor docs | Position is written; Codex min documented at `0.136.0`, Claude workflow gate documented at `v2.1.154`; no core code changed. |
+| 0 | 1 week | New strategy note "CT2 above native workflows" (composes_with the reframe) + Boundary Decision Table row + re-pinned baselines in README/doctor docs | Position is written; Codex min documented at `0.136.0`, Claude workflow gate documented at `v2.1.154`; no core code changed. *Decision 2026-06-10 — kept `0.130.0` per capability-not-version gating (`spec/runtime-capabilities.md`); `0.136.0` surfaces are tracked as capabilities, not a version gate.* |
 | 1 | 1–2 weeks | Reviewer-independence prompt-construction invariant in `spec/conformance.md` + CT2-blessed adversarial-verify workflow template (adapter artifact) | A leaky verifier-prompt is flagged non-conforming by the conformance check; the blessed template wires cc/cx independence by construction. |
 | 2 | 2–3 weeks | Non-role-holding subagent rule (G9/G10) across role specs/adapters; helm-auto-cx vs ultracode rule codified | Fan-out for discovery/implementation is allowed; CT2 state writes remain parent-owned; active-role marker / in-progress slot cannot be claimed by a subagent. |
 | 3 | 3–4 weeks | Workflow-class capability probe in `ct2-runtime-doctor` (capability-gated, network-free); optional `parent_id`/`produced_by_agent` edge in `claims.jsonl` | Doctor reports workflow availability and degrades to "serial fallback"; fan-out evidence attributes to parent role/ticket. |
