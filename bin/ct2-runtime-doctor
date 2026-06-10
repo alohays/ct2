@@ -18,6 +18,10 @@ from _ct2_vao import atomic_write_json, atomic_write_text, ensure_ct2, now
 
 MIN_CODEX = (0, 130, 0)
 MIN_CLAUDE = (2, 1, 138)
+# Claude Code dynamic workflows ship at v2.1.154+ (research preview); see
+# docs/ct2-dynamic-workflow-strategy-2026-06.md. Hint threshold only, not a
+# supported-version floor.
+WORKFLOW_CLASS_CLAUDE = (2, 1, 154)
 
 
 def run(cmd: list[str], cwd: Path, timeout: int = 10) -> dict[str, object]:
@@ -56,6 +60,40 @@ def parse_version(text: str) -> tuple[int, int, int] | None:
 
 def version_ok(found: tuple[int, int, int] | None, minimum: tuple[int, int, int]) -> bool:
     return found is not None and found >= minimum
+
+
+def probe_workflow_class(claude: dict) -> dict:
+    """Network-free hint for native dynamic-workflow (workflow-class) support.
+
+    A shell probe cannot query a live runtime tool list, so this derives a
+    capability hint from the claude CLI version signal and reports the
+    detection method alongside it — never a guarantee. Absence or an
+    unparseable version is a healthy serial-fallback state, never an error.
+    """
+    threshold = ".".join(str(part) for part in WORKFLOW_CLASS_CLAUDE)
+    probe = {
+        "state": "unknown-serial-fallback",
+        "method": "none",
+        "authority": "hint",
+    }
+    try:
+        if not claude.get("available"):
+            probe["method"] = "claude-cli-missing"
+            return probe
+        found = parse_version(str(claude.get("version") or ""))
+        if found is None:
+            probe["method"] = "claude-cli-version-unparseable"
+            return probe
+        if found >= WORKFLOW_CLASS_CLAUDE:
+            probe["state"] = "available"
+            probe["method"] = f"claude-cli-version>={threshold}"
+        else:
+            probe["state"] = "unavailable-serial-fallback"
+            probe["method"] = f"claude-cli-version<{threshold}"
+    except Exception:
+        probe["state"] = "unknown-serial-fallback"
+        probe["method"] = "probe-error"
+    return probe
 
 
 def probe_runtime(project_dir: Path, name: str, env_key: str, default_cmd: str, minimum: tuple[int, int, int]) -> dict:
@@ -198,6 +236,7 @@ def main() -> int:
         },
         "local": local_tools(),
     }
+    report["workflow_class"] = probe_workflow_class(report["runtimes"]["claude"])
     report["degradations"] = degradation_lines(report)
 
     atomic_write_json(ct2_dir, ct2_dir / "runtime" / "capabilities.json", report, "runtime-doctor-")
@@ -225,6 +264,8 @@ def main() -> int:
             print(f"  Protocol action: {protocol['suggested_action']}")
         print(f"  Codex:  {'available' if report['runtimes']['codex']['available'] else 'missing'} {report['runtimes']['codex'].get('version') or ''}")
         print(f"  Claude: {'available' if report['runtimes']['claude']['available'] else 'missing'} {report['runtimes']['claude'].get('version') or ''}")
+        workflow = report["workflow_class"]
+        print(f"  Workflow-class: {workflow['state']} (hint via {workflow['method']})")
         print(f"  Wrote:  {ct2_dir / 'runtime' / 'capabilities.json'}")
         if report["degradations"]:
             print("  Degradations:")
