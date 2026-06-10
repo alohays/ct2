@@ -102,6 +102,44 @@ CT2 cannot mechanically block a non-conforming orchestration script (the
 script is opaque to the protocol). The rule is conformance-tested after the
 fact through the workflow-run manifest below.
 
+## Vendor Symmetry
+
+CT2 is a protocol that leverages Claude and Codex as co-equal runtimes, not a
+wrapper around either. Reviewers that share one model family share that
+family's blind spots; only a different model family evaluating neutralizes
+self-preferential bias, which is why dual review is cross-vendor by
+construction and not "any two reviewers". Three rules keep the protocol
+vendor-symmetric:
+
+1. **The re-entry contract is vendor-neutral by construction.** The
+   Native-Workflow Re-Entry Contract above names no vendor and MUST resolve
+   identically for any conforming runtime orchestration surface, present or
+   future. If a future revision of the contract needs a vendor name to work,
+   the philosophy has been violated and that revision is non-conforming.
+2. **The quorum floor is cross-vendor 2, not any-2.** The immovable floor for
+   `done/` is `lens-cc` (Claude) AND `lens-cx` (Codex). Extra same-vendor
+   skeptics are advisory: they MAY inform a verdict but MUST NOT override the
+   cross-vendor disagreement rule. A same-vendor majority never outvotes a
+   single cross-vendor rejection — "either reviewer rejects means rejected"
+   dominates every configuration. The normative quorum rules (anchors,
+   skeptics, binding set, promotion) live in `spec/reconciler.md`
+   ("Review Quorum (M-of-N)"); this section is their conformance surface.
+3. **`lens-cx` is first-class at parity with `lens-cc`.** The Codex side is
+   maintained at feature parity with the Claude side across adapters
+   (`adapters/claude/`, `adapters/codex/` each carry both lens variants),
+   plugin skills (`claude-plugin/skills/`, `codex-plugin/skills/` each retain
+   their lens role), the runtime doctor (both runtimes probed; both lens
+   degradations reported), and role config (`config/ct2-lens-cc-role.md`,
+   `config/ct2-lens-cx-role.md`). A change that removes or degrades a
+   `lens-cx` surface without an equivalent `lens-cc` change is Claude-primary
+   drift and fails conformance.
+
+The one-line litmus: if you can delete every Codex reference from CT2 and the
+protocol still makes sense, CT2 has become a single-vendor harness and lost
+its moat. The conformance suite operationalizes this litmus and rule 3 as the
+Claude-primary drift checks in `tests/test_conformance.py`, and rules 1–2 as
+the quorum violation codes of the workflow-run manifest below.
+
 ## Workflow-Run Manifest
 
 A workflow-run record is one JSON document, parseable with the Python stdlib
@@ -118,6 +156,11 @@ Top-level fields:
   A missing or empty value makes the run non-conforming (re-entry rule 1).
 - `subagents` (array, required, may be empty): one record per spawned
   subagent.
+- `quorum` (object, optional): the review quorum the run was launched under,
+  declared in the terms of `spec/reconciler.md` ("Review Quorum (M-of-N)").
+  Absence means the protocol default — the cross-vendor 2-of-2 anchors
+  (`cc` AND `cx`) — which always conforms. Like the rest of the manifest,
+  a `quorum` declaration is evidence about a run, never a control surface.
 
 Each `subagents` record:
 
@@ -130,6 +173,17 @@ Each `subagents` record:
 - `writes` (array of strings, optional): repo-relative paths the subagent
   wrote.
 
+A `quorum` object:
+
+- `binding` (array, required): one record per binding reviewer. Each record
+  has `key` (string; the sidecar key — `cc` and `cx` are the anchors) and
+  `vendor` (string; for example `claude` or `codex`).
+- `advisory` (array, optional): advisory skeptics, same record shape.
+  Advisory reviewers never affect the verdict.
+- `rejection_rule` (string, optional): MUST be `any-binding-rejects` when
+  present; that value is also the default when absent. Rejection is a
+  disjunction over the binding set, never a vote.
+
 A manifest fails conformance when any of the following holds, each reported
 as a stable violation code:
 
@@ -139,6 +193,17 @@ as a stable violation code:
 3. `subagent-wrote-active-role` — any record's `writes` contains a path
    whose final component is `ct2-active-role` (the canonical path is
    `.ct2/.meta/ct2-active-role`; re-entry rule 4).
+4. `quorum-single-vendor-satisfiable` — the declared binding set omits
+   either anchor key (`cc`, `cx`) or spans fewer than two distinct non-empty
+   `vendor` values. Such a configuration is satisfiable by a single vendor
+   and breaks the cross-vendor floor (Vendor Symmetry rule 2). A missing or
+   empty `vendor` fails closed: a reviewer whose vendor cannot be determined
+   never counts toward cross-vendor coverage.
+5. `quorum-overrides-cross-vendor-rejection` — the quorum declares a
+   `rejection_rule` other than `any-binding-rejects`, or declares any
+   `threshold`. Vote or threshold semantics is exactly the mechanism that
+   would let a same-vendor majority outvote a single cross-vendor rejection
+   (`spec/reconciler.md`, Verdict Rule Under A Quorum).
 
 The reference validator and fixture manifests live in the conformance suite
 (`tests/test_conformance.py`, `tests/fixtures/`).

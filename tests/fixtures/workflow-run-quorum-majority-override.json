@@ -1,0 +1,15 @@
+{
+  "manifest": "ct2-workflow-run/v1",
+  "ticket": "ct2-example-fanout",
+  "subagents": [],
+  "quorum": {
+    "binding": [
+      {"key": "cc", "vendor": "claude"},
+      {"key": "cx", "vendor": "codex"},
+      {"key": "sk1", "vendor": "claude"},
+      {"key": "sk2", "vendor": "claude"}
+    ],
+    "rejection_rule": "binding-majority",
+    "threshold": 3
+  }
+}

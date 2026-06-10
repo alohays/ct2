@@ -56,6 +56,35 @@ def validate_workflow_run_manifest(manifest):
         if wrote_role:
             violations.append("subagent-wrote-active-role")
             break
+    violations.extend(_validate_quorum(manifest.get("quorum")))
+    return violations
+
+
+def _validate_quorum(quorum):
+    """Vendor-symmetry checks for the optional `quorum` declaration.
+
+    Implements violation codes 4-5 of spec/conformance.md ("Workflow-Run
+    Manifest"). Absence of a quorum means the protocol default — the
+    cross-vendor cc AND cx anchors — which always conforms.
+    """
+    if quorum is None:
+        return []
+    violations = []
+    binding = quorum.get("binding") or []
+    keys = set()
+    vendors = set()
+    for record in binding:
+        key = record.get("key")
+        if isinstance(key, str):
+            keys.add(key)
+        vendor = record.get("vendor")
+        if isinstance(vendor, str) and vendor.strip():
+            vendors.add(vendor.strip())
+    if not {"cc", "cx"} <= keys or len(vendors) < 2:
+        violations.append("quorum-single-vendor-satisfiable")
+    rejection_rule = quorum.get("rejection_rule", "any-binding-rejects")
+    if rejection_rule != "any-binding-rejects" or "threshold" in quorum:
+        violations.append("quorum-overrides-cross-vendor-rejection")
     return violations
 
 
@@ -247,6 +276,124 @@ class WorkflowRunManifestTest(unittest.TestCase):
             validate_workflow_run_manifest(manifest),
             ["subagent-wrote-active-role"],
         )
+
+    def test_cross_vendor_quorum_with_advisory_skeptic_passes(self):
+        # Anchors cc (claude) AND cx (codex) binding, plus a same-vendor
+        # skeptic kept advisory: the conforming quorum shape.
+        manifest = self.load_fixture("workflow-run-quorum-conforming.json")
+        self.assertEqual(validate_workflow_run_manifest(manifest), [])
+
+    def test_single_vendor_satisfiable_quorum_fails(self):
+        # cx demoted to advisory; a claude judge-panel forms the binding
+        # set. Satisfiable by one vendor => Claude-primary drift.
+        manifest = self.load_fixture("workflow-run-quorum-single-vendor.json")
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["quorum-single-vendor-satisfiable"],
+        )
+
+    def test_same_vendor_majority_override_fails(self):
+        # Both anchors present, but vote/threshold semantics would let a
+        # same-vendor majority outvote a single cross-vendor rejection.
+        manifest = self.load_fixture("workflow-run-quorum-majority-override.json")
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["quorum-overrides-cross-vendor-rejection"],
+        )
+
+    def test_quorum_missing_anchor_fails_despite_two_vendors(self):
+        # Two distinct vendors are not enough: both anchor keys (cc, cx)
+        # must be in the binding set. A codex skeptic cannot substitute
+        # for the cx anchor.
+        manifest = self.load_fixture("workflow-run-quorum-conforming.json")
+        manifest["quorum"]["binding"] = [
+            {"key": "cc", "vendor": "claude"},
+            {"key": "sk1", "vendor": "codex"},
+        ]
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["quorum-single-vendor-satisfiable"],
+        )
+
+    def test_quorum_unknown_vendor_fails_closed(self):
+        # A reviewer whose vendor cannot be determined never counts toward
+        # cross-vendor coverage.
+        manifest = self.load_fixture("workflow-run-quorum-conforming.json")
+        manifest["quorum"]["binding"] = [
+            {"key": "cc", "vendor": "claude"},
+            {"key": "cx", "vendor": ""},
+        ]
+        self.assertEqual(
+            validate_workflow_run_manifest(manifest),
+            ["quorum-single-vendor-satisfiable"],
+        )
+
+
+class ClaudePrimaryDriftTest(unittest.TestCase):
+    """Drift guard for spec/conformance.md "Vendor Symmetry" rule 3.
+
+    lens-cx is first-class at parity with lens-cc. Each check asserts
+    against real repo files so that removing or degrading a Codex-side
+    surface without an equivalent Claude-side change fails conformance.
+    """
+
+    def test_adapter_lens_variants_are_identical_across_runtimes(self):
+        per_runtime = {}
+        for runtime in ("claude", "codex"):
+            adapter_dir = REPO_ROOT / "adapters" / runtime
+            per_runtime[runtime] = {
+                path.name for path in adapter_dir.glob("lens-*.md")
+            }
+        self.assertEqual(per_runtime["claude"], per_runtime["codex"])
+        self.assertLessEqual({"lens-cc.md", "lens-cx.md"}, per_runtime["claude"])
+
+    def test_plugin_skills_retain_their_lens_role(self):
+        for rel in (
+            "claude-plugin/skills/ct2-lens-cc/SKILL.md",
+            "codex-plugin/skills/ct2-lens-cx/SKILL.md",
+        ):
+            with self.subTest(rel=rel):
+                path = REPO_ROOT / rel
+                self.assertTrue(path.is_file(), f"missing lens skill: {rel}")
+                self.assertTrue(path.read_text(encoding="utf-8").strip())
+
+    def test_config_retains_both_lens_role_docs(self):
+        for rel in ("config/ct2-lens-cc-role.md", "config/ct2-lens-cx-role.md"):
+            with self.subTest(rel=rel):
+                path = REPO_ROOT / rel
+                self.assertTrue(path.is_file(), f"missing role config: {rel}")
+                self.assertTrue(path.read_text(encoding="utf-8").strip())
+
+    def test_runtime_doctor_probes_both_vendors(self):
+        doctor = (REPO_ROOT / "bin" / "ct2-runtime-doctor").read_text(encoding="utf-8")
+        for marker in ("codex", "claude", "lens-cx", "lens-cc"):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, doctor)
+
+    def test_vendor_symmetry_is_specified(self):
+        spec = (REPO_ROOT / "spec" / "conformance.md").read_text(encoding="utf-8")
+        self.assertIn("## Vendor Symmetry", spec)
+        for needle in (
+            "quorum-single-vendor-satisfiable",
+            "quorum-overrides-cross-vendor-rejection",
+            "either reviewer rejects means rejected",
+            "delete every Codex reference",
+        ):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, spec)
+
+    def test_codex_references_are_load_bearing_in_core_specs(self):
+        # The one-line litmus (spec/conformance.md, Vendor Symmetry):
+        # deleting every Codex reference must break the protocol. These
+        # core specs must therefore keep naming lens-cx.
+        for rel in (
+            "spec/PROTOCOL.md",
+            "spec/reconciler.md",
+            "spec/conformance.md",
+        ):
+            with self.subTest(rel=rel):
+                text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+                self.assertIn("lens-cx", text)
 
 
 if __name__ == "__main__":
