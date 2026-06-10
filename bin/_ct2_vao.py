@@ -112,6 +112,13 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+FANOUT_NUMERIC_FIELDS = ("fanout_width", "agent_count", "wall_ms", "agent_ms_total")
+
+
+def _is_fanout_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def read_fanout_records(ct2_dir: Path) -> list[dict[str, Any]]:
     """Load advisory fan-out records (spec/balanced-scorecard.md). Advisory only."""
     records: list[dict[str, Any]] = []
@@ -123,8 +130,13 @@ def read_fanout_records(ct2_dir: Path) -> list[dict[str, Any]]:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if isinstance(data, dict):
-            records.append(data)
+        if not isinstance(data, dict):
+            continue
+        if "fanout_width" not in data and "agent_count" not in data:
+            continue
+        if any(field in data and not _is_fanout_number(data[field]) for field in FANOUT_NUMERIC_FIELDS):
+            continue
+        records.append(data)
     return records
 
 

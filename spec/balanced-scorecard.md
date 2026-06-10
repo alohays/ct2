@@ -69,9 +69,14 @@ parent-owns-writes rule in `spec/role-contracts.md`.
 
 `ct2-baseline` folds these records into the Cost/Latency section as a
 `fanout` summary and `ct2-cost` surfaces a fan-out summary when records
-exist. When no records exist, both outputs are unchanged. Unreadable or
-malformed record files are skipped, never fatal. Both tools load records
-through the shared `read_fanout_records` helper in `bin/_ct2_vao.py`.
+exist. When no records exist, both outputs are unchanged. Skipping is never
+fatal: files that are unreadable, unparseable, or not JSON objects are
+skipped; records carrying neither `fanout_width` nor `agent_count`, or
+carrying non-numeric values (booleans included) in any of the numeric fields
+(`fanout_width`, `agent_count`, `wall_ms`, `agent_ms_total`), are skipped;
+individually missing optional fields are tolerated as absent. Both tools
+load records through the shared `read_fanout_records` helper in
+`bin/_ct2_vao.py`.
 
 The two summaries intentionally expose different aggregates. Both set
 `advisory: true` and `runs`:

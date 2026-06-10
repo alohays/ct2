@@ -145,6 +145,28 @@ class CostFanoutTest(unittest.TestCase):
         self.assertEqual(16, summary["fanout"]["agent_count_total"])
         self.assertEqual(16, summary["fanout"]["fanout_width_max"])
 
+    def test_parseable_but_malformed_records_are_skipped_by_both_consumers(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_fanout_record(ct2)
+        fanout_dir = ct2 / "runtime" / "fanout"
+        non_numeric = fanout_dir / "fanout-002-20260610T130000Z.json"
+        non_numeric.write_text(json.dumps({"agent_count": "twelve"}) + "\n", encoding="utf-8")
+        no_signals = fanout_dir / "fanout-003-20260610T140000Z.json"
+        no_signals.write_text(json.dumps({"note": "no signals"}) + "\n", encoding="utf-8")
+
+        report = self.baseline_report(project)
+        fanout = report["scorecard"]["cost_latency"]["fanout"]
+        self.assertEqual(1, fanout["runs"])
+        self.assertEqual(6, fanout["agent_count_p50"])
+        self.assertEqual(6, fanout["agent_count_max"])
+        self.assertEqual(8, fanout["fanout_width_max"])
+
+        summary = self.cost_report(project)
+        self.assertEqual(1, summary["fanout"]["runs"])
+        self.assertEqual(6, summary["fanout"]["agent_count_total"])
+        self.assertEqual(8, summary["fanout"]["fanout_width_max"])
+
     def test_text_output_renders_fanout_line_when_records_exist(self):
         project = self.make_project()
         write_fanout_record(project / ".ct2")
@@ -189,6 +211,29 @@ class SharedFanoutReaderTest(unittest.TestCase):
         records = vao.read_fanout_records(ct2)
         self.assertEqual(1, len(records))
         self.assertEqual("001", records[0]["ticket"])
+
+    def test_shared_reader_skips_parseable_objects_without_signals_or_with_non_numeric_fields(self):
+        vao = self.shared_module()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ct2 = Path(tmp.name) / ".ct2"
+        write_fanout_record(ct2)
+        fanout_dir = ct2 / "runtime" / "fanout"
+        malformed = {
+            "fanout-002-20260610T130000Z.json": {"agent_count": "twelve"},
+            "fanout-003-20260610T140000Z.json": {"note": "no signals"},
+            "fanout-004-20260610T150000Z.json": {"agent_count": True},
+            "fanout-005-20260610T160000Z.json": {"agent_count": 3, "wall_ms": "fast"},
+        }
+        for name, payload in malformed.items():
+            (fanout_dir / name).write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        minimal = fanout_dir / "fanout-006-20260610T170000Z.json"
+        minimal.write_text(json.dumps({"fanout_width": 4}) + "\n", encoding="utf-8")
+
+        records = vao.read_fanout_records(ct2)
+        self.assertEqual(2, len(records))
+        self.assertEqual("001", records[0]["ticket"])
+        self.assertEqual({"fanout_width": 4}, records[1])
 
 
 if __name__ == "__main__":
