@@ -16,6 +16,21 @@ from _ct2_protocol import migration_command, status as protocol_status
 from _ct2_vao import atomic_write_json, atomic_write_text, ensure_ct2, now
 
 
+# Baseline pins gate on OBSERVED CAPABILITY, not the newest upstream release
+# (spec/runtime-capabilities.md). Version numbers are observation-dated:
+# Codex upstream stable was 0.137.0 (2026-06-04) at the 2026-06 radar survey
+# (docs/agent-platform-feature-radar-2026-06.md).
+#
+# MIN_CODEX stays at 0.130.0 deliberately: the minimum is the oldest version
+# delivering the capabilities CT2 actually requires (non-interactive exec,
+# `features list` probing, the 0.128.0 goals/app-server schema per
+# spec/codex-runtime-contract.md), and 0.130.0 is the 2026-05 radar's observed
+# baseline at or above that floor. The 0.136.0+ surfaces
+# (`tools.experimental_request_user_input`, `app-server --stdio`,
+# thread-resume) are optional enhancements with graceful fallbacks, and
+# subagents TOML / multi-agent v2 (dogfood defaults through 0.137.0) ship no
+# independent dual-reviewer and never carry CT2 state writes — none of them
+# raise the floor.
 MIN_CODEX = (0, 130, 0)
 MIN_CLAUDE = (2, 1, 138)
 # Claude Code dynamic workflows ship at v2.1.154+ (research preview); see
