@@ -36,9 +36,12 @@ Claim records support two optional edge fields:
 - `produced_by_agent`: a free-form label for the fan-out subagent that
   produced the finding.
 
-Both fields are append-compatible. Records that omit them remain fully valid,
-readers never require them, and no migration exists: the read path is
-byte-compatible with pre-edge ledgers. The evidence DAG lives implicitly in
+Both fields are append-compatible. Records that omit them remain fully valid
+and readers never require them: records written without the flags are
+byte-identical to the pre-edge format, and the read path is unchanged —
+legacy ledgers parse as-is, with no migration. `ct2-evidence` treats an
+empty `--parent-id` or `--produced-by-agent` value as absent: the field is
+omitted from the record. The evidence DAG lives implicitly in
 the flat `claims.jsonl` records via these optional edges; the Evidence Graph
 is explicitly not a graph engine. When a fan-out produces findings, each
 finding's `produced_by_agent` labels the subagent while `parent_id` and the

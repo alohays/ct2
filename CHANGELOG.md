@@ -39,7 +39,10 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   CT2-wrapped workflow run names a ticket, writes only into an isolated
   write target, returns as a patch, PR, inbox message, or evidence
   artifact, keeps its subagents non-role-holding, and leaves authoritative
-  CT2 writes to the parent role.
+  CT2 writes to the parent role. The matching Orchestrate-By-Default
+  Runtimes section in `spec/role-contracts.md` sanctions native fan-out
+  only for read-only discovery and isolated-branch forge implementation,
+  with CT2 state writes remaining parent-owned one-shot operations.
 - Added the reviewer-independence prompt-construction invariant to
   `spec/conformance.md` — a verifier subagent's prompt must not contain
   any sibling reviewer's output — with a conformance fixture that fails a
@@ -66,7 +69,10 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   scripts derive IDs from stable inputs.
 - Added fail-soft native-surface delegation: lens-cc may cite
   `/code-review ultra` in-sidecar and helm discovery may invoke
-  `/deep-research`, as evidence only — neither can move a ticket.
+  `/deep-research`, as evidence only — neither can move a ticket. Forge
+  prefers the native self-paced loop plus `Monitor` pacing where
+  available, with the hand-rolled `harness.yaml` intervals kept as the
+  fallback.
 
 ### Changed
 

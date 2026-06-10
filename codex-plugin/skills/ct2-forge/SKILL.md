@@ -100,6 +100,9 @@ blocked or budget-limited evidence.
 
 ## Fallbacks
 
+Fail-soft fallback rules, plus runtime-conditional preferences that name
+their fallback leg here:
+
 - If Codex `/goal` is unavailable, continue the CT2 ticket loop without goal
   continuation; CT2 state remains authoritative.
 - On runtimes with a native self-paced loop and a Monitor-style tool, prefer

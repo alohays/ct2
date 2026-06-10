@@ -139,7 +139,10 @@ This prevents anchoring bias.
 ## Native Deep-Review Delegation (Optional, Fail-Soft)
 
 You MAY delegate your deep review pass to the Claude Code cloud multi-agent
-review, `/code-review ultra` (`/ultrareview` is its deprecated alias). Rules:
+review, `/code-review ultra` (`/ultrareview` is its deprecated alias; naming
+confirmed 2026-06-10 against the Claude Code harness/session documentation —
+`/code-review ultra` is current, `/ultrareview` is the deprecated alias).
+Rules:
 
 - Its findings are **evidence**, never a verdict. Cite them in your sidecar
   the same way you would cite a test run or a grep result.

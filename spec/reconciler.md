@@ -111,7 +111,8 @@ configuration that does exist.
 
 ### Quorum Configuration (Illustrative)
 
-An opt-in `review_quorum` block in `config/harness.yaml` registers skeptics:
+An opt-in `review_quorum` block in `.ct2/config/harness.yaml` registers
+skeptics:
 
 ```yaml
 review_quorum:
@@ -141,11 +142,11 @@ verdict = rejected  iff  any  binding reviewer's verdict = rejected
 2. **Either-reviewer-rejects-means-rejected dominates every configuration.**
    Rejection is a disjunction over the binding set. A single `cc` or `cx`
    rejection rejects (or escalates, per the round rules above) regardless of
-   how many other reviewers approved. A same-vendor majority — for example a
-   Claude judge-panel of promoted skeptics voting `approved` — can never
-   override one `cx` rejection, because approvals and rejections are not
-   commensurable votes: there is no threshold under which approvals offset a
-   rejection.
+   how many other reviewers approved. A same-vendor majority — for example
+   a panel of promoted same-vendor (Claude) skeptics voting `approved` —
+   can never override one `cx` rejection, because approvals and rejections
+   are not commensurable votes: there is no threshold under which approvals
+   offset a rejection.
 3. **M is not configurable.** In CT2's instantiation of "M-of-N", N is
    `2 + K` registered reviewers and M is always the full binding set. CT2
    deliberately rejects free-threshold voting (any-M-of-N); threshold
@@ -169,9 +170,11 @@ A skeptic is promoted from advisory to binding only by all of the following,
 conservatively:
 
 1. **Explicit static configuration.** Promotion is `binding: true` on the
-   registered skeptic in `config/harness.yaml`, set by a human-reviewed
-   config commit. There is no runtime, per-ticket, or agent-initiated
-   promotion, and no tool may flip the flag.
+   registered skeptic in the live config, `.ct2/config/harness.yaml` —
+   which is git-excluded, so the mechanism is an explicit human edit to
+   the registered skeptic entry, not a config commit. There is no runtime,
+   per-ticket, or agent-initiated promotion, and no tool may flip the
+   flag.
 2. **Full sidecar contract.** A promoted skeptic is held to the same contract
    as the anchors: an immutable sidecar per round, per-reviewer validation,
    and reviewer independence — its prompt contains no sibling reviewer's

@@ -259,7 +259,9 @@ When all AC items are `[x]`:
 On runtimes with a native self-paced loop and a `Monitor` tool (Claude Code
 `/loop` + `Monitor`), you SHOULD prefer them: let `/loop` self-pace and use
 `Monitor` to follow background tests/builds instead of sleeping on fixed
-intervals.
+intervals. Note that `Monitor` may be a ToolSearch-deferred tool: if it
+appears by name only, load its schema via `ToolSearch` before calling it —
+calling a deferred tool directly fails with `InputValidationError`.
 
 The hand-rolled intervals from harness.yaml are the fallback when no native
 pacing surface exists (fail-soft — absence means fixed-interval pacing, never
