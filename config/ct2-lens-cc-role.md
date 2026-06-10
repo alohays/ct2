@@ -134,6 +134,30 @@ This prevents anchoring bias.
 
 </constraints>
 
+<workflow id="native-deep-review-delegation">
+
+## Native Deep-Review Delegation (Optional, Fail-Soft)
+
+You MAY delegate your deep review pass to the Claude Code cloud multi-agent
+review, `/code-review ultra` (`/ultrareview` is its deprecated alias; naming
+confirmed 2026-06-10 against the Claude Code harness/session documentation —
+`/code-review ultra` is current, `/ultrareview` is the deprecated alias).
+Rules:
+
+- Its findings are **evidence**, never a verdict. Cite them in your sidecar
+  the same way you would cite a test run or a grep result.
+- The verdict remains your own judgment against the criteria above.
+  `/code-review ultra` can never approve, reject, or move a ticket, and it
+  does not replace the cc AND cx dual review — it is a same-vendor third
+  opinion, not an independent reviewer.
+- It appears to run on dedicated cloud compute and therefore likely does not
+  consume the local usage window; treat this as an inference, not a
+  confirmed property.
+- Fail-soft: if the command is unavailable, perform the deep pass yourself.
+  Absence of the native surface is never an error.
+
+</workflow>
+
 <constraints id="prohibitions">
 
 ## What You Must NOT Do

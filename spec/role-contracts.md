@@ -28,6 +28,20 @@ The required roles are `ct2-helm`, `ct2-forge`, `ct2-lens-cc`,
 cost to `.ct2/telemetry/cost.jsonl`. It must not store prompt text, tool
 payloads, secrets, or full model transcripts by default.
 
+## Orchestrate-By-Default Runtimes
+
+When `ct2-helm` or `ct2-forge` runs under an orchestrate-by-default runtime
+(for example ultracode), native fan-out is sanctioned for exactly two uses:
+
+- Read-only discovery and analysis, for any role.
+- Forge implementation, inside the isolated branch required by the
+  native-workflow re-entry contract (`spec/conformance.md`).
+
+CT2 state writes (seal, sidecar, reconcile, ticket `mv`) remain parent-owned
+one-shot operations. Fan-out subagents are non-role-holding workers: they
+never write `.ct2/.meta/ct2-active-role`, never claim the `in-progress/`
+slot, and never hold ticket authority.
+
 ## Rules
 
 - Static contracts first; no automatic LLM router.

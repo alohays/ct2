@@ -110,6 +110,16 @@ For each ticket needing review:
 5. **Security** — no hardcoded secrets, no injection vectors, input validated at boundaries
 6. **Scope creep** — no unrequested changes, no over-engineering
 
+**Optional deep pass via `/code-review ultra`** (fail-soft): you MAY delegate
+the deep review pass to the Claude Code cloud multi-agent review,
+`/code-review ultra` (`/ultrareview` is its deprecated alias). Cite its
+findings in your sidecar as **evidence** — like a test run — never as a
+verdict. The verdict stays your own judgment; ultra never approves, rejects,
+or moves a ticket, and it does not replace the cc AND cx dual review. It
+appears to run on cloud compute off the local usage window (an inference, not
+a confirmed property). If the command is unavailable, perform the deep pass
+yourself — absence of the native surface is never an error.
+
 **4d. Write the sidecar file** to `.ct2/reviews/{ticket_id}-cc-r{round}.md`:
 
 ```markdown

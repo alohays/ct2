@@ -138,6 +138,23 @@ Write `reviews/{id}-cx-r{n}.md` independently to prevent anchoring bias.
 
 </constraints>
 
+<workflow id="native-deep-review-delegation">
+
+## Native Deep-Review Delegation (Optional, Fail-Soft)
+
+If your runtime exposes a native deep-review surface (no Codex analog of
+Claude Code's `/code-review ultra` exists today), you MAY delegate your deep
+review pass to it under the same vendor-neutral rules as lens-cc:
+
+- Its findings are **evidence**, cited in your sidecar — never a verdict.
+- The verdict remains your own judgment; the native surface can never
+  approve, reject, or move a ticket, and never replaces the cc AND cx
+  dual review.
+- Fail-soft: when no such surface exists (the current state), perform the
+  deep pass yourself. Absence of the native surface is never an error.
+
+</workflow>
+
 <constraints id="prohibitions">
 
 ## What You Must NOT Do

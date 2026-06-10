@@ -11,6 +11,10 @@ circuit_breaker:
   max_concurrent_worktrees: 1   # Maximum simultaneous git worktrees (serial by default)
 
 forge:
+  # Native-preferred: on runtimes with a native self-paced loop + Monitor tool,
+  # forge SHOULD let the native loop pace itself (see the forge SKILL "Loop
+  # Pacing" rule). The values below are the hand-rolled fallback when no native
+  # pacing surface exists — fail-soft, never an error. Do not delete them.
   loop_interval_active_sec: 60    # Agent pacing hint when actively working a ticket
   loop_interval_idle_sec: 120     # Agent pacing hint when backlog is empty
   loop_interval_dormant_sec: 180  # No tickets anywhere. Kept short enough for

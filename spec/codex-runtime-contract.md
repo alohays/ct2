@@ -14,7 +14,9 @@ counterpart to `spec/codex-full-support-prd.md`.
 
 Target baseline:
 
-- Codex CLI: `0.128.0` or newer.
+- Codex CLI: `0.130.0` or newer (observation-verified baseline, 2026-06-10;
+  `0.128.0` remains the historical schema/capability floor for the
+  goals/app-server surfaces documented below).
 - Required core commands: `codex`, `codex exec`, `codex review`,
   `codex app-server`, `codex features`, `codex mcp`, `codex plugin`.
 - Required CT2 scripts: bash plus Python stdlib only.

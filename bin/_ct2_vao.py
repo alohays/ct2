@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import tempfile
@@ -110,6 +111,34 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
         except json.JSONDecodeError:
             rows.append({"_invalid": line})
     return rows
+
+
+FANOUT_NUMERIC_FIELDS = ("fanout_width", "agent_count", "wall_ms", "agent_ms_total")
+
+
+def _is_fanout_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def read_fanout_records(ct2_dir: Path) -> list[dict[str, Any]]:
+    """Load advisory fan-out records (spec/balanced-scorecard.md). Advisory only."""
+    records: list[dict[str, Any]] = []
+    fanout_dir = ct2_dir / "runtime" / "fanout"
+    if not fanout_dir.is_dir():
+        return records
+    for path in sorted(fanout_dir.glob("fanout-*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        if "fanout_width" not in data and "agent_count" not in data:
+            continue
+        if any(field in data and not _is_fanout_number(data[field]) for field in FANOUT_NUMERIC_FIELDS):
+            continue
+        records.append(data)
+    return records
 
 
 def read_frontmatter(path: Path) -> dict[str, Any]:

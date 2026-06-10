@@ -387,6 +387,9 @@ def runtime_doctor_summary():
 
     print("DOCTOR")
     print(f"  capabilities: codex={state('codex')} claude={state('claude')}")
+    workflow = cap.get("workflow_class") if isinstance(cap.get("workflow_class"), dict) else {}
+    if workflow:
+        print(f"  workflow-class: {workflow.get('state', 'unknown')} (hint via {workflow.get('method', 'none')})")
     degradations = cap.get("degradations") if isinstance(cap.get("degradations"), list) else []
     if degradations:
         print(f"  degradations: {len(degradations)}")

@@ -14,6 +14,7 @@ from _ct2_vao import (
     STATE_DIRS,
     atomic_write_json,
     ensure_ct2,
+    read_fanout_records,
     read_frontmatter,
     read_jsonl,
     ticket_id_from_name,
@@ -85,6 +86,25 @@ def sidecar_timestamp(ct2_dir: Path, ticket_id: str, suffix: str, round_num: str
         return None
     value = read_frontmatter(path).get("timestamp")
     return str(value) if value else None
+
+
+def fanout_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    agent_counts = [float(row["agent_count"]) for row in records if isinstance(row.get("agent_count"), (int, float))]
+    widths = [row["fanout_width"] for row in records if isinstance(row.get("fanout_width"), (int, float))]
+    speedups = []
+    for row in records:
+        wall = row.get("wall_ms")
+        agent_total = row.get("agent_ms_total")
+        if isinstance(wall, (int, float)) and isinstance(agent_total, (int, float)) and wall > 0:
+            speedups.append(float(agent_total) / float(wall))
+    return {
+        "advisory": True,
+        "runs": len(records),
+        "agent_count_p50": statistics.median(agent_counts) if agent_counts else None,
+        "agent_count_max": max(agent_counts) if agent_counts else None,
+        "fanout_width_max": max(widths) if widths else None,
+        "speedup_vs_serial_p50": statistics.median(speedups) if speedups else None,
+    }
 
 
 def evidence_ticket_set(ct2_dir: Path) -> set[str]:
@@ -172,6 +192,9 @@ def build_scorecard(ct2_dir: Path) -> dict[str, Any]:
             "ticket_latency_p50_seconds": statistics.median(ticket_latencies) if ticket_latencies else None,
         },
     }
+    fanout_records = read_fanout_records(ct2_dir)
+    if fanout_records:
+        scorecard["cost_latency"]["fanout"] = fanout_summary(fanout_records)
     return {
         "schema_version": "1",
         "generated_at": generated_at,
@@ -202,6 +225,14 @@ def main() -> int:
         print("CT2 Balanced Scorecard Baseline")
         for label, section in report["scorecard"].items():
             print(f"  {label}: {section.get('status')} sample={section.get('sample_size', section.get('cost_sample_size', '-'))}")
+        fanout = report["scorecard"]["cost_latency"].get("fanout")
+        if fanout:
+            print(
+                f"  fanout (advisory): runs={fanout['runs']}"
+                f" agent_count_p50={fanout['agent_count_p50']}"
+                f" width_max={fanout['fanout_width_max']}"
+                f" speedup_p50={fanout['speedup_vs_serial_p50']}"
+            )
         print(f"  Wrote: {ct2_dir / 'telemetry' / 'baseline-2026-05.json'}")
     return 0
 
