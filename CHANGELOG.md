@@ -8,6 +8,20 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Added `docs/ct2-loop-design-strategy-2026-06.md`, the loop-design strategy
+  derived from "Designing loops with Fable 5" (R. Lance Martin) via a
+  26-agent adversarial analysis (15 proposals, 13 surviving with corrections,
+  2 killed). It defines a four-phase dependency-ordered roadmap: A —
+  executable completion (hard submit gate, sealed `## Verification` AC
+  bindings + `ct2-ac-verify`, reconciler done-gate with round-tagged
+  evidence); B — structured review signal (per-AC pass/fail sidecar grammar
+  with a single approved-but-failed coherence rule, rework-resolution
+  accounting); C — consult-first memory (`.ct2/lessons/` ledger with
+  recurrence-based corroboration, pickup-stdout digest, planning lints);
+  D — provider-neutral `ct2-goal` subsuming `ct2-codex-goal`. Records the
+  maintainer decision log, gate-hardness policy (advisory-to-hard by
+  release, never runtime config), killed-proposal constraints, and scorecard
+  absorption into the Evidence axis.
 - Added spec ingest and render-side guardrails for the helm canvas. New
   helpers `parse_spec` and `validate_spec` in `bin/_ct2_canvas.py` give
   malformed canvas specs an actionable error (line/column, an excerpt of
