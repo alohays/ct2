@@ -6,6 +6,20 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ## [Unreleased]
 
+### Changed
+
+- Deprecated `ct2-codex-goal` in favour of the provider-neutral `ct2-goal`
+  (loop-design roadmap T4.1b, Direction D — subsumption). The authoritative goal
+  STATE now lives in the neutral `.ct2/goals/{slug}/` record; the `.ct2/codex/`
+  artifacts `ct2-codex-goal` still writes are the Codex-session render, kept for
+  backward compatibility. Every invocation prints a deprecation notice and
+  **lazily mirrors** codex goals into the neutral layout, idempotently — mapping
+  the codex status (`active → open`, `cleared → abandoned`, …) and preserving the
+  captured ticket scope and completion conditions. This is a deliberate
+  no-protocol-bump migration: goal records are untracked `.ct2/` state, not
+  protocol-surface fields, so relocating them needs no version change and no
+  compatibility-gate churn for existing projects.
+
 ### Added
 
 - Added the provider-neutral goal loop `bin/ct2-goal` (loop-design roadmap

@@ -94,7 +94,18 @@ escalation remains its only helm message.
 
 ## Subsumption of ct2-codex-goal
 
-`ct2-codex-goal` is a thin deprecated shim delegating to `ct2-goal`; existing
-`.ct2/codex/` goal records migrate to `.ct2/goals/` through the standard
-`ct2-migrate` path at the protocol bump (`spec/protocol-surface.md`,
-`spec/versioning.md`).
+`ct2-codex-goal` is **deprecated**: the authoritative goal STATE now lives in the
+neutral `.ct2/goals/{slug}/` record, and the `.ct2/codex/` artifacts it still
+writes are the Codex-session render (thread id, cwd, mode), kept for backward
+compatibility during deprecation. Every `ct2-codex-goal` invocation prints a
+deprecation notice and **lazily mirrors** each codex goal into the neutral
+layout, idempotently — `start` mirrors the new goal, and a `status`/`audit`/etc.
+call mirrors any pre-existing codex goals. The mirror maps the codex status
+(`active → open`, `cleared → abandoned`, …), preserves the captured ticket scope
+and completion conditions, and records `{provider: codex, role, migrated_from}`
+on the neutral goal.
+
+This is a deliberate **no-protocol-bump** migration: the goal records are
+untracked `.ct2/` state, not protocol-surface fields, so relocating them needs no
+version change, no `.protocol-version` migration, and no compatibility-gate churn
+for existing projects. New goals should use `ct2-goal` directly.
