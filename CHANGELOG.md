@@ -8,6 +8,21 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Added a per-AC grade grammar to review sidecars (loop-design roadmap T2.1,
+  Direction B). Lines in `## Acceptance Criteria Check` may use
+  ``- AC{n}: (pass|fail) — {reason}`` with an optional `(evidence: {claim-id})`.
+  `_ct2_validate_review_sidecar.py` gains exactly one hard coherence rule — the
+  single carve-out to "the reconciler does not parse the body": a
+  `verdict: approved` sidecar that grades any AC as `fail` is invalid, so the
+  approving-while-admitting-a-failure contradiction becomes deterministically
+  detectable. `verdict` remains the only state-moving field, and the rule fires
+  only on cleanly-parsed lines, so free prose can never wedge a ticket.
+  Everything else is warn-only (stderr, exit 0): AC-grade-looking lines that
+  do not parse, and a graded-AC count differing from the sealed baseline. There
+  is deliberately no rejected-with-all-pass rule. Documented recovery for the
+  widened wedge class in `spec/reconciler.md`; the grammar is added to
+  `templates/review.md`, both lens role prompts, and the lens-cx contract.
+
 - Added a reconciler **done gate** (loop-design roadmap T1.3, Direction A).
   `ct2-ticket-audit` gains a `--done-gate` mode that, against a ticket still in
   `in-review/`, requires `done_gate_state`, all ACs checked, sealed-baseline

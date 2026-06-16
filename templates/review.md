@@ -10,8 +10,9 @@ timestamp: TIMESTAMP
 <!-- One-paragraph summary of the overall review finding. -->
 
 ## Acceptance Criteria Check
-<!-- Copy the AC list from the ticket and mark each item. -->
-- [ ] 
+<!-- Grade each AC with: - AC{n}: (pass|fail) — {reason}  [optional (evidence: {claim-id})] -->
+<!-- A verdict: approved sidecar that grades any AC as `fail` is invalid. -->
+- AC1: pass — 
 
 ## Issues Found
 

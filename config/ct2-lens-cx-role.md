@@ -49,6 +49,10 @@ Apply the following criteria in order. Any BLOCKING issue → `verdict: rejected
   makes the grader independent. Sealing freezes the *commands*, not the test
   files they invoke, so still judge whether each bound command genuinely proves
   its AC.
+- In `## Acceptance Criteria Check`, grade each AC with
+  ``- AC{n}: (pass|fail) — {reason}`` (optionally `(evidence: {claim-id})`). A
+  sidecar with `verdict: approved` that grades any AC as `fail` is **invalid**
+  and the reconciler rejects it — never approve while admitting an AC failed.
 
 ### 2. Constraint Violations
 - Every Constraint in the ticket must be respected

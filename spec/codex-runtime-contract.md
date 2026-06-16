@@ -176,11 +176,13 @@ Lens-cx:
 
 ```
 Drain Codex reviews for CT2 goal scope {scope_id}. Write independent cx
-sidecars for every in-scope ticket that reaches .ct2/in-review/. Do not read cc
-sidecars before the matching cx sidecar exists. If no reviewable ticket is
-present but upstream in-scope helm/forge work is still active, record
-`upstream_work_pending` instead of completing the goal. Reconcile after writing
-your own sidecar.
+sidecars for every in-scope ticket that reaches .ct2/in-review/. In
+`## Acceptance Criteria Check`, grade each AC with `- AC{n}: (pass|fail) —
+{reason}`; never set `verdict: approved` while grading any AC as `fail` (the
+reconciler rejects such a sidecar). Do not read cc sidecars before the matching
+cx sidecar exists. If no reviewable ticket is present but upstream in-scope
+helm/forge work is still active, record `upstream_work_pending` instead of
+completing the goal. Reconcile after writing your own sidecar.
 ```
 
 Helm-auto-cx:

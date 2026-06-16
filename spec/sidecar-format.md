@@ -55,8 +55,39 @@ The body is human-readable markdown. It must include these headings:
 ## Recommendation
 ```
 
-The reconciler does not parse the body. Reviewers use it to explain evidence,
-blocking issues, warnings, and remediation.
+The reconciler does not parse the body, with exactly one carve-out (below) that
+is a *validity* gate, not a verdict input. Reviewers use the body to explain
+evidence, blocking issues, warnings, and remediation.
+
+### Per-AC grade lines
+
+Lines in `## Acceptance Criteria Check` SHOULD use the grammar:
+
+```markdown
+## Acceptance Criteria Check
+- AC1: pass — unit suite green (evidence: cmd-20260612T031500Z-001)
+- AC2: fail — regression test still red
+```
+
+That is ``- AC{n}: (pass|fail) — {reason}``, where `{n}` is the AC ordinal, with
+an optional trailing `(evidence: {claim-id})` citing
+`.ct2/evidence/claims.jsonl`. The grammar formalizes what both lenses already
+write; ACs may still be discussed in free prose, and a sidecar that uses neither
+is unchanged.
+
+**The one carve-out to "the reconciler does not parse the body":** a sidecar
+with `verdict: approved` that contains a line parsing cleanly as `- AC{n}: fail`
+is **invalid** — `_ct2_validate_review_sidecar.py` rejects it and the reconciler
+exits non-zero without a state change. This is a coherence check (approving while
+admitting an AC failed is contradictory), not a new state-moving signal:
+`verdict` remains the only field that approves or rejects, and the rule fires
+**only** on lines that already parse, so free prose and near-miss formatting can
+never wedge a ticket. Everything else the parser notices is warn-only (stderr,
+exit 0): an AC-grade-looking line that does not parse, and a graded-AC count that
+differs from the sealed baseline's checkbox count (only once grade lines are
+actually present). There is deliberately **no** rejected-with-all-pass rule —
+rejecting on a non-AC criterion (style, scope, security) with every AC passing is
+legitimate.
 
 ### Optional PR Inline Fields
 
