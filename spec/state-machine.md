@@ -53,7 +53,7 @@ git contract; the "Git action" column summarizes the coupling.
 |-------------------------------|----------------------|---------------|----------------------------------------------------------------------------|------------|
 | `draft → backlog`             | `ct2-seal` runs      | ct2-helm      | `title`, `priority`, `touched-files`, `## Acceptance Criteria` all present; `ct2-ticket-audit --seal-gate --ticket {id}` passes (see *Seal Gate* below) | none       |
 | `backlog → in-progress`       | `ct2-pickup`         | ct2-forge     | lifecycle lock held; `in-progress/` is empty                               | `ct2-git-start` (create branch from base) |
-| `in-progress → in-review`     | `ct2-review-enter` after work completion | ct2-forge | All AC checklist items checked `[x]`; `.meta/{id}.in-review` stamped       | `ct2-git-submit` (push, open PR, record `pr:` URL) |
+| `in-progress → in-review`     | `ct2-review-enter` after work completion | ct2-forge | `ct2-ticket-audit --submit-gate --ticket {id}` passes — all AC checklist items checked `[x]` and this round's plan evidence present (see *Submit Gate* below); `.meta/{id}.in-review` stamped | `ct2-git-submit` (push, open PR, record `pr:` URL) |
 | `in-review → done`            | `ct2-reconcile` verdict | reconciler | `cc sidecar = approved` AND `cx sidecar = approved`                        | `ct2-git-finalize approved` (squash-merge if `git_auto_merge_on_approval`) |
 | `in-review → rejected`        | `ct2-reconcile` verdict | reconciler | `cc sidecar = rejected` OR `cx sidecar = rejected`                         | `ct2-git-finalize rejected` (no-op — PR open) |
 | `rejected → in-progress`      | `ct2-pickup`         | ct2-forge     | lifecycle lock held; `in-progress/` is empty; `review-round < max_review_rounds` | `ct2-git-start` (checkout existing branch; rework appends commits) |
@@ -118,6 +118,47 @@ Placeholder detection deliberately uses two scopes: a substring scanner
 restricted to unambiguous markers (`tbd`, `todo`, `fixme`, `placeholder`,
 `decide later`), and a whole-field matcher that additionally rejects fields
 whose entire content is just `unknown`, `n/a`, `?`, `-`, etc.
+
+## Submit Gate
+
+`ct2-review-enter` requires that an `in-progress/` ticket pass a static
+submission audit before it becomes an `in-review/` ticket. The check is
+implemented by `ct2-ticket-audit --submit-gate --ticket {id}`, which
+`ct2-review-enter` runs as a subprocess after resolving the ticket and before
+the `in-progress/ → in-review/` rename. The submit gate is **hard from the
+release that introduced it**: a failure prints the unmet preconditions to
+stderr, exits 2, and leaves the ticket in `in-progress/`. There is no `--force`
+flag — advisory mode would re-create the spec/implementation divergence the gate
+exists to close (the `in-progress → in-review` row above has always declared
+"all AC checklist items checked `[x]`" as a precondition that nothing enforced).
+
+The gate evaluates **only these three named checks** from the audit report:
+
+| Check | Pass condition |
+|-------|----------------|
+| `submit_gate_state` | The ticket resolves in `in-progress/` (the only state from which a submit is valid). |
+| `acceptance_criteria_checked` | Every `## Acceptance Criteria` checkbox is `[x]`. Forced on regardless of state; the failing evidence lists the still-unchecked AC labels. |
+| `plan_evidence` | This review-round's plan evidence (`.ct2/plans/{id}-r{round}.md|json`) exists, unless the ticket carries a structured `plan-exempt` reason. |
+
+It deliberately does **not** gate on the audit's process exit code or its
+`complete` field, and `ct2-ticket-audit --submit-gate` runs the full in-progress
+audit (so its own exit code still reflects every check). Two of those full-audit
+checks legitimately fail at submit time and must not block the move:
+
+- `required_frontmatter` fails for `branch: null` tickets, which are valid under
+  `git_strategy: direct-to-main` / `none` (where `ct2-git-start` exits before
+  normalizing `branch`).
+- `sealed_baseline` fails for legacy tickets sealed before snapshots existed.
+
+Gating on the exit code would hard-block every submit in such projects. The
+named-check contract is therefore the gate; the report is only its carrier.
+
+Like the seal gate, the submit gate is **static** — it confirms the mechanical
+preconditions are met (work is declared complete and a plan was recorded). It is
+not a semantic review and never substitutes for the dual-lens review that
+follows. The AC-checkbox half has teeth mainly on round 1 (boxes stay `[x]`
+across a rejection); per-round teeth on rework come from `plan_evidence`
+requiring the `r{n}` plan for each new round.
 
 ## File-Based State Representation
 

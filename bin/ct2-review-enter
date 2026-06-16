@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -12,6 +13,13 @@ from pathlib import Path
 
 from _ct2_protocol import assert_compatible as assert_protocol_compatible
 from _ct2_vao import atomic_write_text, ensure_ct2, now, ticket_id_from_name
+
+# The three named checks the submit gate evaluates. Deliberately NOT the full
+# audit report nor its exit code: an in-progress audit also fails
+# `required_frontmatter` for legitimate `branch: null` tickets (direct-to-main /
+# none strategies) and `sealed_baseline` for legacy tickets, neither of which is
+# a submission precondition. Gating on the exit code would brick those projects.
+SUBMIT_GATE_CHECKS = ("submit_gate_state", "acceptance_criteria_checked", "plan_evidence")
 
 
 def resolve_ticket(ct2_dir: Path, arg: str) -> Path | None:
@@ -38,6 +46,34 @@ def mirror_issue(project_dir: Path, ticket: Path) -> None:
     subprocess.run([sys.executable, str(helper), str(ticket), str(project_dir)], cwd=str(project_dir), check=False)
 
 
+def submit_gate(project_dir: Path, ticket_id: str) -> tuple[bool, list[dict[str, object]]]:
+    """Run ct2-ticket-audit --submit-gate and evaluate only SUBMIT_GATE_CHECKS.
+
+    Fail-closed: a parse failure, a missing ticket, or a changed audit shape
+    blocks the submit rather than letting an unverified ticket through a hard
+    gate.
+    """
+    helper = Path(__file__).resolve().parent / "ct2-ticket-audit"
+    proc = subprocess.run(
+        [sys.executable, str(helper), "--json", "--submit-gate", "--ticket", ticket_id, str(project_dir)],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    try:
+        report = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return False, [{"name": "submit_gate_audit", "ok": False, "evidence": (proc.stderr or proc.stdout)[:400]}]
+    tickets = report.get("tickets", [])
+    if not tickets:
+        return False, [{"name": "submit_gate_ticket_found", "ok": False, "evidence": report.get("errors")}]
+    gate = [item for item in tickets[0].get("checks", []) if item.get("name") in SUBMIT_GATE_CHECKS]
+    if len(gate) != len(SUBMIT_GATE_CHECKS):
+        return False, gate
+    return all(item.get("ok") for item in gate), gate
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Move one CT2 ticket from in-progress to in-review")
     parser.add_argument("ticket")
@@ -56,6 +92,15 @@ def main() -> int:
         print(f"ct2-review-enter: ticket {args.ticket!r} not found in .ct2/in-progress/", file=sys.stderr)
         return 1
 
+    ticket_id = ticket_id_from_name(ticket)
+    gate_ok, gate_checks = submit_gate(project_dir, ticket_id)
+    if not gate_ok:
+        print("ct2-review-enter: submit gate failed — ticket stays in in-progress/", file=sys.stderr)
+        for item in gate_checks:
+            if not item.get("ok"):
+                print(f"  fail: {item.get('name')} — {item.get('evidence')}", file=sys.stderr)
+        return 2
+
     dest = ct2_dir / "in-review" / ticket.name
     if dest.exists():
         print(f"ct2-review-enter: destination already exists: {dest.name}", file=sys.stderr)
@@ -67,7 +112,6 @@ def main() -> int:
     text = replace_frontmatter_value(text, "updated", now())
     atomic_write_text(ct2_dir, dest, text, "review-enter-ticket-")
 
-    ticket_id = ticket_id_from_name(dest)
     started = ct2_dir / ".meta" / f"{ticket_id}.started"
     try:
         started.unlink()

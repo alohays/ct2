@@ -131,6 +131,11 @@ def acceptance_criteria_checked(path: Path) -> bool:
     return bool(marks) and all(mark.lower() == "x" for mark in marks)
 
 
+def acceptance_unchecked_items(path: Path) -> list[str]:
+    """AC checkbox labels still marked `[ ]` — surfaced in submit-gate evidence."""
+    return [item for mark, item in checkbox_items(acceptance_section(path)) if mark.lower() != "x"]
+
+
 def body_section(path: Path, title: str) -> str:
     text = path.read_text(encoding="utf-8", errors="ignore")
     match = re.search(rf"^##\s+{re.escape(title)}\s*$", text, flags=re.MULTILINE)
@@ -378,7 +383,7 @@ def check(name: str, ok: bool, evidence: Any) -> dict[str, Any]:
     return {"name": name, "ok": ok, "evidence": evidence}
 
 
-def audit_ticket(ct2_dir: Path, state: str, path: Path, seal_gate: bool = False) -> dict[str, Any]:
+def audit_ticket(ct2_dir: Path, state: str, path: Path, seal_gate: bool = False, submit_gate: bool = False) -> dict[str, Any]:
     fm = read_frontmatter(path)
     ticket_id = ticket_id_from_name(path)
     ticket_stem = path.stem
@@ -396,6 +401,9 @@ def audit_ticket(ct2_dir: Path, state: str, path: Path, seal_gate: bool = False)
         if state == "draft":
             checks.extend(seal_gate_checks(path, fm))
 
+    if submit_gate:
+        checks.append(check("submit_gate_state", state == "in-progress", {"directory": state, "expected": "in-progress"}))
+
     if state in SEALED_BASELINE_STATES:
         baseline_ok, baseline_evidence = compare_ticket_to_snapshot(path, ct2_dir / "reviews" / sealed_snapshot_name(path))
         checks.append(check("sealed_baseline", baseline_ok, baseline_evidence))
@@ -404,9 +412,12 @@ def audit_ticket(ct2_dir: Path, state: str, path: Path, seal_gate: bool = False)
     plan_ok = not plan_required or plan_exists(ct2_dir, ticket_id, round_num)
     checks.append(check("plan_evidence", plan_ok, f".ct2/plans/{ticket_id}-r{round_num}.md|json"))
 
-    ac_required = state in AC_STATES
+    ac_required = state in AC_STATES or submit_gate
     ac_ok = not ac_required or acceptance_criteria_checked(path)
-    checks.append(check("acceptance_criteria_checked", ac_ok, "## Acceptance Criteria"))
+    ac_evidence: Any = "## Acceptance Criteria"
+    if submit_gate and not ac_ok:
+        ac_evidence = {"section": "## Acceptance Criteria", "unchecked": acceptance_unchecked_items(path)}
+    checks.append(check("acceptance_criteria_checked", ac_ok, ac_evidence))
 
     sidecars_required = state in DONE_STATES
     sidecars_ok, sidecar_paths = approved_sidecars(ct2_dir, ticket_id, ticket_stem, path.name, round_num)
@@ -442,13 +453,18 @@ def iter_ticket_paths(ct2_dir: Path, ticket: str | None = None) -> list[tuple[st
     return paths
 
 
-def audit(ct2_dir: Path, ticket: str | None = None, seal_gate: bool = False) -> dict[str, Any]:
-    tickets = [audit_ticket(ct2_dir, state, path, seal_gate=seal_gate) for state, path in iter_ticket_paths(ct2_dir, ticket)]
+def audit(ct2_dir: Path, ticket: str | None = None, seal_gate: bool = False, submit_gate: bool = False) -> dict[str, Any]:
+    tickets = [
+        audit_ticket(ct2_dir, state, path, seal_gate=seal_gate, submit_gate=submit_gate)
+        for state, path in iter_ticket_paths(ct2_dir, ticket)
+    ]
     errors = []
     if ticket is not None and not tickets:
         errors.append(f"ticket not found: {ticket}")
     if seal_gate and ticket is None:
         errors.append("--seal-gate requires --ticket")
+    if submit_gate and ticket is None:
+        errors.append("--submit-gate requires --ticket")
     complete = not errors and all(item["ok"] for item in tickets)
     return {
         "schema_version": "1",
@@ -482,12 +498,17 @@ def main() -> int:
     parser.add_argument("project_dir", nargs="?", default=".")
     parser.add_argument("--ticket", help="Ticket id, stem, or filename to audit")
     parser.add_argument("--seal-gate", action="store_true", help="Require draft ticket quality checks used by ct2-seal")
+    parser.add_argument(
+        "--submit-gate",
+        action="store_true",
+        help="Require in-progress submission preconditions used by ct2-review-enter (state + all ACs checked + plan evidence)",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
     project_dir = Path(args.project_dir).resolve()
     ct2_dir = ensure_ct2(project_dir)
-    report = audit(ct2_dir, args.ticket, seal_gate=args.seal_gate)
+    report = audit(ct2_dir, args.ticket, seal_gate=args.seal_gate, submit_gate=args.submit_gate)
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:

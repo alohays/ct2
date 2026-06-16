@@ -425,6 +425,48 @@ class TicketAuditTest(unittest.TestCase):
         checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
         self.assertFalse(checks["seal_gate_no_static_contradictions"])
 
+    def test_ticket_audit_submit_gate_accepts_ready_in_progress(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "in-progress" / "001-audit-ticket.md", status="in-progress", ac_checked=True, verdict="pending")
+        (ct2 / "plans" / "001-r0.md").write_text("# Plan\n", encoding="utf-8")
+
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--submit-gate", "--ticket", "001", project])
+        report = json.loads(audit.stdout)
+        checks = {check["name"]: check["ok"] for check in report["tickets"][0]["checks"]}
+        self.assertTrue(checks["submit_gate_state"])
+        self.assertTrue(checks["acceptance_criteria_checked"])
+        self.assertTrue(checks["plan_evidence"])
+
+    def test_ticket_audit_submit_gate_lists_unchecked_acs(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "in-progress" / "001-audit-ticket.md", status="in-progress", ac_checked=False, verdict="pending")
+        (ct2 / "plans" / "001-r0.md").write_text("# Plan\n", encoding="utf-8")
+
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--submit-gate", "--ticket", "001", project])
+        checks = {check["name"]: check for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
+        self.assertFalse(checks["acceptance_criteria_checked"]["ok"])
+        self.assertIn(
+            "Ticket audit reports concrete readiness checks.",
+            checks["acceptance_criteria_checked"]["evidence"]["unchecked"],
+        )
+
+    def test_ticket_audit_submit_gate_flags_wrong_state(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "backlog" / "001-audit-ticket.md", status="backlog", ac_checked=False, verdict="pending")
+
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--submit-gate", "--ticket", "001", project])
+        checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
+        self.assertFalse(checks["submit_gate_state"])
+
+    def test_ticket_audit_submit_gate_requires_ticket(self):
+        project = self.make_project()
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--submit-gate", project])
+        self.assertEqual(audit.returncode, 1)
+        self.assertIn("--submit-gate requires --ticket", json.loads(audit.stdout)["errors"])
+
     def test_ticket_audit_rejects_sealed_baseline_drift(self):
         project = self.make_project()
         ct2 = project / ".ct2"

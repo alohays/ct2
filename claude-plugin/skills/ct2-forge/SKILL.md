@@ -252,6 +252,16 @@ When all AC items are `[x]`:
    ct2-review-enter "${ticket_id}"
    ```
 
+   `ct2-review-enter` runs a **hard submit gate**
+   (`ct2-ticket-audit --submit-gate`) before the move: every `## Acceptance
+   Criteria` checkbox must be `[x]` and this round's plan evidence
+   (`.ct2/plans/${ticket_id}-r{round}.md`) must exist. A non-zero exit (code 2)
+   leaves the ticket in `in-progress/` and prints the unmet preconditions. There
+   is no `--force`. If the gate fails, **return to Step 6** — re-verify the named
+   ACs against real evidence and write the round's plan evidence. Do NOT
+   mechanically flip checkboxes or simply re-run the command; the gate is a
+   backstop for genuine completion, not a checkbox to satisfy.
+
 3. Log in-context: "Ticket {id} moved to in-review. Awaiting dual approval."
 
 ### Step 8: Loop Pacing

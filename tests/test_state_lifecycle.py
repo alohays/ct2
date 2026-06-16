@@ -245,11 +245,24 @@ class StateLifecycleTest(unittest.TestCase):
         self.assertEqual(ack.returncode, 0, ack.stderr)
         self.assertTrue((inbox / "done" / msg.name).exists())
 
+    @staticmethod
+    def make_submittable(ticket, ct2, round_num=0):
+        """Flip the fixture's AC to [x] and lay down this round's plan evidence
+        so the in-progress -> in-review submit gate passes."""
+        ticket.write_text(
+            ticket.read_text(encoding="utf-8").replace(
+                "- [ ] Draft moves to backlog.", "- [x] Draft moves to backlog."
+            ),
+            encoding="utf-8",
+        )
+        (ct2 / "plans" / f"001-r{round_num}.md").write_text("# Plan\n", encoding="utf-8")
+
     def test_ct2_review_enter_stamps_review_timer(self):
         project = self.make_project()
         ct2 = project / ".ct2"
         ticket = ct2 / "in-progress" / "001-seal-smoke.md"
         write_ticket(ticket, status="in-progress", sealed="2026-05-12T00:00:00Z")
+        self.make_submittable(ticket, ct2)
         (ct2 / ".meta" / "001.started").write_text("2026-05-12T00:00:00Z\n", encoding="utf-8")
 
         enter = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-enter", "001", project], cwd=REPO_ROOT)
@@ -261,6 +274,81 @@ class StateLifecycleTest(unittest.TestCase):
         self.assertIn("status: in-review", reviewed.read_text(encoding="utf-8"))
         self.assertFalse((ct2 / ".meta" / "001.started").exists())
         self.assertRegex((ct2 / ".meta" / "001.in-review").read_text(encoding="utf-8"), r"20\d\d-\d\d-\d\dT")
+
+    def test_ct2_review_enter_submit_gate_blocks_unchecked_acs(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-progress" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-progress", sealed="2026-05-12T00:00:00Z")
+        (ct2 / "plans" / "001-r0.md").write_text("# Plan\n", encoding="utf-8")
+        # AC stays "- [ ]" — the gate must refuse the move.
+
+        enter = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-enter", "001", project], cwd=REPO_ROOT)
+        self.assertEqual(enter.returncode, 2, enter.stdout)
+        self.assertIn("submit gate failed", enter.stderr)
+        self.assertIn("acceptance_criteria_checked", enter.stderr)
+        self.assertTrue(ticket.exists())
+        self.assertFalse((ct2 / "in-review" / "001-seal-smoke.md").exists())
+
+    def test_ct2_review_enter_submit_gate_blocks_missing_plan(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-progress" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-progress", sealed="2026-05-12T00:00:00Z")
+        ticket.write_text(
+            ticket.read_text(encoding="utf-8").replace(
+                "- [ ] Draft moves to backlog.", "- [x] Draft moves to backlog."
+            ),
+            encoding="utf-8",
+        )
+        # No plan evidence for r0 — the gate must refuse the move.
+
+        enter = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-enter", "001", project], cwd=REPO_ROOT)
+        self.assertEqual(enter.returncode, 2, enter.stdout)
+        self.assertIn("plan_evidence", enter.stderr)
+        self.assertTrue(ticket.exists())
+
+    def test_ct2_review_enter_submit_gate_requires_round_plan_on_rework(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-progress" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-progress", sealed="2026-05-12T00:00:00Z")
+        ticket.write_text(
+            ticket.read_text(encoding="utf-8")
+            .replace("review-round: 0", "review-round: 1")
+            .replace("- [ ] Draft moves to backlog.", "- [x] Draft moves to backlog."),
+            encoding="utf-8",
+        )
+        # Only the r0 plan exists; rework round 1 must supply its own plan.
+        (ct2 / "plans" / "001-r0.md").write_text("# Plan r0\n", encoding="utf-8")
+
+        blocked = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-enter", "001", project], cwd=REPO_ROOT)
+        self.assertEqual(blocked.returncode, 2, blocked.stdout)
+        self.assertIn("plan_evidence", blocked.stderr)
+
+        (ct2 / "plans" / "001-r1.md").write_text("# Plan r1\n", encoding="utf-8")
+        passed = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-enter", "001", project], cwd=REPO_ROOT)
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+        self.assertTrue((ct2 / "in-review" / "001-seal-smoke.md").exists())
+
+    def test_ct2_review_enter_submit_gate_passes_direct_to_main_null_branch(self):
+        # branch: null is legitimate under git_strategy direct-to-main|none and
+        # must NOT brick the submit: the gate ignores required_frontmatter.
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-progress" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-progress", sealed="2026-05-12T00:00:00Z")
+        ticket.write_text(
+            ticket.read_text(encoding="utf-8")
+            .replace("branch: feat/001-seal-smoke", "branch: null")
+            .replace("- [ ] Draft moves to backlog.", "- [x] Draft moves to backlog."),
+            encoding="utf-8",
+        )
+        (ct2 / "plans" / "001-r0.md").write_text("# Plan\n", encoding="utf-8")
+
+        enter = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-enter", "001", project], cwd=REPO_ROOT)
+        self.assertEqual(enter.returncode, 0, enter.stderr)
+        self.assertTrue((ct2 / "in-review" / "001-seal-smoke.md").exists())
 
     def test_ct2_review_watchdog_escalates_overdue_missing_sidecar(self):
         project = self.make_project()

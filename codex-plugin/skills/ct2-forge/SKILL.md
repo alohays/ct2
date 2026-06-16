@@ -45,7 +45,12 @@ not write review sidecars, and do not approve your own work.
 9. Commit as specified by `spec/git-workflow.md`, then run `ct2-git-submit`.
 10. Run `ct2-review-enter {ticket}` to move the ticket to `.ct2/in-review/`,
     clear the started stamp, stamp `.ct2/.meta/{id}.in-review`, and wait for both
-    reviewers plus reconciliation.
+    reviewers plus reconciliation. `ct2-review-enter` runs a hard **submit gate**
+    (`ct2-ticket-audit --submit-gate`); a non-zero exit means the ticket stays in
+    `in-progress/`. Treat a gate failure as a signal to **return to the work
+    step** — re-verify the failing ACs against real evidence and write this
+    round's plan evidence. Never satisfy the gate by mechanically flipping
+    checkboxes or re-running `ct2-review-enter` unchanged.
 11. For `/goal` use, keep working until every in-scope ticket reaches `done/`,
     `escalated/`, or an explicit blocked/budget-limited outcome with evidence.
 
