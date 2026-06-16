@@ -73,11 +73,27 @@ if [[ -e "$SNAPSHOT_DEST" ]]; then
   exit 1
 fi
 
-if ! python3 "${SCRIPT_DIR}/ct2-ticket-audit" --json --seal-gate --ticket "$TICKET_ID" "$PWD" >/dev/null; then
+AUDIT_JSON=$(python3 "${SCRIPT_DIR}/ct2-ticket-audit" --json --seal-gate --ticket "$TICKET_ID" "$PWD") && AUDIT_RC=0 || AUDIT_RC=$?
+if [[ $AUDIT_RC -ne 0 ]]; then
   python3 "${SCRIPT_DIR}/ct2-ticket-audit" --seal-gate --ticket "$TICKET_ID" "$PWD" || true
   echo "ct2-seal: ticket quality gate failed — edit the draft and retry" >&2
   exit 1
 fi
+
+# Passing gate: surface advisory planning lints (the gate already passed, so
+# these never block — they are draft-time guidance, printed not discarded).
+printf '%s' "$AUDIT_JSON" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for ticket in data.get('tickets', []):
+    for entry in ticket.get('checks', []):
+        if str(entry.get('name', '')).startswith('seal_gate_lint_'):
+            ev = entry.get('evidence') or {}
+            print(f\"ct2-seal: planning lint [{ev.get('lint')}]: {ev.get('advice')}\")
+" || true
 
 # ── Validate required fields (Python for YAML parsing) ───────────────────────
 python3 - "$TICKET_PATH" <<'PYEOF'

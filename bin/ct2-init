@@ -114,6 +114,7 @@ _copy_if_missing "${CT2_REPO_DIR}/config/harness.yaml"          "${CT2_DIR}/conf
 _copy_if_missing "${CT2_REPO_DIR}/config/ct2-lens-cc-role.md"   "${CT2_DIR}/config/ct2-lens-cc-role.md"
 _copy_if_missing "${CT2_REPO_DIR}/config/ct2-lens-cx-role.md"   "${CT2_DIR}/config/ct2-lens-cx-role.md"
 _copy_if_missing "${CT2_REPO_DIR}/config/ct2-reconciler-ref.md" "${CT2_DIR}/config/ct2-reconciler-ref.md"
+_copy_if_missing "${CT2_REPO_DIR}/config/planning-lints.json"   "${CT2_DIR}/config/planning-lints.json"
 
 # ── Copy default VAO eval cases and watcher templates ────────────────────────
 for role in ct2-helm ct2-forge ct2-lens-cc ct2-lens-cx; do

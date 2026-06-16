@@ -285,7 +285,51 @@ def static_contradictions(requirements: str, constraints: str, acceptance: str) 
     return contradictions
 
 
-def seal_gate_checks(path: Path, fm: dict[str, Any]) -> list[dict[str, Any]]:
+LINT_SECTION_ALIASES = {
+    "requirements": "Requirements",
+    "constraints": "Constraints",
+    "context": "Context",
+    "acceptance-criteria": "Acceptance Criteria",
+}
+
+
+def load_planning_lints(ct2_dir: Path) -> list[dict[str, Any]]:
+    """Load advisory planning lints fail-soft: missing or invalid file → no lints."""
+    try:
+        data = json.loads((ct2_dir / "config" / "planning-lints.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    lints = data.get("lints", []) if isinstance(data, dict) else data
+    return [lint for lint in lints if isinstance(lint, dict)] if isinstance(lints, list) else []
+
+
+def _lint_text(sections: dict[str, str], section_name: str) -> str:
+    title = LINT_SECTION_ALIASES.get(str(section_name).lower())
+    return "\n".join(sections.values()) if title is None else sections.get(title, "")
+
+
+def planning_lint_checks(ct2_dir: Path, sections: dict[str, str]) -> list[dict[str, Any]]:
+    """Advisory only: each TRIGGERED lint appends an ok=True entry carrying its
+    advice, using the existing check shape. The seven blocking seal-gate checks
+    and the gate's exit semantics are byte-for-byte unchanged — a lint never
+    fails the gate."""
+    entries = []
+    for lint in load_planning_lints(ct2_dir):
+        lint_id = str(lint.get("id", "")).strip()
+        pattern = lint.get("pattern")
+        mode = lint.get("mode")
+        if not lint_id or not isinstance(pattern, str) or mode not in ("must-match", "must-not-match"):
+            continue  # malformed lint → skip
+        try:
+            found = re.search(pattern, _lint_text(sections, lint.get("section", "any")), re.IGNORECASE | re.MULTILINE) is not None
+        except re.error:
+            continue
+        if (mode == "must-match" and not found) or (mode == "must-not-match" and found):
+            entries.append(check(f"seal_gate_lint_{lint_id}", True, {"advice": str(lint.get("advice", "")), "lint": lint_id}))
+    return entries
+
+
+def seal_gate_checks(ct2_dir: Path, path: Path, fm: dict[str, Any]) -> list[dict[str, Any]]:
     sections = {title: body_section(path, title) for title in TICKET_SECTIONS}
     missing_sections = [title for title, section in sections.items() if not meaningful_text(section)]
     touched_files = fm.get("touched-files", [])
@@ -328,6 +372,7 @@ def seal_gate_checks(path: Path, fm: dict[str, Any]) -> list[dict[str, Any]]:
         ),
         check("seal_gate_no_static_contradictions", not contradictions, contradictions or "no simple contradictions detected"),
         check("seal_gate_verification_binding", not binding_issues, {"invalid": binding_issues} if binding_issues else "no ## Verification bindings, or all well-formed"),
+        *planning_lint_checks(ct2_dir, sections),
     ]
 
 
@@ -536,7 +581,7 @@ def audit_ticket(
     if seal_gate:
         checks.append(check("seal_gate_state", state == "draft", {"directory": state, "expected": "draft"}))
         if state == "draft":
-            checks.extend(seal_gate_checks(path, fm))
+            checks.extend(seal_gate_checks(ct2_dir, path, fm))
 
     if submit_gate:
         checks.append(check("submit_gate_state", state == "in-progress", {"directory": state, "expected": "in-progress"}))

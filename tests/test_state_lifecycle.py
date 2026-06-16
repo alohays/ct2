@@ -103,6 +103,20 @@ class StateLifecycleTest(unittest.TestCase):
         self.assertTrue((ct2 / "reviews" / "001-sealed.md").exists())
         self.assertEqual([], list((ct2 / ".tmp").iterdir()))
 
+    def test_ct2_seal_prints_planning_lint_advisories(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        (ct2 / "config" / "planning-lints.json").write_text(
+            json.dumps({"lints": [{"id": "ac-test", "section": "acceptance-criteria", "pattern": "test",
+                                    "mode": "must-match", "advice": "ACs should reference a test."}]}),
+            encoding="utf-8",
+        )
+        write_ticket(ct2 / "draft" / "001-seal-smoke.md")  # AC text lacks "test"
+        seal = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-seal", "001"], cwd=project)
+        self.assertEqual(seal.returncode, 0, seal.stderr)  # advisory, still seals
+        self.assertIn("planning lint [ac-test]", seal.stdout)
+        self.assertTrue((ct2 / "backlog" / "001-seal-smoke.md").exists())
+
     def test_ct2_seal_collision_leaves_draft_and_tmp_clean(self):
         project = self.make_project()
         ct2 = project / ".ct2"
