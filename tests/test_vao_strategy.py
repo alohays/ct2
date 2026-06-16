@@ -291,6 +291,28 @@ esac
         self.assertIn("Trust", status.stdout)
         self.assertIn("Evidence", status.stdout)
 
+    def test_baseline_reports_and_status_surfaces_first_pass_approval(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        # One ticket dual-approved on round 0 (first pass); one only after a
+        # rework round. first_pass_approval must be 1/2 = 0.5.
+        write_ticket(ct2 / "done" / "001-vao-smoke-ticket.md", review_round=0)
+        write_sidecar(ct2 / "reviews" / "001-cc-r0.md", reviewer="ct2-lens-cc")
+        write_sidecar(ct2 / "reviews" / "001-cx-r0.md", reviewer="ct2-lens-cx")
+        write_ticket(ct2 / "done" / "002-vao-smoke-ticket.md", ticket_id="002", review_round=1)
+        write_sidecar(ct2 / "reviews" / "002-cc-r1.md", ticket="002-vao-smoke-ticket", reviewer="ct2-lens-cc")
+        write_sidecar(ct2 / "reviews" / "002-cx-r1.md", ticket="002-vao-smoke-ticket", reviewer="ct2-lens-cx")
+
+        baseline = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-baseline", "--json", project])
+        self.assertEqual(baseline.returncode, 0, baseline.stderr)
+        trust = json.loads(baseline.stdout)["scorecard"]["trust"]
+        self.assertEqual(2, trust["sample_size"])
+        self.assertEqual(0.5, trust["first_pass_approval"])
+
+        status = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-status", project])
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertIn("first_pass_approval=0.5", status.stdout)
+
     def test_role_run_records_cost_and_ct2_cost_summarizes(self):
         project = self.make_project()
         env = os.environ.copy()

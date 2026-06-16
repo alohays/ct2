@@ -369,7 +369,13 @@ def scorecard_summary():
         status = section.get("status", "unknown")
         value = section.get(metric)
         sample = section.get("sample_size", section.get("cost_sample_size", "-"))
-        print(f"  {label:<12} status={status} sample={sample} {metric}={value}")
+        line = f"  {label:<12} status={status} sample={sample} {metric}={value}"
+        # The Trust block carries a first-pass-approval diagnostic alongside its
+        # headline ratio; surface it so the helm planner sees rework pressure at
+        # init rather than only the dual-approval ratio.
+        if key == "trust":
+            line += f" first_pass_approval={section.get('first_pass_approval')}"
+        print(line)
 
 def runtime_doctor_summary():
     cap_path = ct2_dir / "runtime" / "capabilities.json"

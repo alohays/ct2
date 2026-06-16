@@ -19,6 +19,18 @@ Cost/Latency.
 | Autonomy | Review and blocked/unblocked latency from local telemetry | `lens_latency_p95_sec` |
 | Cost/Latency | Role-run cost, token, duration, and ticket latency summaries, plus advisory fan-out inputs | sprint baseline |
 
+### Trust diagnostics: first-pass approval
+
+Alongside the headline Trust ratio, `ct2-baseline` reports `first_pass_approval`
+inside the `trust` block: the fraction of done tickets whose **round-0** review
+was dual-approved (`cc` AND `cx` approved at `review-round: 0`) divided by all
+done tickets. It is a diagnostic on rework pressure — a low value means tickets
+routinely need a rework round before approval — and never gates or moves ticket
+state. `ct2-status` surfaces it on the Trust line so the planner sees it at init.
+Like every scorecard metric it obeys the Baseline Rules below: under
+`MIN_DONE_SAMPLE` done tickets the Trust block carries
+`status: measurement_started` and the ratio must not be read as a measurement.
+
 ## Cost-Latency Fan-Out Inputs
 
 The Cost/Latency axis accepts two additional inputs so a parallel run is
