@@ -8,6 +8,19 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Added the provider-neutral goal loop `bin/ct2-goal` (loop-design roadmap
+  T4.1, Direction D). A goal tracks a maintainer objective across CT2 tickets in
+  `.ct2/goals/{slug}/` (`goal.json`, `scope.json`, `ledger.jsonl`). Commands:
+  `start` (snapshot captures matching tickets; production mode starts empty),
+  `add-ticket` (register a ticket as the planner seals it), `status`, `audit`,
+  `pause`/`complete`/`abandon`. `audit` cross-references in-scope tickets against
+  the kanban directories and, when an `outcome-check` command is set, records its
+  exit through `ct2-evidence verifier` — **evidence, never a verdict**; goals
+  never gate or move ticket state. New `spec/goal-loop.md`; `ct2-init` creates
+  the directory. This is the neutral record the `ct2-codex-goal` shim and its
+  migration subsume next (T4.1b), following the Decision Bridge precedent (one
+  neutral truth, provider surfaces as renders).
+
 - Added advisory **planning lints** — the distill endpoint on the planning side
   (loop-design roadmap T3.3, Direction C). `.ct2/config/planning-lints.json`
   (a commented template copied by `ct2-init`) lists

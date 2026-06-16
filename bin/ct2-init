@@ -59,7 +59,7 @@ for dir in \
   runtime runtime/artifacts runtime/provider-hooks telemetry evidence evidence/commands evidence/artifacts evidence/screenshots evidence/verifiers evidence/hooks \
   decisions/pending decisions/answered decisions/expired decisions/audit \
   plans plans/canvas/open plans/canvas/answered plans/canvas/sealed plans/canvas/expired \
-  watchers postmortems lessons \
+  watchers postmortems lessons goals \
   evals/ct2-helm evals/ct2-forge evals/ct2-lens-cc evals/ct2-lens-cx
 do
   mkdir -p "${CT2_DIR}/${dir}"
