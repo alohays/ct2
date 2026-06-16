@@ -19,6 +19,9 @@ from _ct2_protocol import assert_compatible as assert_protocol_compatible
 
 
 LOCK_TTL_SECONDS = 600
+# Grace for the O_EXCL-create → pid-stamp window: a lock younger than this with
+# no readable pid is assumed to be a holder mid-creation, not a stale crash.
+LOCK_STAMP_GRACE_SECONDS = 5
 VALID_VERDICTS = {"approved", "rejected"}
 
 # Named checks the done gate evaluates from `ct2-ticket-audit --done-gate`.
@@ -92,10 +95,25 @@ def max_review_rounds(ct2_dir: Path) -> int:
 def lock_is_live(lock: Path) -> bool:
     try:
         pid_text = lock.read_text(encoding="utf-8").strip()
-        pid = int(pid_text)
-    except (OSError, ValueError):
+    except OSError:
         return False
-    age = datetime.now(timezone.utc).timestamp() - lock.stat().st_mtime
+    try:
+        age = datetime.now(timezone.utc).timestamp() - lock.stat().st_mtime
+    except OSError:
+        return False
+    # The lock is created with O_EXCL and pid-stamped a moment later; in that
+    # window a concurrent acquirer reads an empty (or partial) pid. Treat a very
+    # fresh unstamped lock as LIVE so the second reconciler waits instead of
+    # stealing it mid-creation and racing the holder to dest.exists(). An old
+    # unstamped lock is a crashed writer and is reclaimable.
+    pid = None
+    if pid_text:
+        try:
+            pid = int(pid_text)
+        except ValueError:
+            pid = None
+    if pid is None:
+        return age < LOCK_STAMP_GRACE_SECONDS
     if age >= LOCK_TTL_SECONDS:
         return False
     try:
