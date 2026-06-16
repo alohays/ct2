@@ -8,6 +8,16 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Wired lesson **consult** onto the mandatory pickup path (loop-design roadmap
+  T3.2, Direction C). `ct2-pickup` now prints the `ct2-lesson digest --role
+  forge` block (ranked against the picked-up ticket's `touched-files`) as part
+  of its stdout — fail-soft when the tool or ledger is absent — so consult rides
+  the serialized pickup every role already runs, not an optional SKILL step
+  agents skip. Forge plan evidence gains a `Lessons consulted: <ids or none>`
+  line; `ct2-plan-audit` grows CT2's only **WARN tier** (advisory `warning_count`
+  that never changes the exit code) and warns when a markdown plan omits that
+  line. Specs: `spec/plan-evidence.md`; both forge SKILLs author the line.
+
 - Added the lessons ledger — CT2's cross-ticket operational memory (loop-design
   roadmap T3.1, Direction C). `bin/ct2-lesson` (`add`/`retire`/`digest`/`list`)
   writes an append-only event log at `.ct2/lessons/lessons.jsonl` via the

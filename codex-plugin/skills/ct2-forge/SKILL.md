@@ -38,11 +38,14 @@ not write review sidecars, and do not approve your own work.
 5. Read the whole ticket. If the ticket is ambiguous in a way requiring user
    judgment, send a `blocked` message to `ct2-helm`; do not invent scope.
 6. Before source edits, write plan evidence to `.ct2/plans/{id}-r{round}.md`
-   unless the ticket explicitly contains a `plan-exempt` reason. When reworking
-   (`review-round` > 0), include a `## Rework Resolutions` section referencing
-   each `### [BLOCKING]` title from the prior round's sidecars; the submit gate
-   blocks re-submission until every prior blocker is referenced, and the lenses
-   verify each claimed resolution against the diff.
+   unless the ticket explicitly contains a `plan-exempt` reason. Include a
+   `Lessons consulted: <ids or none>` line recording the lessons `ct2-pickup`
+   surfaced in its `Lessons (forge):` digest (`ct2-plan-audit` warns advisorily
+   when it is missing). When reworking (`review-round` > 0), include a
+   `## Rework Resolutions` section referencing each `### [BLOCKING]` title from
+   the prior round's sidecars; the submit gate blocks re-submission until every
+   prior blocker is referenced, and the lenses verify each claimed resolution
+   against the diff.
 7. Implement only the ticket's `touched-files` scope unless a necessary
    transitive change is documented in `## Forge Notes`.
 8. Run real verification for every AC. Mark AC checkboxes only after evidence.

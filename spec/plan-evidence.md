@@ -24,6 +24,10 @@ Each plan should include:
 - ticket id and review round;
 - intended files and commands;
 - acceptance criteria mapping;
+- a `Lessons consulted: <ids or none>` line recording the lessons the forge
+  reviewed from the `ct2-pickup` digest (`spec/lessons.md`). `ct2-plan-audit`
+  emits an **advisory** warning when a markdown plan omits it; the warning never
+  changes the audit's exit code;
 - a `## Rework Resolutions` section at review-round `n > 0` referencing each
   `### [BLOCKING]` issue from the round `n-1` sidecars (see
   `spec/review-protocol.md` § *Rework Resolution Contract*);
@@ -40,4 +44,7 @@ Each plan should include:
 
 `ct2-plan-audit` verifies tickets in `in-progress/`, `in-review/`, and `done/`
 have `.ct2/plans/{ticket-id}-r{round}.md`, `.json`, or an explicit
-`plan-exempt` reason.
+`plan-exempt` reason. It also emits **advisory** warnings (counted in
+`warning_count`, never affecting the exit code) — currently, a markdown plan
+that omits the `Lessons consulted:` line. This is CT2's only WARN tier;
+`ct2-ticket-audit` checks are pass/fail only.
