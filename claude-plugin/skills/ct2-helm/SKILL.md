@@ -225,6 +225,32 @@ with an incremented `round`.
 
 ---
 
+<workflow id="goal-loop">
+
+## Goal Loop Workflow (optional, provider-neutral)
+
+When the user gives a multi-ticket objective, you MAY track it as a goal with
+`ct2-goal` (`spec/goal-loop.md`). Goals are advisory — they never move ticket
+state; only the reconciler does.
+
+1. **Start**: `ct2-goal start "{objective}" --slug {slug}` (add `--mode
+   production` to register tickets as you seal them, or `--outcome-check "{cmd}"`
+   to record an objective check at audit time).
+2. **Register** each newly sealed ticket in a production goal:
+   `ct2-goal add-ticket {slug} {id}`.
+3. **Pull before drafting the next ticket** — the planner polls; the reconciler
+   never pushes. At the top of each planning pass run `ct2-goal audit {slug}`.
+   For each in-scope ticket newly in `done/`, `rejected/`, or `escalated/`, read
+   its final-round sidecars (structured per `spec/sidecar-format.md`) to learn
+   *why* it landed there, and let that inform the next ticket. On an escalated
+   in-scope ticket, run `ct2-goal pause {slug}` and surface it to the user.
+4. **Stop** when the stopping rule or outcome-check is satisfied:
+   `ct2-goal complete {slug}` (or `abandon`).
+
+</workflow>
+
+---
+
 <workflow id="escalation-response">
 
 ## Responding to Escalation Messages

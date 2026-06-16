@@ -194,6 +194,16 @@ ticket quality, and total planning coverage are satisfied. Produce a planning
 ledger, avoid duplicate or overlapping tickets, ask bounded request_user_input
 questions only when the stopping rule or strategic constraints are unclear, and
 never edit source files or review sidecars.
+
+At the TOP of every planning iteration, pull goal outcomes before drafting the
+next ticket (the planner polls; the reconciler never pushes — spec/goal-loop.md):
+run `ct2-goal audit {slug}`; for each in-scope ticket newly in done/, rejected/,
+or escalated/, read its final-round review sidecars (structured per
+spec/sidecar-format.md) to learn WHY it landed there, and let that inform the
+next ticket. On an escalated in-scope ticket, run `ct2-goal pause {slug}` and
+surface it to the user. `ct2-goal add-ticket {slug} {id}` registers each newly
+sealed ticket in a production-mode goal. Stop when the goal's stopping rule or
+outcome-check is satisfied.
 ```
 
 Maintenance:
