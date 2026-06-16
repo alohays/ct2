@@ -253,6 +253,44 @@ class ProtocolCompatibilityTest(unittest.TestCase):
         self.assertEqual(rerun.returncode, 0, rerun.stderr)
         self.assertEqual("already-current", json.loads(rerun.stdout)["state"])
 
+    def test_migrate_0_3_to_0_4_provisions_dirs_config_backup_log_stamp(self):
+        project = self.fixture_project("0.3-to-0.4")
+        ct2 = project / ".ct2"
+        self.assertFalse((ct2 / "lessons").exists())
+        self.assertFalse((ct2 / "goals").exists())
+        self.assertFalse((ct2 / "config" / "planning-lints.json").exists())
+
+        migrate = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-migrate-0.3-0.4", "--json", project])
+
+        self.assertEqual(migrate.returncode, 0, migrate.stderr)
+        report = json.loads(migrate.stdout)
+        self.assertEqual("migrated", report["state"])
+        self.assertEqual("0.4", (ct2 / ".protocol-version").read_text(encoding="utf-8").strip())
+        self.assertTrue((ct2 / "lessons").is_dir())
+        self.assertTrue((ct2 / "goals").is_dir())
+        self.assertTrue((ct2 / "config" / "planning-lints.json").is_file())
+        self.assertEqual(1, len(list((ct2 / ".migrations").glob("*-0.3-to-0.4.tar.gz"))))
+        self.assertEqual(1, len(list((ct2 / ".migrations").glob("*-0.3-to-0.4.log"))))
+
+        rerun = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-migrate-0.3-0.4", "--json", project])
+        self.assertEqual(rerun.returncode, 0, rerun.stderr)
+        self.assertEqual("already-current", json.loads(rerun.stdout)["state"])
+
+    def test_migrate_0_3_to_0_4_preserves_existing_planning_lints(self):
+        project = self.fixture_project("0.3-to-0.4")
+        ct2 = project / ".ct2"
+        custom = ct2 / "config" / "planning-lints.json"
+        custom.parent.mkdir(parents=True, exist_ok=True)
+        custom.write_text('{"custom": true}\n', encoding="utf-8")
+
+        report = _ct2_migrate.run_migration(project, "0.3", "0.4")
+
+        self.assertEqual("migrated", report["state"])
+        self.assertEqual('{"custom": true}\n', custom.read_text(encoding="utf-8"))
+        self.assertNotIn(".ct2/config/planning-lints.json", report["changed"])
+        self.assertIn(".ct2/lessons", report["changed"])
+        self.assertIn(".ct2/goals", report["changed"])
+
     def test_protocol_audit_covers_cataloged_fields(self):
         audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-protocol-audit", "--json", REPO_ROOT])
         self.assertEqual(audit.returncode, 0, audit.stderr)

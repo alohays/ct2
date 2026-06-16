@@ -17,6 +17,17 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Added the `ct2-migrate-0.3-0.4` protocol-migration helper for the 0.4.0
+  release. Because the protocol version is the `MAJOR.MINOR` of `VERSION`, the
+  0.3.0 → 0.4.0 bump advances the ledger protocol 0.3 → 0.4, so every existing
+  `.ct2/` project needs a forward migration path. The helper is purely additive
+  and idempotent — it provisions the 0.4 ledger surface a fresh `ct2-init` now
+  creates (the `lessons/` and `goals/` directories and the advisory
+  `config/planning-lints.json` template) and never rewrites existing project
+  state, so a customized lints file is preserved untouched. It follows the
+  standard migration contract: back up `.ct2/` before mutating, log the run, and
+  stamp `.ct2/.protocol-version` only on full success.
+
 - Wired the goal-loop feedback step (loop-design roadmap T4.2, Direction D),
   closing the outer loop so the planner hears each terminal ticket's outcome.
   The planner **pulls**, the reconciler never pushes: `helm-auto-cx` (and the
