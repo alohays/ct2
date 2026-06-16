@@ -14,6 +14,7 @@ from pathlib import Path
 from _ct2_protocol import parse_protocol, read_project_protocol
 from _ct2_sealed_baseline import sealed_snapshot_name, write_snapshot
 from _ct2_vao import atomic_write_text, compact_now, now
+from _ct2_version import repo_root_from_file
 
 
 TICKET_STATES = ("draft", "backlog", "in-progress", "in-review", "rejected", "escalated", "done")
@@ -118,6 +119,40 @@ def migrate_0_1_to_0_2(ct2_dir: Path) -> list[str]:
     return changed
 
 
+def migrate_0_3_to_0_4(ct2_dir: Path) -> list[str]:
+    """Provision the 0.4 ledger surface: the lessons and goals directories
+    (loop-design Direction C/D) and the advisory planning-lints config.
+
+    Purely additive and idempotent — it creates only what a fresh 0.4
+    ``ct2-init`` would create and never rewrites existing project state, so an
+    already-customized ``planning-lints.json`` is preserved untouched.
+    """
+    changed: list[str] = []
+    for name in ("lessons", "goals"):
+        target = ct2_dir / name
+        if target.exists() and not target.is_dir():
+            raise RuntimeError(
+                f"{target} exists but is not a directory; move or remove it before "
+                "migrating (existing project data is left untouched)."
+            )
+        if not target.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            changed.append(str(target.relative_to(ct2_dir.parent)))
+    lints_dst = ct2_dir / "config" / "planning-lints.json"
+    if not lints_dst.exists():
+        lints_src = repo_root_from_file(__file__) / "config" / "planning-lints.json"
+        if lints_src.is_file():
+            lints_dst.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(
+                ct2_dir,
+                lints_dst,
+                lints_src.read_text(encoding="utf-8"),
+                "planning-lints-",
+            )
+            changed.append(str(lints_dst.relative_to(ct2_dir.parent)))
+    return changed
+
+
 def migrate_noop(ct2_dir: Path) -> list[str]:
     return []
 
@@ -137,6 +172,8 @@ def run_migration(project_dir: Path, from_version: str, to_version: str, dry_run
     backup_path = backup(ct2_dir, from_version, to_version, stem)
     if from_version == "0.1" and to_version == "0.2":
         changed = migrate_0_1_to_0_2(ct2_dir)
+    elif from_version == "0.3" and to_version == "0.4":
+        changed = migrate_0_3_to_0_4(ct2_dir)
     else:
         changed = migrate_noop(ct2_dir)
     log = ct2_dir / ".migrations" / f"{stem}.log"
