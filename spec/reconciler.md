@@ -55,6 +55,55 @@ process that acquired it.
 
 Single-reviewer approval is never enough for `done/`.
 
+## Done Gate
+
+Dual approval is necessary but no longer sufficient for `done/`. When both
+sidecars approve, the reconciler runs `ct2-ticket-audit --done-gate --ticket
+{id}` against the ticket **still in `in-review/`**, before any state mutation,
+and gates on these named checks (never the audit exit code — the full in-review
+audit also fails `required_frontmatter` for legitimate `branch: null` tickets,
+which is not a done-readiness condition):
+
+| Check | Pass condition |
+|---|---|
+| `done_gate_state` | The ticket is in `in-review/`. |
+| `acceptance_criteria_checked` | Every `## Acceptance Criteria` checkbox is `[x]`. |
+| `sealed_baseline` | The ticket matches its sealed snapshot (no post-seal text drift). |
+| `plan_evidence` | This round's plan evidence exists (or a valid `plan-exempt` reason). |
+| `dual_approved_sidecars` | Both round-matched sidecars exist, approved, well-formed. |
+| `done_gate_evidence` | At least one `ok:true` claim of kind `command`/`verifier` whose `round` equals the ticket's current review-round and whose path exists; when the ticket has sealed `## Verification` bindings, one such round-matched claim for **every** bound AC. |
+
+Freshness is keyed on the claim's `round` field, never a timestamp: forge records
+evidence during `in-progress`, before the `.meta/{id}.in-review` stamp exists, so
+a timestamp comparison would fail every honest ticket. Round-matching kills
+stale-evidence reuse across rework rounds; it does not prevent a fresh `echo ok`
+— semantic binding is `ct2-ac-verify`'s job (`spec/ticket-format.md`).
+
+The `done/` invariant therefore strengthens from "dual approval" to "dual
+approval AND machine-verified round-fresh evidence", with no change to the `mv`
+primitive, writer ownership, or the rule that only reviewer verdicts reject — a
+failed gate **withholds** the transition; it never judges.
+
+### Hardness and recovery
+
+The gate ships **advisory** (the `DONE_GATE_HARD` code constant is `false`): on
+failure it records the verdict, sends **one** deduplicated helm inbox message per
+ticket-round (stamped `.meta/{id}-r{n}.done-gate-failed`, removed when the gate
+later passes or the ticket leaves `in-review/`), and still allows the approved
+ticket to move to `done/` (exit 0).
+A release promotes it to **hard** (withhold the transition, exit 3) per the
+gate-hardness policy in `spec/balanced-scorecard.md`, never by runtime config.
+
+Under a hard gate a failing ticket stays in `in-review/`. Recovery is fixing the
+deficiency — checking AC boxes (baseline-safe: the sealed baseline normalizes
+checkbox marks) and recording the missing round-tagged evidence via
+`ct2-ac-verify` / `ct2-evidence` — then re-running `ct2-reconcile {id} {round}`.
+A ticket that cannot pass exits through the existing human escape paths
+(`ct2-revise`), and `ct2-review-watchdog` escalates an approved-but-unverified
+ticket that strands in `in-review/` past `max_review_duration_min` so it never
+hangs without an SLA. In `--discover` aggregation, exit 3 ranks above 0 and
+below the hard errors (1, 2) and never blocks reconciliation of other pairs.
+
 ## Frontmatter Writes
 
 The reconciler updates:
@@ -73,9 +122,10 @@ The reconciler updates:
 
 | Code | Meaning |
 |---:|---|
-| 0 | Reconciled, skipped because incomplete, skipped because already moved, or skipped because another live reconciler owns the lock. |
+| 0 | Reconciled, skipped because incomplete, skipped because already moved, skipped because another live reconciler owns the lock, or moved despite an advisory done-gate failure. |
 | 1 | Argument or project error. |
 | 2 | Invalid sidecar verdict or ambiguous ticket state. |
+| 3 | Approved but the **hard** done gate withheld the transition (approved-but-unverified). No state change. In `--discover`, ranks above 0 and below 1/2; other pairs still reconcile. |
 
 Git finalization is fail-soft: `ct2-git-finalize` failures must not undo a
 completed ticket state transition.

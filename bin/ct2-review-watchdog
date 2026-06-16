@@ -78,12 +78,42 @@ def sidecars_missing(ct2_dir: Path, ticket: Path) -> list[str]:
     return missing
 
 
-def send_escalation(ct2_dir: Path, ticket: Path, missing: list[str], age_min: int, max_min: int) -> Path:
+def sidecars_dual_approved(ct2_dir: Path, ticket: Path) -> bool:
+    """Both cc/cx sidecars present for the current round and both `approved`. A
+    ticket in this state that is still in in-review/ is one the done gate is
+    withholding (approved-but-unverified) — the reconciler would otherwise have
+    moved a dual-approved ticket to done/."""
+    fm = read_frontmatter(ticket)
+    ticket_id = ticket_id_from_name(ticket)
+    round_num = str(fm.get("review-round", "0") or "0")
+    for side in ("cc", "cx"):
+        sidecar = ct2_dir / "reviews" / f"{ticket_id}-{side}-r{round_num}.md"
+        if not sidecar.exists() or read_frontmatter(sidecar).get("verdict") != "approved":
+            return False
+    return True
+
+
+def send_escalation(ct2_dir: Path, ticket: Path, missing: list[str], age_min: int, max_min: int, reason: str = "missing-sidecar") -> Path:
     inbox = ct2_dir / "inbox" / "ct2-helm"
     tmp_dir = ct2_dir / ".tmp"
     inbox.mkdir(parents=True, exist_ok=True)
     tmp_dir.mkdir(parents=True, exist_ok=True)
     msgid = f"msg-{compact_now()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    if reason == "approved-but-unverified":
+        subject = f"Ticket {ticket.name} - dual-approved but unverified, review SLA exceeded"
+        body = (
+            f"Ticket {ticket.name} was dual-approved but the done gate withheld it "
+            f"(round-fresh AC evidence missing) and it then waited {age_min} minutes in "
+            f"review, exceeding max_review_duration_min={max_min}.\n"
+            "The ticket was moved to escalated/ for human recovery."
+        )
+    else:
+        subject = f"Ticket {ticket.name} - Review SLA exceeded"
+        body = (
+            f"Ticket {ticket.name} has waited in review for {age_min} minutes, exceeding max_review_duration_min={max_min}.\n"
+            f"Missing sidecars: {', '.join(missing)}.\n"
+            "The ticket was moved to escalated/ for human recovery."
+        )
     text = f"""---
 id: {msgid}
 from: ct2-review-watchdog
@@ -94,12 +124,10 @@ timestamp: {now()}
 ---
 
 ## Subject
-Ticket {ticket.name} - Review SLA exceeded
+{subject}
 
 ## Body
-Ticket {ticket.name} has waited in review for {age_min} minutes, exceeding max_review_duration_min={max_min}.
-Missing sidecars: {', '.join(missing)}.
-The ticket was moved to escalated/ for human recovery.
+{body}
 """
     fd, tmp_name = tempfile.mkstemp(prefix=f"{msgid}-", dir=str(tmp_dir))
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -109,7 +137,9 @@ The ticket was moved to escalated/ for human recovery.
     return dest
 
 
-def escalate(ct2_dir: Path, ticket: Path, missing: list[str], age_min: int, max_min: int) -> dict[str, str | int | list[str]]:
+def escalate(
+    ct2_dir: Path, ticket: Path, missing: list[str], age_min: int, max_min: int, reason: str = "missing-sidecar"
+) -> dict[str, str | int | list[str]]:
     ticket_id = ticket_id_from_name(ticket)
     dest = ct2_dir / "escalated" / ticket.name
     if dest.exists():
@@ -120,7 +150,7 @@ def escalate(ct2_dir: Path, ticket: Path, missing: list[str], age_min: int, max_
     text = replace_frontmatter_value(text, "verdict", "escalated")
     text = replace_frontmatter_value(text, "updated", now())
     atomic_write_text(ct2_dir, dest, text, "review-watchdog-ticket-")
-    msg = send_escalation(ct2_dir, dest, missing, age_min, max_min)
+    msg = send_escalation(ct2_dir, dest, missing, age_min, max_min, reason)
     atomic_write_text(ct2_dir, ct2_dir / ".meta" / f"{ticket_id}.review-overdue", now() + "\n", "review-overdue-")
     try:
         (ct2_dir / ".meta" / f"{ticket_id}.in-review").unlink()
@@ -129,6 +159,7 @@ def escalate(ct2_dir: Path, ticket: Path, missing: list[str], age_min: int, max_
     return {
         "ticket": dest.name,
         "state": "escalated",
+        "reason": reason,
         "age_min": age_min,
         "max_review_duration_min": max_min,
         "missing": missing,
@@ -165,8 +196,13 @@ def run(args: argparse.Namespace) -> int:
     results = []
     for ticket in sorted((ct2_dir / "in-review").glob("*.md")):
         missing = sidecars_missing(ct2_dir, ticket)
-        if not missing:
+        # An approved-but-unverified ticket (both sidecars present and approved,
+        # yet still in in-review/) is one the done gate is withholding; without
+        # this it would strand forever with no SLA once the gate is hard.
+        approved_unverified = (not missing) and sidecars_dual_approved(ct2_dir, ticket)
+        if not missing and not approved_unverified:
             continue
+        reason = "missing-sidecar" if missing else "approved-but-unverified"
         ticket_id = ticket_id_from_name(ticket)
         lock = acquire_ticket_lock(ct2_dir, ticket_id)
         if lock is None:
@@ -177,13 +213,13 @@ def run(args: argparse.Namespace) -> int:
             stamp = ct2_dir / ".meta" / f"{ticket_id}.in-review"
             started = parse_stamp_seconds(stamp)
             if started is None:
-                results.append({"ticket": ticket.name, "state": "missing-review-stamp", "missing": missing})
+                results.append({"ticket": ticket.name, "state": "missing-review-stamp", "reason": reason, "missing": missing})
                 continue
             age_min = int((now_ts - started) // 60)
             if age_min < max_min:
                 continue
             try:
-                result = escalate(ct2_dir, ticket, missing, age_min, max_min)
+                result = escalate(ct2_dir, ticket, missing, age_min, max_min, reason)
                 mirror_issue(project_dir, str(result["ticket"]))
                 results.append(result)
             except RuntimeError as exc:

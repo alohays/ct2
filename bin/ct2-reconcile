@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -19,6 +20,37 @@ from _ct2_protocol import assert_compatible as assert_protocol_compatible
 
 LOCK_TTL_SECONDS = 600
 VALID_VERDICTS = {"approved", "rejected"}
+
+# Named checks the done gate evaluates from `ct2-ticket-audit --done-gate`.
+# Gated on by name, never the audit exit code: the full in-review audit also
+# fails `required_frontmatter` for legitimate `branch: null` tickets, which is
+# not a done-readiness condition (the same trap the submit gate designs out).
+DONE_GATE_CHECKS = (
+    "done_gate_state",
+    "acceptance_criteria_checked",
+    "sealed_baseline",
+    "plan_evidence",
+    "dual_approved_sidecars",
+    "done_gate_evidence",
+)
+
+# Hardness lives in code, versioned per spec/versioning.md — never tamper-evident-
+# free runtime config. The done gate ships ADVISORY: it records its verdict and
+# sends one deduplicated helm inbox message on failure, but still allows the
+# approved ticket to move to done/. A release promotes it to hard (exit 3, no
+# move) per the gate-hardness policy once §2.5's criteria are met (T1.4).
+DONE_GATE_HARD = False
+
+# --discover aggregates per-pair exit codes by *severity*, not numerically: a
+# hard error (1, 2) must dominate an approved-but-unverified withhold (3), which
+# in turn outranks clean success (0). Plain max() would let 3 mask a 1/2.
+_DISCOVER_SEVERITY = {0: 0, 3: 1, 1: 2, 2: 3}
+
+
+def discover_worst(current: int, candidate: int) -> int:
+    if _DISCOVER_SEVERITY.get(candidate, 99) > _DISCOVER_SEVERITY.get(current, 99):
+        return candidate
+    return current
 
 
 def now() -> str:
@@ -163,6 +195,87 @@ Please inspect the ticket manually and either revise requirements or close it.
     os.replace(tmp_name, inbox / f"{msgid}.md")
 
 
+def done_gate(script_dir: Path, project_dir: Path, ticket_id: str) -> tuple[bool, list[str]]:
+    """Run ct2-ticket-audit --done-gate and evaluate only DONE_GATE_CHECKS.
+    Returns (ok, failing_check_names). Fail-closed on a parse failure, a missing
+    ticket, or a changed audit shape so a hard gate never lets an unverified
+    ticket through."""
+    helper = script_dir / "ct2-ticket-audit"
+    proc = subprocess.run(
+        [sys.executable, str(helper), "--json", "--done-gate", "--ticket", ticket_id, str(project_dir)],
+        cwd=str(project_dir),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    try:
+        report = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return False, ["done_gate_audit_unparseable"]
+    tickets = report.get("tickets", [])
+    if not tickets:
+        return False, ["done_gate_ticket_not_found"]
+    gate = [item for item in tickets[0].get("checks", []) if item.get("name") in DONE_GATE_CHECKS]
+    if len(gate) != len(DONE_GATE_CHECKS):
+        return False, ["done_gate_audit_shape"]
+    failing = [item["name"] for item in gate if not item.get("ok")]
+    return (not failing), failing
+
+
+def send_done_gate_message(ct2_dir: Path, actor: str, ticket_name: str, round_num: str, failing: list[str]) -> None:
+    inbox = ct2_dir / "inbox" / "ct2-helm"
+    tmp_dir = ct2_dir / ".tmp"
+    inbox.mkdir(parents=True, exist_ok=True)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    msgid = f"msg-{compact_now()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    text = f"""---
+id: {msgid}
+from: {actor}
+to: ct2-helm
+type: done-gate
+ticket: {ticket_name}
+timestamp: {now()}
+---
+
+## Subject
+Ticket {ticket_name} - dual-approved but done gate failed (round {round_num})
+
+## Body
+Both reviewers approved {ticket_name} at round {round_num}, but the done gate
+withheld machine-verified completion. Failing checks: {', '.join(failing)}.
+Recovery: fix the deficiency (check AC boxes is baseline-safe; record the
+missing round-tagged evidence with `ct2-ac-verify` / `ct2-evidence`) and re-run
+`ct2-reconcile {ticket_name.split('-')[0]} {round_num}`.
+"""
+    fd, tmp_name = tempfile.mkstemp(prefix=f"{msgid}-", dir=str(tmp_dir))
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    os.replace(tmp_name, inbox / f"{msgid}.md")
+
+
+def done_gate_stamp(ct2_dir: Path, ticket_id: str, round_num: str) -> Path:
+    return ct2_dir / ".meta" / f"{ticket_id}-r{round_num}.done-gate-failed"
+
+
+def notify_done_gate_failure(ct2_dir: Path, actor: str, ticket_name: str, ticket_id: str, round_num: str, failing: list[str]) -> None:
+    """Send exactly one helm message per ticket-round. The stamp prevents every
+    --discover pass from minting a new message for a still-failing ticket."""
+    stamp = done_gate_stamp(ct2_dir, ticket_id, round_num)
+    if stamp.exists():
+        return
+    send_done_gate_message(ct2_dir, actor, ticket_name, round_num, failing)
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text(now() + "\n", encoding="utf-8")
+
+
+def clear_done_gate_stamp(ct2_dir: Path, ticket_id: str, round_num: str) -> None:
+    try:
+        done_gate_stamp(ct2_dir, ticket_id, round_num).unlink()
+    except FileNotFoundError:
+        pass
+
+
 def git_finalize(project_dir: Path, verdict: str, ticket_id: str) -> None:
     cmd = shutil.which("ct2-git-finalize")
     if not cmd:
@@ -266,6 +379,28 @@ def reconcile_one(project_dir: Path, ticket_id: str, round_num: str, actor: str)
             )
             return 2
 
+        # Done gate: dual approval is necessary but no longer sufficient — the
+        # done/ invariant strengthens to "dual approval AND machine-verified
+        # round-fresh evidence". Run before any state mutation so a failure
+        # mutates nothing. Advisory by default (warns + dedup'd message, still
+        # moves); hard once promoted (withhold the transition, exit 3).
+        if final_verdict == "approved":
+            gate_ok, failing = done_gate(script_dir, project_dir, ticket_id)
+            if not gate_ok:
+                notify_done_gate_failure(ct2_dir, actor, ticket.name, ticket_id, round_num, failing)
+                if DONE_GATE_HARD:
+                    print(
+                        f"ct2-reconcile: {ticket.name} approved but done gate failed ({', '.join(failing)}) — withholding done/",
+                        file=sys.stderr,
+                    )
+                    return 3
+                print(
+                    f"ct2-reconcile: {ticket.name} done gate failing (advisory, not blocking): {', '.join(failing)}",
+                    file=sys.stderr,
+                )
+            else:
+                clear_done_gate_stamp(ct2_dir, ticket_id, round_num)
+
         rc = update_ticket(script_dir, project_dir, ticket, final_verdict, ticket_id, round_num)
         if rc != 0:
             return rc
@@ -276,6 +411,11 @@ def reconcile_one(project_dir: Path, ticket_id: str, round_num: str, actor: str)
         except FileNotFoundError:
             print(f"ct2-reconcile: {ticket.name} already moved by another reconciler")
             return 0
+        # The ticket has left in-review/ for a terminal state; drop any
+        # done-gate-failed stamp so advisory-mode failures (which still move the
+        # ticket) do not leave an orphaned marker behind. No-op for the common
+        # gate-pass / rejected / escalated paths where no stamp exists.
+        clear_done_gate_stamp(ct2_dir, ticket_id, round_num)
         print(f"ct2-reconcile: {ticket.name} -> {dest_state} (cc={cc_v}, cx={cx_v})")
 
         if final_verdict == "escalated":
@@ -342,7 +482,7 @@ def main() -> int:
             return 2
         result = 0
         for ticket_id, round_num in discover_pairs(ct2_dir):
-            result = max(result, reconcile_one(project_dir, ticket_id, round_num, ns.actor))
+            result = discover_worst(result, reconcile_one(project_dir, ticket_id, round_num, ns.actor))
         return result
 
     if len(ns.args) != 2:
