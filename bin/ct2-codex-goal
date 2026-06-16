@@ -165,6 +165,21 @@ def mirror_codex_goal_to_neutral(ct2_dir: Path, codex_goal: dict) -> bool:
     return True
 
 
+def sync_neutral_status(ct2_dir: Path, slug: str, codex_status: str) -> None:
+    """Keep the neutral record in step when the codex surface changes status, so
+    `ct2-goal status` never shows a stale value (one truth, codex as render)."""
+    path = ct2_dir / "goals" / slug / "goal.json"
+    if not path.exists():
+        return
+    try:
+        goal = load_json(path)
+    except Exception:
+        return
+    goal["status"] = NEUTRAL_STATUS.get(codex_status, goal.get("status", "open"))
+    goal["updated"] = now()
+    atomic_write(ct2_dir, path, goal)
+
+
 def lazy_migrate(ct2_dir: Path) -> int:
     """Mirror every existing codex goal into the neutral layout, fail-soft."""
     migrated = 0
@@ -335,6 +350,7 @@ def cmd_set_status(args: argparse.Namespace) -> int:
         thread["wait_state"] = goal.get("wait_state")
         thread["updated"] = goal["updated"]
         atomic_write(ct2_dir, thread_path, thread)
+    sync_neutral_status(ct2_dir, args.goal_slug, args.status)
     print(f"ct2-codex-goal: {args.goal_slug} {args.role} -> {args.status}")
     return 0
 
@@ -358,6 +374,7 @@ def cmd_clear(args: argparse.Namespace) -> int:
         thread["wait_state"] = None
         thread["updated"] = goal["updated"]
         atomic_write(ct2_dir, thread_path, thread)
+    sync_neutral_status(ct2_dir, args.goal_slug, "cleared")
     print(f"ct2-codex-goal: cleared {args.goal_slug} {args.role}")
     return 0
 

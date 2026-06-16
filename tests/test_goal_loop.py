@@ -186,6 +186,20 @@ class CodexGoalShimTest(unittest.TestCase):
         slugs = [goal["slug"] for goal in json.loads(status.stdout)["goals"]]
         self.assertTrue(any(slug.startswith("fresh-objective") for slug in slugs), "codex start mirrors into a neutral ct2-goal record")
 
+    def test_codex_pause_and_clear_sync_neutral_status(self):
+        project = self.make_project()
+        start = run_cmd([PYTHON, self.CODEX, "start", "ct2-forge", "Drift", "check", "--project-dir", project])
+        self.assertEqual(start.returncode, 0, start.stderr)
+        slug = json.loads(run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-goal", "status", "--project-dir", project, "--json"]).stdout)["goals"][0]["slug"]
+
+        self.assertEqual(0, run_cmd([PYTHON, self.CODEX, "pause", slug, "ct2-forge", "--project-dir", project]).returncode)
+        goal = json.loads((project / ".ct2" / "goals" / slug / "goal.json").read_text(encoding="utf-8"))
+        self.assertEqual("paused", goal["status"], "codex pause must sync the neutral record (no drift)")
+
+        self.assertEqual(0, run_cmd([PYTHON, self.CODEX, "clear", slug, "ct2-forge", "--project-dir", project]).returncode)
+        goal2 = json.loads((project / ".ct2" / "goals" / slug / "goal.json").read_text(encoding="utf-8"))
+        self.assertEqual("abandoned", goal2["status"], "codex clear -> neutral abandoned")
+
     def test_codex_goal_mirror_is_idempotent(self):
         project = self.make_project()
         run_cmd([PYTHON, self.CODEX, "start", "ct2-forge", "Once", "--project-dir", project])
