@@ -22,6 +22,15 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   where the declared "all ACs checked `[x]`" precondition was unenforced.
   Documented as a new "Submit Gate" section in `spec/state-machine.md`; both
   forge SKILLs now treat a gate failure as a return-to-work signal.
+- Documented and surfaced the `first_pass_approval` Trust diagnostic
+  (loop-design roadmap T0.3). `ct2-baseline` already computed it inside the
+  `trust` scorecard block — the fraction of done tickets dual-approved at
+  `review-round: 0` — but it was undocumented and `ct2-status` never printed
+  it. `spec/balanced-scorecard.md` now describes it (a rework-pressure
+  diagnostic that never gates state, subject to the same sample-minimum
+  honesty rule), and `ct2-status` renders it on the Trust line so the planner
+  sees it at init. This makes the metric's end-to-end channel real, closing
+  the gap the loop-design doc's planning-digest kill-reason relied on.
 - Added `docs/ct2-loop-design-strategy-2026-06.md`, the loop-design strategy
   derived from "Designing loops with Fable 5" (R. Lance Martin) via a
   26-agent adversarial analysis (15 proposals, 13 surviving with corrections,
