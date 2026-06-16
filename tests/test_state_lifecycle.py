@@ -350,6 +350,55 @@ class StateLifecycleTest(unittest.TestCase):
         self.assertEqual(enter.returncode, 0, enter.stderr)
         self.assertTrue((ct2 / "in-review" / "001-seal-smoke.md").exists())
 
+    def test_submit_gate_helper_fails_closed_on_bad_audit_output(self):
+        # The three defensive branches in ct2-review-enter.submit_gate() must
+        # all fail CLOSED (block the move). They guard against a corrupted or
+        # regressed sibling audit; a bug here can only over-block, never
+        # wrongly promote a ticket.
+        import importlib.machinery
+        import importlib.util
+        from unittest import mock
+
+        bin_dir = REPO_ROOT / "bin"
+        if str(bin_dir) not in sys.path:
+            sys.path.insert(0, str(bin_dir))
+        loader = importlib.machinery.SourceFileLoader("ct2_review_enter_mod", str(bin_dir / "ct2-review-enter"))
+        spec = importlib.util.spec_from_loader("ct2_review_enter_mod", loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+
+        class FakeProc:
+            def __init__(self, stdout):
+                self.stdout = stdout
+                self.stderr = ""
+
+        blocking = {
+            "non-json stdout": "this is not json",
+            "no tickets in report": '{"tickets": []}',
+            "missing a named gate check": '{"tickets": [{"checks": [{"name": "submit_gate_state", "ok": true}]}]}',
+            "named check present but failing": (
+                '{"tickets": [{"checks": ['
+                '{"name": "submit_gate_state", "ok": true},'
+                '{"name": "acceptance_criteria_checked", "ok": false},'
+                '{"name": "plan_evidence", "ok": true}]}]}'
+            ),
+        }
+        for name, stdout in blocking.items():
+            with self.subTest(case=name):
+                with mock.patch.object(mod.subprocess, "run", return_value=FakeProc(stdout)):
+                    ok, _checks = mod.submit_gate(Path("/nonexistent"), "001")
+                self.assertFalse(ok)
+
+        good = (
+            '{"tickets": [{"checks": ['
+            '{"name": "submit_gate_state", "ok": true},'
+            '{"name": "acceptance_criteria_checked", "ok": true},'
+            '{"name": "plan_evidence", "ok": true}]}]}'
+        )
+        with mock.patch.object(mod.subprocess, "run", return_value=FakeProc(good)):
+            ok, _checks = mod.submit_gate(Path("/nonexistent"), "001")
+        self.assertTrue(ok)
+
     def test_ct2_review_watchdog_escalates_overdue_missing_sidecar(self):
         project = self.make_project()
         ct2 = project / ".ct2"
