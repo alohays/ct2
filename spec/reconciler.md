@@ -89,7 +89,8 @@ failed gate **withholds** the transition; it never judges.
 The gate ships **advisory** (the `DONE_GATE_HARD` code constant is `false`): on
 failure it records the verdict, sends **one** deduplicated helm inbox message per
 ticket-round (stamped `.meta/{id}-r{n}.done-gate-failed`, removed when the gate
-later passes), and still allows the approved ticket to move to `done/` (exit 0).
+later passes or the ticket leaves `in-review/`), and still allows the approved
+ticket to move to `done/` (exit 0).
 A release promotes it to **hard** (withhold the transition, exit 3) per the
 gate-hardness policy in `spec/balanced-scorecard.md`, never by runtime config.
 

@@ -41,6 +41,17 @@ DONE_GATE_CHECKS = (
 # move) per the gate-hardness policy once §2.5's criteria are met (T1.4).
 DONE_GATE_HARD = False
 
+# --discover aggregates per-pair exit codes by *severity*, not numerically: a
+# hard error (1, 2) must dominate an approved-but-unverified withhold (3), which
+# in turn outranks clean success (0). Plain max() would let 3 mask a 1/2.
+_DISCOVER_SEVERITY = {0: 0, 3: 1, 1: 2, 2: 3}
+
+
+def discover_worst(current: int, candidate: int) -> int:
+    if _DISCOVER_SEVERITY.get(candidate, 99) > _DISCOVER_SEVERITY.get(current, 99):
+        return candidate
+    return current
+
 
 def now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -400,6 +411,11 @@ def reconcile_one(project_dir: Path, ticket_id: str, round_num: str, actor: str)
         except FileNotFoundError:
             print(f"ct2-reconcile: {ticket.name} already moved by another reconciler")
             return 0
+        # The ticket has left in-review/ for a terminal state; drop any
+        # done-gate-failed stamp so advisory-mode failures (which still move the
+        # ticket) do not leave an orphaned marker behind. No-op for the common
+        # gate-pass / rejected / escalated paths where no stamp exists.
+        clear_done_gate_stamp(ct2_dir, ticket_id, round_num)
         print(f"ct2-reconcile: {ticket.name} -> {dest_state} (cc={cc_v}, cx={cx_v})")
 
         if final_verdict == "escalated":
@@ -466,7 +482,7 @@ def main() -> int:
             return 2
         result = 0
         for ticket_id, round_num in discover_pairs(ct2_dir):
-            result = max(result, reconcile_one(project_dir, ticket_id, round_num, ns.actor))
+            result = discover_worst(result, reconcile_one(project_dir, ticket_id, round_num, ns.actor))
         return result
 
     if len(ns.args) != 2:

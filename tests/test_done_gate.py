@@ -253,6 +253,26 @@ class ReconcilerDoneGateTest(DoneGateAuditTest):
         self.assertEqual(3, rc2)
         self.assertEqual(1, len(self.helm_messages(ct2)), "second run must not mint a duplicate message")
 
+    def test_advisory_failure_leaves_no_orphan_stamp(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_in_review(ct2 / "in-review" / "001-done-gate-fixture.md")
+        write_sidecar(ct2 / "reviews" / "001-cc-r0.md", "ct2-lens-cc")
+        write_sidecar(ct2 / "reviews" / "001-cx-r0.md", "ct2-lens-cx")
+        (ct2 / "plans" / "001-r0.md").write_text("# Plan\n", encoding="utf-8")
+
+        run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-reconcile", "001", "0", "--project-dir", project])
+        self.assertTrue((ct2 / "done" / "001-done-gate-fixture.md").exists())
+        self.assertFalse((ct2 / ".meta" / "001-r0.done-gate-failed").exists(), "stamp must be cleared after the move")
+
+    def test_discover_aggregation_ranks_hard_errors_above_withhold(self):
+        module = load_reconcile_module()
+        self.assertEqual(1, module.discover_worst(3, 1), "a hard arg error must dominate a done-gate withhold")
+        self.assertEqual(2, module.discover_worst(3, 2), "an invalid-sidecar error must dominate a withhold")
+        self.assertEqual(2, module.discover_worst(1, 2))
+        self.assertEqual(3, module.discover_worst(0, 3), "a withhold outranks clean success")
+        self.assertEqual(3, module.discover_worst(3, 0), "success must not lower a withhold")
+
 
 class WatchdogApprovedUnverifiedTest(DoneGateAuditTest):
     def test_watchdog_escalates_approved_but_unverified_overdue(self):
@@ -284,6 +304,23 @@ class WatchdogApprovedUnverifiedTest(DoneGateAuditTest):
         write_sidecar(ct2 / "reviews" / "001-cx-r0.md", "ct2-lens-cx")
         recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
         (ct2 / ".meta" / "001.in-review").write_text(recent + "\n", encoding="utf-8")
+
+        watchdog = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-watchdog", "--json", project])
+        self.assertEqual(watchdog.returncode, 0, watchdog.stderr)
+        self.assertFalse((ct2 / "escalated" / "001-done-gate-fixture.md").exists())
+
+    def test_watchdog_ignores_partial_rejection(self):
+        # Both sidecars present but one rejected is NOT approved-but-unverified —
+        # the reconciler routes it to rework, not the watchdog escalation path.
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        cfg = ct2 / "config" / "harness.yaml"
+        cfg.write_text("circuit_breaker:\n  max_review_duration_min: 1\n", encoding="utf-8")
+        write_in_review(ct2 / "in-review" / "001-done-gate-fixture.md")
+        write_sidecar(ct2 / "reviews" / "001-cc-r0.md", "ct2-lens-cc")
+        write_sidecar(ct2 / "reviews" / "001-cx-r0.md", "ct2-lens-cx", verdict="rejected")
+        overdue = (datetime.now(timezone.utc) - timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        (ct2 / ".meta" / "001.in-review").write_text(overdue + "\n", encoding="utf-8")
 
         watchdog = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-watchdog", "--json", project])
         self.assertEqual(watchdog.returncode, 0, watchdog.stderr)
