@@ -129,6 +129,24 @@ def mirror_issue(project_dir: Path, ticket: Path) -> None:
     subprocess.run([sys.executable, str(helper), str(ticket), str(project_dir)], cwd=str(project_dir), check=False)
 
 
+def lessons_digest(project_dir: Path, ticket_id: str, role: str) -> str:
+    """Render the lessons consult digest as part of pickup stdout. Fail-soft: a
+    missing ct2-lesson tool or ledger yields no digest, never an error. Consult
+    rides the mandatory serialized pickup path rather than an optional SKILL step
+    agents demonstrably skip — the article's stage-5 finding applied to CT2."""
+    helper = Path(__file__).resolve().parent / "ct2-lesson"
+    if not helper.exists():
+        return ""
+    proc = subprocess.run(
+        [sys.executable, str(helper), "digest", "--project-dir", str(project_dir), "--role", role, "--ticket", ticket_id],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
 def pickup(args: argparse.Namespace) -> int:
     project_dir = Path(args.project_dir).resolve()
     ct2_dir = ensure_ct2(project_dir)
@@ -168,11 +186,17 @@ def pickup(args: argparse.Namespace) -> int:
             log.write(f"[{now()}] pickup ticket={ticket_id} from={source_state}\n")
         mirror_issue(project_dir, dest)
 
+        digest = lessons_digest(project_dir, ticket_id, "forge")
         result = {"ticket": dest.name, "from": source_state, "to": "in-progress"}
         if args.json:
+            if digest:
+                result["lessons_digest"] = digest
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
             print(f"ct2-pickup: {dest.name} {source_state} -> in-progress")
+            if digest:
+                print()
+                print(digest)
         return 0
     except RuntimeError as exc:
         print(f"ct2-pickup: {exc}", file=sys.stderr)

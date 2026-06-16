@@ -51,6 +51,34 @@ class LessonsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout) if as_json else result.stdout
 
+    def _backlog_ticket(self, project, touched="bin/ct2-x"):
+        path = project / ".ct2" / "backlog" / "009-pickup.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "---\nid: \"009\"\ntitle: t\nstatus: backlog\npriority: medium\n"
+            "created: 2026-06-16T00:00:00Z\nupdated: 2026-06-16T00:00:00Z\nsealed: 2026-06-16T00:00:00Z\n"
+            f"branch: null\nreview-round: 0\ntouched-files:\n  - {touched}\nverdict: pending\n---\n\n"
+            "## Requirements\n- r\n\n## Acceptance Criteria\n- [ ] one\n",
+            encoding="utf-8",
+        )
+
+    def test_pickup_injects_lessons_digest(self):
+        project = self.make_project()
+        self.add(project, "005", "missing-regression-test", "Bind a regression AC for bin/.", paths=["bin/*"])
+        self.add(project, "006", "missing-regression-test", "Bind a regression AC for bin/.", paths=["bin/*"])
+        self._backlog_ticket(project)
+        pickup = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pickup", project])
+        self.assertEqual(pickup.returncode, 0, pickup.stderr)
+        self.assertIn("Lessons (forge):", pickup.stdout)
+        self.assertIn("corroborated", pickup.stdout)
+
+    def test_pickup_digest_is_fail_soft_when_ledger_empty(self):
+        project = self.make_project()
+        self._backlog_ticket(project)
+        pickup = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pickup", project])
+        self.assertEqual(pickup.returncode, 0, pickup.stderr)
+        self.assertIn("none recorded", pickup.stdout)
+
     def test_init_creates_lessons_dir(self):
         project = self.make_project()
         self.assertTrue((project / ".ct2" / "lessons").is_dir())

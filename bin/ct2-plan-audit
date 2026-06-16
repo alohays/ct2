@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 from _ct2_vao import ensure_ct2, read_frontmatter, ticket_id_from_name, now
@@ -12,6 +13,7 @@ from _ct2_vao import ensure_ct2, read_frontmatter, ticket_id_from_name, now
 
 PLAN_STATES = ("in-progress", "in-review", "done")
 NULLISH = {"", "null", "none"}
+LESSONS_CONSULTED_RE = re.compile(r"^Lessons consulted:", re.IGNORECASE | re.MULTILINE)
 
 
 def has_plan_exempt(path: Path) -> bool:
@@ -26,9 +28,21 @@ def plan_exists(ct2_dir: Path, ticket_id: str, round_num: str) -> bool:
     return False
 
 
+def plan_warnings(ct2_dir: Path, ticket_id: str, round_num: str) -> list[str]:
+    """Advisory (never blocking): an existing markdown plan should carry a
+    `Lessons consulted: <ids or none>` line documenting the consult."""
+    md_plan = ct2_dir / "plans" / f"{ticket_id}-r{round_num}.md"
+    if not md_plan.exists():
+        return []
+    if not LESSONS_CONSULTED_RE.search(md_plan.read_text(encoding="utf-8", errors="ignore")):
+        return ["plan evidence lacks a 'Lessons consulted:' line"]
+    return []
+
+
 def audit(ct2_dir: Path) -> dict:
     tickets = []
     complete = True
+    warning_count = 0
     for state in PLAN_STATES:
         for path in sorted((ct2_dir / state).glob("*.md")):
             fm = read_frontmatter(path)
@@ -38,6 +52,8 @@ def audit(ct2_dir: Path) -> dict:
             present = plan_exists(ct2_dir, ticket_id, round_num)
             ok = exempt or present
             complete = complete and ok
+            warnings = plan_warnings(ct2_dir, ticket_id, round_num)
+            warning_count += len(warnings)
             tickets.append(
                 {
                     "ticket": path.name,
@@ -46,6 +62,7 @@ def audit(ct2_dir: Path) -> dict:
                     "plan_required": not exempt,
                     "plan_exists": present,
                     "ok": ok,
+                    "warnings": warnings,
                 }
             )
     return {
@@ -53,6 +70,7 @@ def audit(ct2_dir: Path) -> dict:
         "audited_at": now(),
         "complete": complete,
         "tickets_checked": len(tickets),
+        "warning_count": warning_count,
         "tickets": tickets,
     }
 
@@ -72,9 +90,13 @@ def main() -> int:
         print("CT2 Plan Audit")
         print(f"  tickets_checked: {report['tickets_checked']}")
         print(f"  complete: {report['complete']}")
+        print(f"  warnings: {report['warning_count']}")
         for ticket in report["tickets"]:
             marker = "ok" if ticket["ok"] else "missing"
             print(f"  {marker}: {ticket['ticket']} state={ticket['state']} round={ticket['round']}")
+            for warning in ticket["warnings"]:
+                print(f"    warn: {warning}")
+    # Warnings are advisory and never change the exit code.
     return 0 if report["complete"] else 1
 
 

@@ -208,7 +208,9 @@ For the current `in-progress/` ticket:
    `.ct2/plans/{ticket_id}-r{review-round}.md` unless the ticket explicitly
    contains a `plan-exempt` reason. The plan must map ACs to intended files and
    verification commands. This is evidence for reviewers; it does not move
-   ticket state.
+   ticket state. Include a `Lessons consulted: <ids or none>` line recording the
+   lessons `ct2-pickup` surfaced in its digest (see the `Lessons (forge):` block
+   printed at pickup) — `ct2-plan-audit` warns advisorily when it is missing.
 
    **Commit as you go** — do not batch all changes into one final commit. See the
    `git-workflow` section below for granularity heuristics and the commit message

@@ -293,6 +293,22 @@ class TicketAuditTest(unittest.TestCase):
         exempt = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-plan-audit", "--json", project])
         self.assertEqual(exempt.returncode, 0, exempt.stderr)
 
+    def test_plan_audit_warns_advisorily_on_missing_lessons_consulted(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "in-progress" / "001-audit-ticket.md", status="in-progress", ac_checked=True, verdict="pending")
+        (ct2 / "plans" / "001-r0.md").write_text("# Plan\nNo lessons line here.\n", encoding="utf-8")
+
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-plan-audit", "--json", project])
+        self.assertEqual(audit.returncode, 0, "warnings are advisory and must not change the exit code")
+        report = json.loads(audit.stdout)
+        self.assertEqual(1, report["warning_count"])
+        self.assertIn("Lessons consulted", report["tickets"][0]["warnings"][0])
+
+        (ct2 / "plans" / "001-r0.md").write_text("# Plan\nLessons consulted: none\n", encoding="utf-8")
+        cleared = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-plan-audit", "--json", project])
+        self.assertEqual(0, json.loads(cleared.stdout)["warning_count"])
+
     def test_ticket_audit_filters_by_ticket_id_stem_or_filename(self):
         project = self.make_project()
         ct2 = project / ".ct2"
