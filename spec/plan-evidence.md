@@ -24,6 +24,9 @@ Each plan should include:
 - ticket id and review round;
 - intended files and commands;
 - acceptance criteria mapping;
+- a `## Rework Resolutions` section at review-round `n > 0` referencing each
+  `### [BLOCKING]` issue from the round `n-1` sidecars (see
+  `spec/review-protocol.md` § *Rework Resolution Contract*);
 - explicit `plan-exempt` reason if no plan is required.
 
 ## Rules

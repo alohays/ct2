@@ -183,7 +183,13 @@ For the current `in-progress/` ticket:
    - `## Context` — background understanding
    - `## Acceptance Criteria` — the authoritative definition of done
 
-2. **If reworking a rejected ticket**: Read the review sidecars first. Address every BLOCKING issue listed.
+2. **If reworking a rejected ticket** (`review-round` > 0): Read the prior round's
+   review sidecars first. Address every `### [BLOCKING]` issue, and record each in
+   a `## Rework Resolutions` section of this round's plan evidence —
+   ``- {blocking title}: {how you resolved it}`` — referencing the prior heading's
+   title. The submit gate (`rework_resolutions`) blocks re-submission until every
+   prior-round BLOCKING title is referenced, and the lenses verify each claimed
+   resolution against the diff (a false claim is BLOCKING).
 
 3. **Document assumptions before coding**:
    Before writing any implementation code, scan the ticket for areas that fall

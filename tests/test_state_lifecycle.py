@@ -350,6 +350,40 @@ class StateLifecycleTest(unittest.TestCase):
         self.assertEqual(enter.returncode, 0, enter.stderr)
         self.assertTrue((ct2 / "in-review" / "001-seal-smoke.md").exists())
 
+    def test_ct2_review_enter_blocks_unresolved_prior_blocking(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        ticket = ct2 / "in-progress" / "001-seal-smoke.md"
+        write_ticket(ticket, status="in-progress", sealed="2026-05-12T00:00:00Z")
+        ticket.write_text(
+            ticket.read_text(encoding="utf-8")
+            .replace("review-round: 0", "review-round: 1")
+            .replace("- [ ] Draft moves to backlog.", "- [x] Draft moves to backlog."),
+            encoding="utf-8",
+        )
+        for side, reviewer in (("cc", "ct2-lens-cc"), ("cx", "ct2-lens-cx")):
+            (ct2 / "reviews" / f"001-{side}-r0.md").write_text(
+                f'---\nticket: "001-seal-smoke"\nreviewer: {reviewer}\nround: 0\n'
+                "verdict: rejected\ntimestamp: 2026-05-12T01:00:00Z\n---\n\n"
+                "## Summary\ns\n\n## Acceptance Criteria Check\n- AC1: fail\n\n"
+                "## Issues Found\n### [BLOCKING] Needs a boundary guard\nadd it\n\n## Recommendation\nrejected\n",
+                encoding="utf-8",
+            )
+        (ct2 / "plans" / "001-r1.md").write_text("# Plan r1\n", encoding="utf-8")
+
+        blocked = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-enter", "001", project], cwd=REPO_ROOT)
+        self.assertEqual(blocked.returncode, 2, blocked.stdout)
+        self.assertIn("rework_resolutions", blocked.stderr)
+        self.assertTrue(ticket.exists())
+
+        (ct2 / "plans" / "001-r1.md").write_text(
+            "# Plan r1\n## Rework Resolutions\n- Needs a boundary guard: added the guard at the entry point.\n",
+            encoding="utf-8",
+        )
+        passed = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-enter", "001", project], cwd=REPO_ROOT)
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+        self.assertTrue((ct2 / "in-review" / "001-seal-smoke.md").exists())
+
     def test_submit_gate_helper_fails_closed_on_bad_audit_output(self):
         # The three defensive branches in ct2-review-enter.submit_gate() must
         # all fail CLOSED (block the move). They guard against a corrupted or
@@ -393,7 +427,8 @@ class StateLifecycleTest(unittest.TestCase):
             '{"tickets": [{"checks": ['
             '{"name": "submit_gate_state", "ok": true},'
             '{"name": "acceptance_criteria_checked", "ok": true},'
-            '{"name": "plan_evidence", "ok": true}]}]}'
+            '{"name": "plan_evidence", "ok": true},'
+            '{"name": "rework_resolutions", "ok": true}]}]}'
         )
         with mock.patch.object(mod.subprocess, "run", return_value=FakeProc(good)):
             ok, _checks = mod.submit_gate(Path("/nonexistent"), "001")

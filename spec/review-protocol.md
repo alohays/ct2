@@ -48,6 +48,29 @@ Sidecars are specified in `spec/sidecar-format.md`. They remain immutable after
 creation. A re-review after rework produces a new file under an incremented
 round number.
 
+## Rework Resolution Contract
+
+The reject → rework joint is closed in the already-required plan evidence, with
+no new tool or mutable ledger. When forge re-submits a ticket at review-round
+`n > 0`, the submit gate's `rework_resolutions` check parses every
+`### [BLOCKING] {title}` heading from the round `n-1` `cc` and `cx` sidecars and
+requires each title to be referenced in a `## Rework Resolutions` section of the
+round-`n` plan evidence (`.ct2/plans/{id}-r{n}.md`):
+
+```markdown
+## Rework Resolutions
+- Missing input validation: added a size check before processing (handler.go:142)
+```
+
+Matching is lenient normalized-substring containment, so reformatting cannot
+brick a re-submit; the gate only proves forge *wrote* a resolution for each prior
+blocker. Verifying the resolutions are **true** is the reviewer's job: at round
+`n > 0`, each lens verifies every claimed prior-round BLOCKING resolution against
+the diff, and a false resolution claim is itself BLOCKING. This is additive to —
+never a substitute for — the full all-criteria review every round. The resolution
+record lives in the plan evidence, which is already required and already
+reviewer-read; sidecars stay immutable and no second issue ledger is introduced.
+
 ## PR Thread Publication
 
 When `review_publication.mode: pr-and-sidecar`, each lens publishes its sidecar

@@ -8,6 +8,20 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Added rework-resolution accounting that closes the reject→rework joint
+  (loop-design roadmap T2.2, Direction B). `### [BLOCKING] {title}` is promoted
+  from convention to a machine-parsed sidecar form (mandatory title). The submit
+  gate gains a hard `rework_resolutions` check: at review-round n>0, every
+  `### [BLOCKING]` heading from the round n-1 `cc`/`cx` sidecars must be
+  referenced in a `## Rework Resolutions` section of the round-n plan evidence
+  (lenient normalized-substring matching, so reformatting can't brick a
+  re-submit). Both lens roles gain a criterion to verify each claimed resolution
+  against the diff — a false resolution claim is BLOCKING — additive to the full
+  all-criteria review. The resolution record lives in the already-required,
+  already-reviewer-read plan evidence; sidecars stay immutable and no second
+  issue ledger is introduced. Specs: `spec/sidecar-format.md`,
+  `spec/review-protocol.md` (Rework Resolution Contract), `spec/plan-evidence.md`.
+
 - Wired the dangling PR-addressed writer (loop-design roadmap T0.4, relocated to
   the reject→rework joint). `ct2-pr-respond --mark-addressed {comment-id}`
   (repeatable) records a PR review comment id in `.meta/{id}.pr-addressed.json`
