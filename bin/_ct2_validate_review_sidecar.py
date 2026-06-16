@@ -13,11 +13,74 @@ REQUIRED_SECTIONS = (
     "## Recommendation",
 )
 
+# Per-AC grade grammar in `## Acceptance Criteria Check` (spec/sidecar-format.md):
+#   - AC{n}: (pass|fail) — {reason}   [optional (evidence: {claim-id})]
+# AC_GRADE_RE captures a clean grade; AC_LINE_RE catches a line that looks like
+# an AC grade but does not parse (warn-only, never wedges a ticket). The
+# negative lookahead after pass|fail keeps `passed`, `fail-safe`, `pass-like`,
+# etc. out of the clean-grade set (they fall to the warn-only path).
+AC_GRADE_RE = re.compile(r"^-\s+AC(\d+):\s*(pass|fail)(?![A-Za-z0-9_-])", re.IGNORECASE)
+AC_LINE_RE = re.compile(r"^-\s+AC(\d+):", re.IGNORECASE)
+
+
+def ticket_id_of(expected_ticket: str) -> str:
+    stem = expected_ticket[:-3] if expected_ticket.endswith(".md") else expected_ticket
+    return stem.split("-", 1)[0]
+
 
 def accepted_ticket_values(expected_ticket: str) -> set[str]:
     stem = expected_ticket[:-3] if expected_ticket.endswith(".md") else expected_ticket
-    ticket_id = stem.split("-", 1)[0]
-    return {ticket_id, stem, f"{stem}.md"}
+    return {ticket_id_of(expected_ticket), stem, f"{stem}.md"}
+
+
+def section_body(content: str, title: str) -> str:
+    match = re.search(rf"^##\s+{re.escape(title)}\s*$", content, re.MULTILINE)
+    if not match:
+        return ""
+    return re.split(r"\n##\s+", content[match.end():], maxsplit=1)[0]
+
+
+def sealed_ac_count(sidecar_path: Path, ticket_id: str) -> int | None:
+    """Best-effort count of AC checkboxes in the sealed baseline, for the
+    warn-only grade-count check. None when no snapshot exists (legacy ticket)."""
+    snapshot = sidecar_path.parent.parent / "reviews" / f"{ticket_id}-sealed.md"
+    try:
+        text = snapshot.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return len(re.findall(r"^-\s+\[[ xX]\]", section_body(text, "Acceptance Criteria"), re.MULTILINE))
+
+
+def grade_ac_check(content: str) -> tuple[list[str], int, list[str]]:
+    """Parse the `## Acceptance Criteria Check` section. Returns
+    (fail_lines, parsed_grade_count, unparseable_ac_lines).
+
+    Lines inside a fenced (``` / ~~~) or indented (>=4 spaces / a tab) code
+    block are skipped: a reviewer pasting the documented grammar example as a
+    reference must never wedge the ticket. Skipping is the conservative
+    direction — at worst the hard rule under-fires on a genuinely code-fenced
+    grade, never over-fires on documentation."""
+    fail_lines: list[str] = []
+    parsed = 0
+    unparseable: list[str] = []
+    in_fence = False
+    for raw in section_body(content, "Acceptance Criteria Check").splitlines():
+        line = raw.strip()
+        if line.startswith("```") or line.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if raw.startswith("\t") or (len(raw) - len(raw.lstrip(" "))) >= 4:
+            continue  # indented code block
+        grade = AC_GRADE_RE.match(line)
+        if grade:
+            parsed += 1
+            if grade.group(2).lower() == "fail":
+                fail_lines.append(line)
+        elif AC_LINE_RE.match(line):
+            unparseable.append(line)
+    return fail_lines, parsed, unparseable
 
 
 def read_frontmatter(content: str) -> dict[str, str]:
@@ -69,6 +132,29 @@ def main() -> int:
     for section in REQUIRED_SECTIONS:
         if section not in content:
             errors.append(f"missing section: {section}")
+
+    fail_lines, parsed_grades, unparseable = grade_ac_check(content)
+
+    # HARD coherence rule — the single carve-out to "the reconciler does not
+    # parse the body": a sidecar with verdict: approved that grades any AC as
+    # `fail` is internally contradictory and invalid. This is a validity gate,
+    # not a verdict input — `verdict` remains the only state-moving field, and
+    # the rule fires only on lines that already parse cleanly.
+    if fm.get("verdict") == "approved" and fail_lines:
+        errors.append("verdict is approved but the body grades an AC as fail: " + "; ".join(fail_lines))
+
+    # WARN-ONLY (never wedges the ticket): AC-grade-looking lines that do not
+    # parse, and a graded-AC count that differs from the sealed baseline. The
+    # count check only fires once the reviewer is actually using the grammar.
+    warnings: list[str] = [
+        f"unparseable AC grade line (expected `- AC{{n}}: pass|fail`): {line}" for line in unparseable
+    ]
+    if parsed_grades:
+        baseline_count = sealed_ac_count(path, ticket_id_of(expected_ticket))
+        if baseline_count is not None and parsed_grades != baseline_count:
+            warnings.append(f"graded {parsed_grades} ACs but the sealed baseline has {baseline_count} AC checkbox(es)")
+    for warning in warnings:
+        print(f"sidecar warning: {warning}", file=sys.stderr)
 
     if errors:
         print("invalid sidecar:", file=sys.stderr)

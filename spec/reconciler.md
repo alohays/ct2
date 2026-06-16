@@ -33,7 +33,13 @@ For ticket id `003` and round `1`, the reconciler requires:
 
 If either sidecar is missing, explicit mode exits successfully without a state
 change. If a sidecar verdict is malformed, explicit mode exits non-zero without
-a state change.
+a state change. The per-sidecar validator (`_ct2_validate_review_sidecar.py`)
+also rejects a coherence violation — a `verdict: approved` sidecar that grades an
+AC as `fail` (`spec/sidecar-format.md`) — which likewise exits non-zero without a
+state change. Because sidecars are immutable, such a pair wedges until a human
+acts: inspect the contradictory sidecar, and either re-review the round or
+`ct2-revise` the ticket back to `draft/`. `ct2-review-watchdog`'s review-SLA
+escalation is the backstop so a wedged pair never strands silently.
 
 ## Locking
 
