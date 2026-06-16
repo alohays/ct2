@@ -109,6 +109,24 @@ class LessonsTest(unittest.TestCase):
         bad_scope = run_cmd([PYTHON, LESSON, "add", "--project-dir", project, "--ticket", "1", "--category", "scope-creep", "--rule", "x", "--scope", "role:lens"])
         self.assertEqual(bad_scope.returncode, 2)
 
+    def test_digest_rejects_invalid_role(self):
+        project = self.make_project()
+        result = run_cmd([PYTHON, LESSON, "digest", "--project-dir", project, "--role", "lens"])
+        self.assertEqual(result.returncode, 2)
+
+    def test_digest_char_cap_truncates_long_output(self):
+        project = self.make_project()
+        categories = list(
+            ("missing-regression-test", "scope-creep", "ac-unverifiable", "evidence-missing",
+             "env-setup", "flaky-test", "api-contract", "style-convention")
+        )
+        long_rule = ("Always verify the boundary condition carefully and add the matching regression coverage " * 3)[:195]
+        for index, category in enumerate(categories):
+            self.add(project, str(100 + index), category, long_rule, scope="repo")
+        out = self.digest(project, "forge", as_json=False)
+        self.assertIn("more (raise --max", out)
+        self.assertLessEqual(len(out), 1400, "human digest must stay near the ~1200 char cap")
+
     def test_rule_length_limit(self):
         project = self.make_project()
         long_rule = "x" * 201

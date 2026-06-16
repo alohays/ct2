@@ -47,6 +47,7 @@ CATEGORIES = (
 )
 # `global` is reserved for a future ~/.ct2 tier; not yet writable.
 SCOPES = ("repo", "role:forge", "role:helm")
+DIGEST_ROLES = ("forge", "helm")
 RULE_MAX = 200
 DIGEST_CHAR_CAP = 1200
 STATE_DIRS = ("draft", "backlog", "in-progress", "in-review", "rejected", "escalated", "done")
@@ -215,6 +216,9 @@ def _negate(ts: str) -> str:
 
 def cmd_digest(args: argparse.Namespace) -> int:
     ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    if args.role not in DIGEST_ROLES:
+        print(f"ct2-lesson: --role must be one of {', '.join(DIGEST_ROLES)}", file=sys.stderr)
+        return 2
     role_scope = f"role:{args.role}"
     lessons = [
         lesson
