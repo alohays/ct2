@@ -120,6 +120,34 @@ restricted to unambiguous markers (`tbd`, `todo`, `fixme`, `placeholder`,
 `decide later`), and a whole-field matcher that additionally rejects fields
 whose entire content is just `unknown`, `n/a`, `?`, `-`, etc.
 
+### Advisory planning lints
+
+Beyond the seven blocking checks, the seal gate loads
+`.ct2/config/planning-lints.json` (fail-soft: a missing or invalid file
+contributes zero lints) and, for each lint that **triggers**, appends one
+advisory entry to the audit report using the existing check shape:
+`{name: "seal_gate_lint_{id}", ok: true, evidence: {advice, lint: id}}`. Because
+every lint entry carries `ok: true`, the blocking set stays exactly the seven
+checks above and the gate's exit semantics are byte-for-byte unchanged — a lint
+**never** blocks a seal.
+
+Each lint is `{id, section, pattern, mode, advice, source, added}`, where
+`section` is one of `requirements | constraints | context | acceptance-criteria`
+(or `any` to scan the whole body), `pattern` is a regex, and `mode` is
+`must-match` (triggers when the pattern is **absent**) or `must-not-match`
+(triggers when present). The schema lives with the config template; there is no
+separate spec file at this size.
+
+Lints are **consult-by-construction at draft time**: `ct2-seal` prints every
+triggered `seal_gate_lint_*` advisory on a passing gate (rather than discarding
+the audit output), and helm's ticket-authoring workflow runs
+`ct2-ticket-audit --seal-gate --ticket {id}` on the draft and surfaces the
+advisories while the draft is still editable. The schema reserves a curation
+path: helm appends a lint only after explicit user approval (a corroborated
+lesson with a regex-expressible pattern is the natural source — the lesson→lint
+bridge), via a tmpfile + `mv` append; the rest of `.ct2/config/` stays
+human-owned.
+
 ## Submit Gate
 
 `ct2-review-enter` requires that an `in-progress/` ticket pass a static

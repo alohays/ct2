@@ -1,0 +1,13 @@
+{
+  "_comment": "Advisory planning lints, surfaced at draft time by ct2-seal / ct2-ticket-audit --seal-gate (see spec/state-machine.md, 'Advisory planning lints'). Each lint scans one draft ticket section with a regex and adds a NON-BLOCKING advisory when it triggers. Lints never fail the seal gate; the seven blocking checks are unchanged. Helm appends entries only after explicit user approval (a corroborated lesson with a regex-expressible pattern is the natural source).",
+  "_example": {
+    "id": "bugfix-needs-regression-test",
+    "section": "acceptance-criteria",
+    "pattern": "(?i)\\bregression\\b|\\btest\\b",
+    "mode": "must-match",
+    "advice": "Bug-fix tickets should bind an acceptance criterion to a regression test.",
+    "source": "lesson lsn-…",
+    "added": "2026-06-16T00:00:00Z"
+  },
+  "lints": []
+}

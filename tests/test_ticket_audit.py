@@ -556,6 +556,63 @@ class TicketAuditTest(unittest.TestCase):
         self.assertEqual(audit.returncode, 1)
         self.assertIn("--submit-gate requires --ticket", json.loads(audit.stdout)["errors"])
 
+    def _set_lints(self, project, lints):
+        (project / ".ct2" / "config" / "planning-lints.json").write_text(json.dumps({"lints": lints}), encoding="utf-8")
+
+    def _seal_gate(self, project):
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--seal-gate", "--ticket", "001", project])
+        return audit, json.loads(audit.stdout)
+
+    def test_init_copies_planning_lints_template(self):
+        project = self.make_project()
+        self.assertTrue((project / ".ct2" / "config" / "planning-lints.json").is_file())
+
+    def test_seal_gate_lint_advisory_fires_without_blocking(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        self._set_lints(project, [{"id": "ac-test", "section": "acceptance-criteria", "pattern": "test", "mode": "must-match", "advice": "ACs should reference a test."}])
+        write_ticket(ct2 / "draft" / "001-audit-ticket.md", status="draft", ac_checked=False, verdict="pending")
+        audit, report = self._seal_gate(project)
+        self.assertEqual(audit.returncode, 0, "a lint advisory must never block the seal gate")
+        self.assertTrue(report["complete"])
+        checks = {check["name"]: check for check in report["tickets"][0]["checks"]}
+        self.assertIn("seal_gate_lint_ac-test", checks)
+        self.assertTrue(checks["seal_gate_lint_ac-test"]["ok"])
+        self.assertIn("test", checks["seal_gate_lint_ac-test"]["evidence"]["advice"])
+
+    def test_seal_gate_lint_must_not_match_triggers_on_presence(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        self._set_lints(project, [{"id": "no-exercise", "section": "requirements", "pattern": "Exercise", "mode": "must-not-match", "advice": "Avoid the word Exercise."}])
+        write_ticket(ct2 / "draft" / "001-audit-ticket.md", status="draft", ac_checked=False, verdict="pending")
+        _audit, report = self._seal_gate(project)
+        checks = {check["name"] for check in report["tickets"][0]["checks"]}
+        self.assertIn("seal_gate_lint_no-exercise", checks)
+
+    def test_seal_gate_lint_does_not_fire_when_satisfied(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        # The fixture's AC contains "checks"; a must-match on "checks" is satisfied.
+        self._set_lints(project, [{"id": "has-checks", "section": "acceptance-criteria", "pattern": "checks", "mode": "must-match", "advice": "x"}])
+        write_ticket(ct2 / "draft" / "001-audit-ticket.md", status="draft", ac_checked=False, verdict="pending")
+        _audit, report = self._seal_gate(project)
+        checks = {check["name"] for check in report["tickets"][0]["checks"]}
+        self.assertNotIn("seal_gate_lint_has-checks", checks)
+
+    def test_seal_gate_lints_fail_soft_on_bad_file_and_regex(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "draft" / "001-audit-ticket.md", status="draft", ac_checked=False, verdict="pending")
+        (ct2 / "config" / "planning-lints.json").write_text("{ not valid json", encoding="utf-8")
+        audit, report = self._seal_gate(project)
+        self.assertEqual(audit.returncode, 0, "an invalid lints file must not break the gate")
+        self.assertTrue(report["complete"])
+
+        self._set_lints(project, [{"id": "bad-re", "section": "any", "pattern": "(", "mode": "must-match", "advice": "a"}])
+        _audit2, report2 = self._seal_gate(project)
+        checks = {check["name"] for check in report2["tickets"][0]["checks"]}
+        self.assertNotIn("seal_gate_lint_bad-re", checks, "an unparseable regex is skipped, not crashed on")
+
     def test_ticket_audit_rejects_sealed_baseline_drift(self):
         project = self.make_project()
         ct2 = project / ".ct2"

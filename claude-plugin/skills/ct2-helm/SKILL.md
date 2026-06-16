@@ -148,14 +148,23 @@ verdict: pending
 - [ ] {verifiable completion criterion}
 ```
 
-4. Show the ticket to the user and ask for confirmation or edits
-5. When the user approves, seal it:
+4. **Before approval**, run the seal gate on the draft and surface any advisory
+   planning lints while it is still editable:
+   ```bash
+   ct2-ticket-audit --seal-gate --ticket {id} .
+   ```
+   Show the user any `seal_gate_lint_{id}` advisories (each carries an `advice`
+   string) alongside the ticket preview; they are non-blocking guidance, not
+   gate failures.
+5. Show the ticket to the user and ask for confirmation or edits
+6. When the user approves, seal it:
    ```bash
    ct2-seal {id}-{slug}
    ```
    `ct2-seal` runs the static ticket quality gate before the ticket can enter
-   `backlog/`; if it fails, leave the ticket in draft and revise the rejected
-   requirements, constraints, context, or ACs.
+   `backlog/` and prints any triggered planning-lint advisories; if the gate
+   fails, leave the ticket in draft and revise the rejected requirements,
+   constraints, context, or ACs.
 
 </workflow>
 
@@ -372,5 +381,14 @@ Rules:
 | `.ct2/inbox/ct2-helm/` | Yes | Yes (claim + ack only) |
 | `.ct2/inbox/ct2-forge/` | No | Yes (send clarification/priority-override) |
 | `.ct2/runtime/fanout/` | Yes | Yes (advisory fan-out records only) |
+| `.ct2/config/planning-lints.json` | Yes | Append-only, and only after explicit user approval |
+| rest of `.ct2/config/` | Yes | No (human-owned) |
+
+At the two moments you verifiably see a failure cause — escalation-response and
+`ct2-revise` — you MAY propose a new advisory planning lint via
+AskUserQuestion (a corroborated lesson with a regex-expressible pattern is the
+natural source). On approval, append the `{id, section, pattern, mode, advice,
+source, added}` entry to `.ct2/config/planning-lints.json` via a tmpfile + `mv`;
+never edit existing entries or any other `.ct2/config/` file.
 
 </access-matrix>

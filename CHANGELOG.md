@@ -8,6 +8,20 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Added advisory **planning lints** — the distill endpoint on the planning side
+  (loop-design roadmap T3.3, Direction C). `.ct2/config/planning-lints.json`
+  (a commented template copied by `ct2-init`) lists
+  `{id, section, pattern, mode, advice, source, added}` lints. The seal gate
+  loads them fail-soft and appends one advisory entry per triggered lint
+  (`{name: "seal_gate_lint_{id}", ok: true, evidence: {advice, lint}}`); because
+  every entry is `ok: true`, the seven blocking checks and the gate's exit
+  semantics are byte-for-byte unchanged — a lint never blocks a seal. Lints are
+  consult-by-construction at draft time: `ct2-seal` now prints triggered
+  advisories on a passing gate instead of discarding the audit output, and helm
+  surfaces them during ticket authoring. Helm may append a lint only after
+  explicit user approval (the lesson→lint bridge); the access matrix gains the
+  `planning-lints.json` row. Documented in `spec/state-machine.md` § Seal Gate.
+
 - Wired lesson **consult** onto the mandatory pickup path (loop-design roadmap
   T3.2, Direction C). `ct2-pickup` now prints the `ct2-lesson digest --role
   forge` block (ranked against the picked-up ticket's `touched-files`) as part
