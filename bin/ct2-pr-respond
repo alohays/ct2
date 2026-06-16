@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from _ct2_issue import find_ticket
-from _ct2_pr import build_response_todo
+from _ct2_pr import build_response_todo, mark_addressed
 from _ct2_protocol import assert_compatible as assert_protocol_compatible
 from _ct2_vao import ensure_ct2
 
@@ -18,6 +18,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Build a CT2 PR review response TODO")
     parser.add_argument("ticket", help="Ticket path, id, stem, or filename")
     parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument(
+        "--mark-addressed",
+        action="append",
+        metavar="COMMENT_ID",
+        help="Record a PR review comment id as addressed (repeatable) so the next TODO drops it",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     project_dir = Path(args.project_dir).resolve()
@@ -27,7 +33,10 @@ def main() -> int:
         ticket = find_ticket(ct2_dir, args.ticket)
         if ticket is None:
             raise RuntimeError(f"ticket not found: {args.ticket}")
-        result = build_response_todo(project_dir, ticket)
+        if args.mark_addressed:
+            result = mark_addressed(project_dir, ticket, args.mark_addressed)
+        else:
+            result = build_response_todo(project_dir, ticket)
     except Exception as exc:
         print(f"ct2-pr-respond: {exc}", file=sys.stderr)
         return 1

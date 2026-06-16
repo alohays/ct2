@@ -19,7 +19,7 @@ from _ct2_vao import atomic_write_text, ensure_ct2, now, ticket_id_from_name
 # `required_frontmatter` for legitimate `branch: null` tickets (direct-to-main /
 # none strategies) and `sealed_baseline` for legacy tickets, neither of which is
 # a submission precondition. Gating on the exit code would brick those projects.
-SUBMIT_GATE_CHECKS = ("submit_gate_state", "acceptance_criteria_checked", "plan_evidence")
+SUBMIT_GATE_CHECKS = ("submit_gate_state", "acceptance_criteria_checked", "plan_evidence", "rework_resolutions")
 
 # Hardness of the ac-verify backstop lives in code, versioned per
 # spec/versioning.md — never in tamper-evident-free runtime config (§2.5). It

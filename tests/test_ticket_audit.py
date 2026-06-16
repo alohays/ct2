@@ -461,6 +461,79 @@ class TicketAuditTest(unittest.TestCase):
         checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
         self.assertFalse(checks["submit_gate_state"])
 
+    def _round0_blocking_sidecars(self, ct2, title="Missing input validation"):
+        for side, reviewer in (("cc", "ct2-lens-cc"), ("cx", "ct2-lens-cx")):
+            (ct2 / "reviews" / f"001-{side}-r0.md").write_text(
+                f'---\nticket: "001-audit-ticket"\nreviewer: {reviewer}\nround: 0\n'
+                "verdict: rejected\ntimestamp: 2026-05-12T01:00:00Z\n---\n\n"
+                "## Summary\ns\n\n## Acceptance Criteria Check\n- AC1: fail — broken\n\n"
+                f"## Issues Found\n### [BLOCKING] {title}\nfix it\n\n## Recommendation\nrejected\n",
+                encoding="utf-8",
+            )
+
+    def test_rework_resolutions_vacuous_at_round_zero(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "in-progress" / "001-audit-ticket.md", status="in-progress", ac_checked=True, verdict="pending")
+        (ct2 / "plans" / "001-r0.md").write_text("# Plan\n", encoding="utf-8")
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--submit-gate", "--ticket", "001", project])
+        checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
+        self.assertTrue(checks["rework_resolutions"])
+
+    def test_rework_resolutions_fails_without_resolution_at_round_n(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        self._round0_blocking_sidecars(ct2)
+        write_ticket(ct2 / "in-progress" / "001-audit-ticket.md", status="in-progress", ac_checked=True, verdict="pending", review_round=1)
+        (ct2 / "plans" / "001-r1.md").write_text("# Plan r1\n", encoding="utf-8")
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--submit-gate", "--ticket", "001", project])
+        checks = {check["name"]: check for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
+        self.assertFalse(checks["rework_resolutions"]["ok"])
+        self.assertIn("Missing input validation", checks["rework_resolutions"]["evidence"]["unresolved_prior_blocking"])
+
+    def test_rework_resolutions_passes_when_referenced(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        self._round0_blocking_sidecars(ct2)
+        write_ticket(ct2 / "in-progress" / "001-audit-ticket.md", status="in-progress", ac_checked=True, verdict="pending", review_round=1)
+        (ct2 / "plans" / "001-r1.md").write_text(
+            "# Plan r1\n## Rework Resolutions\n- Missing input validation: added a size check.\n", encoding="utf-8"
+        )
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--submit-gate", "--ticket", "001", project])
+        checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
+        self.assertTrue(checks["rework_resolutions"])
+
+    def test_rework_resolutions_ignores_titleless_blocking(self):
+        # A `### [BLOCKING]` with no inline title must not be parsed as a tracked
+        # blocker, and must not absorb the next line as a phantom title.
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        for side, reviewer in (("cc", "ct2-lens-cc"), ("cx", "ct2-lens-cx")):
+            (ct2 / "reviews" / f"001-{side}-r0.md").write_text(
+                f'---\nticket: "001-audit-ticket"\nreviewer: {reviewer}\nround: 0\n'
+                "verdict: rejected\ntimestamp: 2026-05-12T01:00:00Z\n---\n\n"
+                "## Summary\ns\n\n## Issues Found\n### [BLOCKING]\nThe handler is missing validation.\n\n"
+                "## Recommendation\nrejected\n",
+                encoding="utf-8",
+            )
+        write_ticket(ct2 / "in-progress" / "001-audit-ticket.md", status="in-progress", ac_checked=True, verdict="pending", review_round=1)
+        (ct2 / "plans" / "001-r1.md").write_text("# Plan r1\n", encoding="utf-8")
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--submit-gate", "--ticket", "001", project])
+        checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
+        self.assertTrue(checks["rework_resolutions"], "a title-less BLOCKING must not be tracked")
+
+    def test_rework_resolutions_matches_json_plan(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        self._round0_blocking_sidecars(ct2)
+        write_ticket(ct2 / "in-progress" / "001-audit-ticket.md", status="in-progress", ac_checked=True, verdict="pending", review_round=1)
+        (ct2 / "plans" / "001-r1.json").write_text(
+            json.dumps({"rework_resolutions": ["Missing input validation: added a size check"]}), encoding="utf-8"
+        )
+        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--submit-gate", "--ticket", "001", project])
+        checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
+        self.assertTrue(checks["rework_resolutions"])
+
     def test_ticket_audit_submit_gate_requires_ticket(self):
         project = self.make_project()
         audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--submit-gate", project])

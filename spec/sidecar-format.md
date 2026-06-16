@@ -110,6 +110,15 @@ When `review_publication.inline_comments: true`, `file:` and `line:` cause the
 block to be mirrored as an inline GitHub PR review comment. `suggestion:` is
 optional and is wrapped in a GitHub suggestion block when present.
 
+### Machine-parsed BLOCKING headings
+
+`### [BLOCKING] {title}` is promoted from convention to a machine-parsed form:
+one heading per blocking issue, with a **mandatory** non-empty title. The
+rework re-entry gate (`spec/review-protocol.md` § *Rework Resolution Contract*)
+parses these titles from a rejected round's sidecars and requires the next
+round's plan evidence to resolve each one. A blocking issue without a title is
+not parsed and therefore not tracked — always title the heading.
+
 ## Immutability
 
 Sidecars are immutable after creation. A re-review writes a new sidecar for a

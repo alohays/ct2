@@ -61,6 +61,11 @@ Apply the following criteria in order. Any BLOCKING issue → `verdict: rejected
 ### 3. Plan Evidence
 - Tickets in `in-review/` and `done/` must have plan evidence for the current review round under `.ct2/plans/{ticket-id}-r{round}.md` or `.json`
 - A ticket may omit plan evidence only when it contains an explicit, valid `plan-exempt` reason
+- **At review-round n > 0**, verify each prior-round `### [BLOCKING]` resolution
+  claimed in the plan's `## Rework Resolutions` section **against the diff**. A
+  resolution that is claimed but not actually made is a false claim and is
+  **BLOCKING**. This is additive to the full all-criteria review every round —
+  never a "targeted diff" substitute for it.
 
 **BLOCKING boundary**:
 - Missing required plan evidence

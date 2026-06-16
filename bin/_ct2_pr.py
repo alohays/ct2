@@ -399,6 +399,27 @@ def load_addressed(ct2_dir: Path, ticket: Path) -> set[str]:
     return {str(item) for item in data.get("addressed", [])}
 
 
+def mark_addressed(project_dir: Path, ticket: Path, comment_ids: list[str]) -> dict[str, Any]:
+    """Record one or more PR review comment ids as addressed so the next
+    `build_response_todo` drops them. The previous wiring only ever rewrote the
+    file with its prior contents — nothing added ids, so the TODO regenerated
+    identically every round. This is the missing writer."""
+    ct2_dir = project_dir / ".ct2"
+    addressed = load_addressed(ct2_dir, ticket)
+    added = [str(cid) for cid in comment_ids if str(cid) and str(cid) not in addressed]
+    addressed.update(added)
+    atomic_write_json(
+        ct2_dir, addressed_path(ct2_dir, ticket), {"addressed": sorted(addressed), "updated": now()}, "pr-addressed-"
+    )
+    return {
+        "ok": True,
+        "status": "marked-addressed",
+        "ticket": ticket.name,
+        "added": added,
+        "addressed_count": len(addressed),
+    }
+
+
 def render_response_todo(comments: list[dict[str, Any]]) -> str:
     lines = ["# CT2 PR Review TODO", ""]
     if not comments:

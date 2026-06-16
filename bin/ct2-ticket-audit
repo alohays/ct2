@@ -455,6 +455,65 @@ def round_fresh_evidence(
     return True, {"round": round_num, "fresh_claims": fresh, "covered_acs": sorted(covered, key=lambda value: int(value) if value.isdigit() else 0)}
 
 
+# Same-line title only: `\s+` would let `### [BLOCKING]\n{next line}` absorb the
+# following body line (even `## Recommendation`) as a phantom title, contradicting
+# the spec ("a blocking issue without a title is not parsed"). Use non-newline
+# whitespace so a title-less heading matches nothing.
+BLOCKING_HEADING_RE = re.compile(r"^###[ \t]+\[BLOCKING\][ \t]+(\S[^\n]*?)[ \t]*$", re.MULTILINE)
+
+
+def _normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", strip_html_comments(text)).strip().lower()
+
+
+def prior_round_blocking_titles(ct2_dir: Path, ticket_id: str, round_num: str) -> list[str]:
+    try:
+        current = int(round_num)
+    except (TypeError, ValueError):
+        return []
+    if current <= 0:
+        return []
+    titles: list[str] = []
+    for side in ("cc", "cx"):
+        sidecar = ct2_dir / "reviews" / f"{ticket_id}-{side}-r{current - 1}.md"
+        try:
+            text = sidecar.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        titles.extend(match.strip() for match in BLOCKING_HEADING_RE.findall(text))
+    return titles
+
+
+def rework_resolution_issues(ct2_dir: Path, ticket_id: str, round_num: str) -> list[str]:
+    """At review-round n>0, every `### [BLOCKING] {title}` from the round n-1
+    sidecars must be referenced in the round-n plan's `## Rework Resolutions`
+    section. Returns the unresolved titles — empty (ok) at round 0, when no prior
+    structured BLOCKING headings exist, or when all are referenced. Matching is
+    lenient normalized-substring containment; the lens independently verifies the
+    resolution claims are true against the diff."""
+    titles = prior_round_blocking_titles(ct2_dir, ticket_id, round_num)
+    if not titles:
+        return []
+    md_plan = ct2_dir / "plans" / f"{ticket_id}-r{round_num}.md"
+    json_plan = ct2_dir / "plans" / f"{ticket_id}-r{round_num}.json"
+    if md_plan.exists():
+        haystack = body_section(md_plan, "Rework Resolutions")
+    elif json_plan.exists():
+        haystack = json_plan.read_text(encoding="utf-8", errors="ignore")
+    else:
+        haystack = ""
+    normalized = _normalize_text(haystack)
+    unresolved: list[str] = []
+    seen: set[str] = set()
+    for title in titles:
+        key = _normalize_text(title)
+        if key in normalized or key in seen:
+            continue
+        seen.add(key)
+        unresolved.append(title)
+    return unresolved
+
+
 def check(name: str, ok: bool, evidence: Any) -> dict[str, Any]:
     return {"name": name, "ok": ok, "evidence": evidence}
 
@@ -481,6 +540,16 @@ def audit_ticket(
 
     if submit_gate:
         checks.append(check("submit_gate_state", state == "in-progress", {"directory": state, "expected": "in-progress"}))
+        unresolved = rework_resolution_issues(ct2_dir, ticket_id, round_num)
+        checks.append(
+            check(
+                "rework_resolutions",
+                not unresolved,
+                {"unresolved_prior_blocking": unresolved}
+                if unresolved
+                else "no prior-round BLOCKING issues, or all referenced in the round's ## Rework Resolutions",
+            )
+        )
 
     if done_gate:
         # The done gate runs against a ticket still in in-review/; the reconciler
