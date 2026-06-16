@@ -227,9 +227,11 @@ For the current `in-progress/` ticket:
      verification evidence explicitly so the done gate has something fresh to
      read:
      ```bash
-     ct2-evidence command --ticket "${ticket_id}" --round "${review_round}" \
-       --command "<the command you ran>" --exit-code $? --summary "round ${review_round} verification"
+     ct2-evidence command --ticket "${ticket_id}" --round {review-round} \
+       --command "<the command you ran>" --exit-code $? --summary "round {review-round} verification"
      ```
+     (Substitute `{review-round}` with the ticket's current `review-round`
+     frontmatter value, matching the plan-evidence path convention above.)
 
 6. **Update AC checklist** in the ticket: mark every satisfied item as `[x]`
 

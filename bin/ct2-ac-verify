@@ -58,7 +58,7 @@ def load_bindings(ct2_dir: Path, ticket_id: str) -> list[tuple[int, str]]:
 
 def record_claim(project_dir: Path, ticket_id: str, round_num: str, ordinal: int, command: str, exit_code: int) -> None:
     helper = Path(__file__).resolve().parent / "ct2-evidence"
-    subprocess.run(
+    proc = subprocess.run(
         [
             sys.executable, str(helper), "command",
             "--project-dir", str(project_dir),
@@ -74,6 +74,18 @@ def record_claim(project_dir: Path, ticket_id: str, round_num: str, ordinal: int
         capture_output=True,
         text=True,
     )
+    # ct2-evidence's exit code is the *recorded command's* status (0/1), so a 1
+    # is expected for a failing AC and is not a recording failure. Only an
+    # abnormal code (>=2, e.g. protocol mismatch) or a traceback means recording
+    # itself failed — surface that instead of swallowing it (best-effort, never
+    # fatal to the verify run).
+    if proc.returncode >= 2 or "Traceback" in (proc.stderr or ""):
+        detail = (proc.stderr or "").strip().splitlines()[-1] if (proc.stderr or "").strip() else ""
+        print(
+            f"ct2-ac-verify: warning — evidence recording for AC{ordinal} may have failed "
+            f"(ct2-evidence exit {proc.returncode}): {detail[:200]}",
+            file=sys.stderr,
+        )
 
 
 def run_binding(command: str, project_dir: Path, timeout: int) -> tuple[int, bool]:
