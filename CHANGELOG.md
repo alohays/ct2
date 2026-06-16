@@ -8,6 +8,28 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Added a reconciler **done gate** (loop-design roadmap T1.3, Direction A).
+  `ct2-ticket-audit` gains a `--done-gate` mode that, against a ticket still in
+  `in-review/`, requires `done_gate_state`, all ACs checked, sealed-baseline
+  match, plan evidence, dual-approved sidecars, and `done_gate_evidence` — at
+  least one `ok:true` `command`/`verifier` claim whose `round` matches the
+  ticket's current review-round (and, when the ticket has sealed
+  `## Verification` bindings, one per bound AC). Freshness is keyed on the
+  `round` field, never claim timestamps. `ct2-reconcile` runs the gate before
+  any state mutation when both reviewers approve; it ships **advisory** (records
+  the verdict, sends one deduplicated helm message stamped
+  `.meta/{id}-r{n}.done-gate-failed`, still moves to `done/`) and is promoted to
+  hard (exit 3, no move) by a release via the `DONE_GATE_HARD` code constant,
+  never runtime config. `ct2-review-watchdog` now also escalates an
+  approved-but-unverified ticket — both sidecars approved but still stranded in
+  `in-review/` past `max_review_duration_min` — so a withheld ticket never hangs
+  without an SLA. The `done/` invariant strengthens from "dual approval" to
+  "dual approval AND machine-verified round-fresh evidence" with no change to
+  the `mv` primitive or writer ownership. Specs updated: `spec/reconciler.md`
+  (Done Gate section, exit 3, recovery, discover aggregation),
+  `spec/state-machine.md` (transition + circuit-breaker rows),
+  `spec/evidence-graph.md` (gated done-traceability).
+
 - Added `bin/ct2-ac-verify`, the deterministic iterate-until-green runner for a
   ticket's sealed `## Verification` AC→command bindings (loop-design roadmap
   T1.2, Direction A). It reads bindings from the sealed snapshot (never the live

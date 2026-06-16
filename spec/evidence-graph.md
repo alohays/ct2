@@ -79,4 +79,9 @@ equals the ticket's current `review-round`.
 - Prompt and tool contents are not stored by default.
 - Image-only evidence does not satisfy verifier coverage by itself.
 - Every done transition should be traceable to sidecar verdicts and evidence
-  claims.
+  claims. The reconciler's done gate makes this enforceable: an approved ticket
+  must carry at least one `ok:true` `command`/`verifier` claim whose `round`
+  matches its current review-round (and, when it has sealed `## Verification`
+  bindings, one per bound AC). This is advisory until the gate is promoted to
+  hard, at which point "should be traceable" becomes a gated "must" — see
+  `spec/reconciler.md` § *Done Gate*.
