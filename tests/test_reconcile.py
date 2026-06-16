@@ -362,6 +362,40 @@ class ReconcileTest(unittest.TestCase):
         self.assertTrue((ct2 / "done" / "001-reconcile-smoke.md").exists())
         self.assertFalse(lock.exists())
 
+    def test_lock_is_live_treats_fresh_unstamped_lock_as_live(self):
+        import importlib.machinery
+        import importlib.util
+        import os
+        import time
+
+        bin_dir = str(REPO_ROOT / "bin")
+        if bin_dir not in sys.path:
+            sys.path.insert(0, bin_dir)
+        loader = importlib.machinery.SourceFileLoader("ct2_reconcile_lock_mod", str(REPO_ROOT / "bin" / "ct2-reconcile"))
+        spec = importlib.util.spec_from_loader("ct2_reconcile_lock_mod", loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+
+        project = self.make_project()
+        lock = project / ".ct2" / ".meta" / "x-r0-reconcile.lock"
+        lock.parent.mkdir(parents=True, exist_ok=True)
+
+        # Fresh lock with no pid yet (the O_EXCL→stamp window) is live: a
+        # concurrent acquirer must wait, not steal it.
+        lock.write_text("", encoding="utf-8")
+        self.assertTrue(module.lock_is_live(lock))
+
+        # An old unstamped lock is a crashed writer and is reclaimable.
+        old = time.time() - (module.LOCK_STAMP_GRACE_SECONDS + 5)
+        os.utime(lock, (old, old))
+        self.assertFalse(module.lock_is_live(lock))
+
+        # A live pid is live; a dead pid is stale.
+        lock.write_text(f"{os.getpid()}\n", encoding="utf-8")
+        self.assertTrue(module.lock_is_live(lock))
+        lock.write_text("2147483646\n", encoding="utf-8")
+        self.assertFalse(module.lock_is_live(lock))
+
     def test_concurrent_invocations_leave_one_terminal_ticket(self):
         project = self.make_project()
         ct2 = project / ".ct2"
