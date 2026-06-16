@@ -12,7 +12,7 @@ timestamp: TIMESTAMP
 ## Acceptance Criteria Check
 <!-- Grade each AC with: - AC{n}: (pass|fail) — {reason}  [optional (evidence: {claim-id})] -->
 <!-- A verdict: approved sidecar that grades any AC as `fail` is invalid. -->
-- AC1: pass — 
+- AC1: pass — <reason>
 
 ## Issues Found
 
