@@ -33,6 +33,8 @@ def write_claim(
     summary: str,
     parent_id: str | None = None,
     produced_by_agent: str | None = None,
+    ac: str | None = None,
+    round_num: str | None = None,
 ) -> dict:
     claim = {
         "id": evidence_id,
@@ -48,6 +50,13 @@ def write_claim(
         claim["parent_id"] = parent_id
     if produced_by_agent:
         claim["produced_by_agent"] = produced_by_agent
+    # `ac` / `round` attribute a claim to a specific acceptance criterion and
+    # review round. Append-compatible like parent_id/produced_by_agent: omitted
+    # when empty, so records without them are byte-identical to the prior format.
+    if ac not in (None, ""):
+        claim["ac"] = str(ac)
+    if round_num not in (None, ""):
+        claim["round"] = str(round_num)
     append_jsonl(ct2_dir, ct2_dir / "evidence" / "claims.jsonl", claim)
     return claim
 
@@ -87,6 +96,8 @@ def cmd_command(args: argparse.Namespace) -> int:
         args.summary,
         parent_id=args.parent_id,
         produced_by_agent=args.produced_by_agent,
+        ac=getattr(args, "ac", None),
+        round_num=getattr(args, "round", None),
     )
     if args.json:
         print(json.dumps(claim, indent=2, sort_keys=True))
@@ -129,6 +140,8 @@ def record_structured(args: argparse.Namespace, kind: str, prefix: str, subdir: 
         args.summary,
         parent_id=args.parent_id,
         produced_by_agent=args.produced_by_agent,
+        ac=getattr(args, "ac", None),
+        round_num=getattr(args, "round", None),
     )
     if args.json:
         print(json.dumps(claim, indent=2, sort_keys=True))
@@ -199,6 +212,8 @@ def main() -> int:
     command.add_argument("--verifier", default="command")
     command.add_argument("--parent-id", default=None)
     command.add_argument("--produced-by-agent", default=None)
+    command.add_argument("--ac", default=None, help="Acceptance-criterion ordinal this command verifies")
+    command.add_argument("--round", default=None, help="Review round this evidence belongs to")
     command.add_argument("--json", action="store_true")
     command.set_defaults(func=cmd_command)
 
@@ -239,6 +254,8 @@ def main() -> int:
     verifier.add_argument("--allow-ok-override", action="store_true")
     verifier.add_argument("--parent-id", default=None)
     verifier.add_argument("--produced-by-agent", default=None)
+    verifier.add_argument("--ac", default=None, help="Acceptance-criterion ordinal this verifier covers")
+    verifier.add_argument("--round", default=None, help="Review round this evidence belongs to")
     verifier.add_argument("--json", action="store_true")
     verifier.set_defaults(func=cmd_verifier)
 

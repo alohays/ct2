@@ -29,6 +29,18 @@ Apply the following criteria in order. Any BLOCKING issue → `verdict: rejected
   BLOCKING even if the live ticket checkboxes are marked complete.
 - Every AC checklist item in the ticket must be `[x]`
 - Any unchecked item or item that cannot be verified → **BLOCKING**
+- **For ACs with a sealed `## Verification` binding, re-run the bindings
+  yourself** in your own session and treat a non-zero result as BLOCKING:
+  ```bash
+  ct2-ac-verify {ticket-id} --json --no-record
+  ```
+  Cite the JSON in your sidecar. Do **not** substitute forge-appended
+  `claims.jsonl` rows for your own run — `claims.jsonl` is forge-appendable, and
+  per `spec/conformance.md` in-workflow self-verification re-enters CT2 as
+  evidence, never a verdict. The independent re-run, not claim-reading, is what
+  makes the grader independent. Sealing freezes the *commands*, not the test
+  files they invoke, so still judge whether each bound command genuinely proves
+  its AC.
 
 ### 2. Constraint Violations
 - Every Constraint in the ticket must be respected

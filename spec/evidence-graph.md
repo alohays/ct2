@@ -47,6 +47,23 @@ is explicitly not a graph engine. When a fan-out produces findings, each
 finding's `produced_by_agent` labels the subagent while `parent_id` and the
 record's `ticket` attribute it to the orchestrating role and ticket.
 
+## AC and Round Attribution
+
+Claim records support two further optional fields, written by `ct2-ac-verify`
+(and available on `ct2-evidence command|verifier` via `--ac` / `--round`):
+
+- `ac`: the 1-indexed acceptance-criterion ordinal this claim verifies.
+- `round`: the review round the evidence belongs to.
+
+Both are append-compatible in exactly the same sense as `parent_id` /
+`produced_by_agent`: omitted when empty, byte-identical to the prior format when
+absent, and never required by the read path. `ct2-ac-verify` records one
+`ok`-flagged claim per bound AC carrying both fields, so a downstream gate can
+ask "does this ticket's *current* round carry an `ok:true` claim for every bound
+AC?" without parsing summaries or timestamps. The `round` field — not a claim
+timestamp — is the staleness key: evidence is fresh for a round iff its `round`
+equals the ticket's current `review-round`.
+
 ## Evidence Kinds
 
 `ct2-evidence` supports:

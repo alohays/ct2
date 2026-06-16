@@ -27,6 +27,33 @@ VERIFICATION_HASH_KEY = "verification-sha256"
 RECOGNIZED_TITLES = SECTION_TITLES + (VERIFICATION_TITLE,)
 
 
+VERIFICATION_BINDING_RE = re.compile(r"^-\s+AC(\d+):\s*`([^`]+)`\s*$")
+
+
+def verification_lines(section: str):
+    """Yield (line, regex-match-or-None) for each non-blank, non-comment line of
+    a ## Verification section, so callers can validate (seal gate) or extract
+    (ct2-ac-verify) from one place."""
+    for raw in section.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("<!--"):
+            continue
+        yield line, VERIFICATION_BINDING_RE.match(line)
+
+
+def parse_verification_bindings(section: str) -> list[tuple[int, str]]:
+    """Extract well-formed ``(ac_ordinal, command)`` bindings from a
+    ## Verification section, skipping malformed lines (their rejection is the
+    seal gate's job, not the runner's)."""
+    bindings: list[tuple[int, str]] = []
+    for _line, match in verification_lines(section):
+        if match:
+            command = match.group(2).strip()
+            if command:
+                bindings.append((int(match.group(1)), command))
+    return bindings
+
+
 def now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 

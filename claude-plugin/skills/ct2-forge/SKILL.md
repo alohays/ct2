@@ -209,9 +209,27 @@ For the current `in-progress/` ticket:
    template. Each AC flip from `[ ]` to `[x]` or each logical unit (extract,
    module bootstrap, green test suite in isolation) is a natural commit boundary.
 
-5. **Verify all ACs are satisfied**:
-   - Run tests if a test command is specified
-   - Verify each AC item can be checked `[x]`
+5. **Verify all ACs are satisfied** (iterate-until-green):
+   - If the ticket has a sealed `## Verification` section, run the deterministic
+     loop **before** requesting the expensive dual-LLM review:
+     ```bash
+     ct2-ac-verify "${ticket_id}" --no-record   # green/red signal, no ledger noise
+     ```
+     Iterate — fix the code, re-run — until it exits 0. This is the cheap,
+     pre-review micro-loop; CT2 supplies the green/red step, you own the loop.
+     Flip an AC to `[x]` only once its bound check passes.
+   - For ACs without a binding (or tickets with no `## Verification` section),
+     run the relevant tests/commands yourself and verify each item before
+     checking it.
+   - The round-tagged evidence the done gate later consumes is recorded for you
+     at the submit boundary (`ct2-review-enter` runs `ct2-ac-verify` in
+     recording mode). For a ticket with **no** bindings, record this round's
+     verification evidence explicitly so the done gate has something fresh to
+     read:
+     ```bash
+     ct2-evidence command --ticket "${ticket_id}" --round "${review_round}" \
+       --command "<the command you ran>" --exit-code $? --summary "round ${review_round} verification"
+     ```
 
 6. **Update AC checklist** in the ticket: mark every satisfied item as `[x]`
 

@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Run a ticket's sealed ## Verification AC→command bindings.
+
+This is the deterministic green/red step of forge's iterate-until-green loop and
+the lens re-run. Bindings are read from the **sealed snapshot**
+(`.ct2/reviews/{id}-sealed.md`), never the live ticket, so the commands a run
+executes are exactly the helm-authored, tamper-evident ones. One claim per bound
+AC is recorded through `ct2-evidence` (carrying `ac` and `round`) unless
+`--no-record` is passed (the lens / advisory mode).
+
+Exit 0 iff every bound command exits 0; a ticket with no bindings exits 0.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+from _ct2_sealed_baseline import extract_sections, parse_verification_bindings
+from _ct2_vao import STATE_DIRS, ensure_ct2, read_frontmatter, ticket_id_from_name
+
+DEFAULT_TIMEOUT_SEC = 300
+TIMEOUT_EXIT_CODE = 124  # conventional shell timeout code; surfaced as a failed AC
+
+
+def resolve_ticket(ct2_dir: Path, query: str) -> Path | None:
+    needle = query[:-3] if query.endswith(".md") else query
+    for state in STATE_DIRS:
+        for path in sorted((ct2_dir / state).glob("*.md")):
+            ticket_id = ticket_id_from_name(path)
+            if needle in {path.name, path.stem, ticket_id} or path.name.startswith(f"{needle}-"):
+                return path
+    return None
+
+
+def command_timeout(ct2_dir: Path) -> int:
+    """Read the optional harness.yaml `verification.command_timeout_sec` key,
+    fail-soft to the hardcoded default when absent or unparseable."""
+    try:
+        text = (ct2_dir / "config" / "harness.yaml").read_text(encoding="utf-8")
+    except OSError:
+        return DEFAULT_TIMEOUT_SEC
+    match = re.search(r"^\s*command_timeout_sec:\s*(\d+)", text, flags=re.MULTILINE)
+    return int(match.group(1)) if match else DEFAULT_TIMEOUT_SEC
+
+
+def load_bindings(ct2_dir: Path, ticket_id: str) -> list[tuple[int, str]]:
+    snapshot = ct2_dir / "reviews" / f"{ticket_id}-sealed.md"
+    if not snapshot.exists():
+        return []
+    sections = extract_sections(snapshot.read_text(encoding="utf-8"))
+    return parse_verification_bindings(sections.get("Verification", ""))
+
+
+def record_claim(project_dir: Path, ticket_id: str, round_num: str, ordinal: int, command: str, exit_code: int) -> None:
+    helper = Path(__file__).resolve().parent / "ct2-evidence"
+    subprocess.run(
+        [
+            sys.executable, str(helper), "command",
+            "--project-dir", str(project_dir),
+            "--ticket", ticket_id,
+            "--command", command,
+            "--exit-code", str(exit_code),
+            "--ac", str(ordinal),
+            "--round", round_num,
+            "--summary", f"ac-verify AC{ordinal} round {round_num}",
+        ],
+        cwd=str(project_dir),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def run_binding(command: str, project_dir: Path, timeout: int) -> tuple[int, bool]:
+    # shell=True is intentional: a binding is a helm-authored, sealed (and thus
+    # tamper-evident) shell command — exactly like a Makefile or CI recipe. No
+    # user-controlled string is interpolated into it.
+    try:
+        proc = subprocess.run(
+            command, shell=True, cwd=str(project_dir),
+            timeout=timeout, capture_output=True, text=True,
+        )
+        return proc.returncode, False
+    except subprocess.TimeoutExpired:
+        return TIMEOUT_EXIT_CODE, True
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run a ticket's sealed ## Verification AC→command bindings")
+    parser.add_argument("ticket")
+    parser.add_argument("project_dir", nargs="?", default=".")
+    parser.add_argument("--json", action="store_true", help="Emit per-AC results as JSON")
+    parser.add_argument("--no-record", action="store_true", help="Run without appending evidence claims (lens / advisory mode)")
+    args = parser.parse_args()
+
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    ticket = resolve_ticket(ct2_dir, args.ticket)
+    if ticket is None:
+        print(f"ct2-ac-verify: ticket {args.ticket!r} not found", file=sys.stderr)
+        return 1
+
+    ticket_id = ticket_id_from_name(ticket)
+    round_num = str(read_frontmatter(ticket).get("review-round", "0"))
+    bindings = load_bindings(ct2_dir, ticket_id)
+
+    if not bindings:
+        report = {"ticket": ticket_id, "round": round_num, "bindings": 0, "results": [], "ok": True}
+        if args.json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(f"ct2-ac-verify: {ticket_id} has no sealed ## Verification bindings; nothing to run")
+        return 0
+
+    timeout = command_timeout(ct2_dir)
+    results = []
+    all_ok = True
+    for ordinal, command in bindings:
+        exit_code, timed_out = run_binding(command, project_dir, timeout)
+        ok = exit_code == 0
+        all_ok = all_ok and ok
+        results.append({"ac": ordinal, "command": command, "exit_code": exit_code, "ok": ok, "timed_out": timed_out})
+        if not args.no_record:
+            record_claim(project_dir, ticket_id, round_num, ordinal, command, exit_code)
+
+    report = {"ticket": ticket_id, "round": round_num, "bindings": len(bindings), "results": results, "ok": all_ok}
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        for item in results:
+            mark = "ok" if item["ok"] else "FAIL"
+            suffix = " (timeout)" if item["timed_out"] else ""
+            print(f"  {mark}: AC{item['ac']} exit={item['exit_code']}{suffix} :: {item['command']}")
+        if all_ok:
+            print(f"ct2-ac-verify: {ticket_id} round {round_num} — all {len(bindings)} bound AC(s) pass")
+        else:
+            failing = ",".join(f"AC{item['ac']}" for item in results if not item["ok"])
+            print(f"ct2-ac-verify: {ticket_id} round {round_num} — failing: {failing}")
+    return 0 if all_ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

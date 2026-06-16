@@ -42,6 +42,14 @@ not write review sidecars, and do not approve your own work.
 7. Implement only the ticket's `touched-files` scope unless a necessary
    transitive change is documented in `## Forge Notes`.
 8. Run real verification for every AC. Mark AC checkboxes only after evidence.
+   If the ticket has a sealed `## Verification` section, iterate
+   `ct2-ac-verify {id} --no-record` until it exits 0 before requesting review —
+   the cheap green/red micro-loop that runs before the dual-LLM review — and
+   flip an AC to `[x]` only once its bound check passes. Round-tagged evidence
+   is recorded for bound ACs at the submit boundary (`ct2-review-enter` runs
+   `ct2-ac-verify` in recording mode); for a ticket with no bindings, record
+   this round's verification explicitly with
+   `ct2-evidence command --ticket {id} --round {r} --exit-code $? ...`.
 9. Commit as specified by `spec/git-workflow.md`, then run `ct2-git-submit`.
 10. Run `ct2-review-enter {ticket}` to move the ticket to `.ct2/in-review/`,
     clear the started stamp, stamp `.ct2/.meta/{id}.in-review`, and wait for both
