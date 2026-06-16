@@ -113,6 +113,12 @@ class GoalLoopTest(unittest.TestCase):
         scope2 = json.loads((ct2 / "goals" / "demo" / "scope.json").read_text(encoding="utf-8"))
         self.assertEqual(["001-t.md"], [ticket["filename"] for ticket in scope2["tickets"]])
 
+    def test_start_rejects_duplicate_slug(self):
+        project = self.make_project()
+        self.start(project)
+        again = run_cmd([PYTHON, GOAL, "start", "Improve", "--project-dir", project, "--slug", "demo"])
+        self.assertEqual(again.returncode, 1, "a second start with the same slug must error")
+
     def test_status_and_lifecycle_transitions(self):
         project = self.make_project()
         self.start(project)

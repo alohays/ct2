@@ -108,7 +108,14 @@ def cmd_start(args: argparse.Namespace) -> int:
     if (target / "goal.json").exists():
         print(f"ct2-goal: goal already exists: {slug}", file=sys.stderr)
         return 1
-    target.mkdir(parents=True, exist_ok=True)
+    (ct2_dir / "goals").mkdir(parents=True, exist_ok=True)
+    try:
+        # mkdir is atomic: it gates the slug so two concurrent starts cannot
+        # both create the same goal (the loser gets FileExistsError).
+        target.mkdir()
+    except FileExistsError:
+        print(f"ct2-goal: goal directory already exists: {slug}", file=sys.stderr)
+        return 1
     created = now()
     states = tuple(args.ticket_state or DEFAULT_CAPTURE_STATES)
     captured = [] if args.mode == "production" else capture_tickets(ct2_dir, states)
