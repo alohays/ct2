@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""CT2 lessons ledger — capture, corroborate, and consult operational lessons.
+
+The ledger (`.ct2/lessons/lessons.jsonl`) is an append-only event log written
+exclusively by this tool through `append_jsonl` (the concurrency-safe flock
+append). Current state is *folded* from the events at read time, so there is no
+read-modify-write race:
+
+- An `add` event records one observation of a lesson (category + imperative rule
+  + scope + optional paths) tied to a ticket/round/source.
+- A `retire` event drops a lesson cluster from the digest.
+
+Corroboration is computed over **declared categorical keys**, never prose: add
+events are clustered by `(category, scope)` and (when both carry paths)
+fnmatch path overlap. A cluster seen across ≥2 distinct tickets is
+`corroborated` — honestly meaning "this failure class recurred and the rule is
+load-bearing", never "execution-proven". Single-ticket clusters stay
+`candidate` and are labelled `[unverified]` in the digest.
+
+Unsupervised recurrence promotion is the default (decision D5). If corroborated
+lessons prove low-quality in practice, the one-line fallback is to require human
+confirmation before a candidate becomes corroborated — see `spec/lessons.md`.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from fnmatch import fnmatch
+from pathlib import Path
+
+from _ct2_vao import append_jsonl, ensure_ct2, new_id, now, read_frontmatter, read_jsonl
+
+# Spec-owned enumerated taxonomy (spec/lessons.md). Extended only by a spec
+# MINOR — never by free text — so recurrence is computed over a closed set of
+# categorical keys, the direct answer to cross-model count=1 prose noise.
+CATEGORIES = (
+    "missing-regression-test",
+    "scope-creep",
+    "ac-unverifiable",
+    "evidence-missing",
+    "env-setup",
+    "flaky-test",
+    "api-contract",
+    "style-convention",
+)
+# `global` is reserved for a future ~/.ct2 tier; not yet writable.
+SCOPES = ("repo", "role:forge", "role:helm")
+RULE_MAX = 200
+DIGEST_CHAR_CAP = 1200
+STATE_DIRS = ("draft", "backlog", "in-progress", "in-review", "rejected", "escalated", "done")
+
+
+def ledger_path(ct2_dir: Path) -> Path:
+    return ct2_dir / "lessons" / "lessons.jsonl"
+
+
+def load_events(ct2_dir: Path) -> list[dict]:
+    return [row for row in read_jsonl(ledger_path(ct2_dir)) if row.get("_invalid") is None]
+
+
+def _paths_overlap(a: list[str], b: list[str]) -> bool:
+    if not a or not b:
+        return True  # path-absence never splits a cluster
+    for pa in a:
+        for pb in b:
+            if pa == pb or fnmatch(pa, pb) or fnmatch(pb, pa):
+                return True
+    return False
+
+
+def _cluster(adds: list[dict]) -> list[list[dict]]:
+    """Greedy single-linkage clustering of same-(category,scope) adds by path
+    overlap, so two lessons in disjoint file areas do not falsely corroborate."""
+    clusters: list[list[dict]] = []
+    for add in sorted(adds, key=lambda row: str(row.get("ts", ""))):
+        add_paths = add.get("paths") or []
+        for cluster in clusters:
+            if any(_paths_overlap(add_paths, member.get("paths") or []) for member in cluster):
+                cluster.append(add)
+                break
+        else:
+            clusters.append([add])
+    return clusters
+
+
+def fold(events: list[dict]) -> list[dict]:
+    """Fold the event log into the current lesson list."""
+    adds = [event for event in events if event.get("event") == "add"]
+    retired_targets = {str(event.get("target")) for event in events if event.get("event") == "retire"}
+    retire_reason = {
+        str(event.get("target")): event.get("reason") for event in events if event.get("event") == "retire"
+    }
+    grouped: dict[tuple, list[dict]] = {}
+    for add in adds:
+        grouped.setdefault((add.get("category"), add.get("scope")), []).append(add)
+
+    lessons = []
+    for (category, scope), group in grouped.items():
+        for cluster in _cluster(group):
+            members = sorted(cluster, key=lambda row: str(row.get("ts", "")))
+            member_ids = {str(member.get("id")) for member in members}
+            tickets = {str(member.get("ticket")) for member in members if member.get("ticket")}
+            retired = bool(member_ids & retired_targets)
+            status = "retired" if retired else ("corroborated" if len(tickets) >= 2 else "candidate")
+            lessons.append(
+                {
+                    "id": members[0].get("id"),
+                    "category": category,
+                    "scope": scope,
+                    "rule": members[-1].get("rule"),
+                    "paths": sorted({p for member in members for p in (member.get("paths") or [])}),
+                    "status": status,
+                    "ticket_count": len(tickets),
+                    "member_ids": sorted(member_ids),
+                    "occurrences": [
+                        {"ticket": member.get("ticket"), "round": member.get("round"), "source": member.get("source")}
+                        for member in members
+                    ],
+                    "retired_reason": next((retire_reason[i] for i in member_ids if i in retire_reason), None),
+                    "latest_ts": members[-1].get("ts"),
+                }
+            )
+    return lessons
+
+
+def resolve_ticket(ct2_dir: Path, query: str) -> Path | None:
+    needle = query[:-3] if query.endswith(".md") else query
+    for state in STATE_DIRS:
+        for path in sorted((ct2_dir / state).glob("*.md")):
+            stem = path.stem
+            ticket_id = stem.split("-", 1)[0]
+            if needle in {path.name, stem, ticket_id} or path.name.startswith(f"{needle}-"):
+                return path
+    return None
+
+
+def touched_files_for(ct2_dir: Path, ticket_query: str | None, explicit: str | None) -> list[str]:
+    if explicit:
+        return [item.strip() for item in explicit.split(",") if item.strip()]
+    if not ticket_query:
+        return []
+    ticket = resolve_ticket(ct2_dir, ticket_query)
+    if ticket is None:
+        return []
+    value = read_frontmatter(ticket).get("touched-files")
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value).strip()] if value else []
+
+
+def cmd_add(args: argparse.Namespace) -> int:
+    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    if args.category not in CATEGORIES:
+        print(f"ct2-lesson: --category must be one of {', '.join(CATEGORIES)}", file=sys.stderr)
+        return 2
+    if args.scope not in SCOPES:
+        print(f"ct2-lesson: --scope must be one of {', '.join(SCOPES)}", file=sys.stderr)
+        return 2
+    rule = args.rule.strip()
+    if not rule or len(rule) > RULE_MAX:
+        print(f"ct2-lesson: --rule must be 1..{RULE_MAX} chars", file=sys.stderr)
+        return 2
+    event = {
+        "id": new_id("lsn"),
+        "event": "add",
+        "ts": now(),
+        "ticket": args.ticket,
+        "round": args.round,
+        "source": args.source,
+        "category": args.category,
+        "rule": rule,
+        "scope": args.scope,
+        "paths": list(args.path or []),
+    }
+    append_jsonl(ct2_dir, ledger_path(ct2_dir), event)
+    mine = next((lesson for lesson in fold(load_events(ct2_dir)) if event["id"] in lesson["member_ids"]), None)
+    status = mine["status"] if mine else "candidate"
+    result = {"ok": True, "id": event["id"], "category": args.category, "scope": args.scope, "status": status}
+    if args.json:
+        print(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        print(f"ct2-lesson: recorded {event['id']} ({args.category}/{args.scope}) -> {status}")
+    return 0
+
+
+def cmd_retire(args: argparse.Namespace) -> int:
+    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    events = load_events(ct2_dir)
+    add_ids = {str(event.get("id")) for event in events if event.get("event") == "add"}
+    if args.id not in add_ids:
+        print(f"ct2-lesson: no lesson with id {args.id}", file=sys.stderr)
+        return 1
+    event = {"id": new_id("lsn-retire"), "event": "retire", "ts": now(), "target": args.id, "reason": args.reason}
+    append_jsonl(ct2_dir, ledger_path(ct2_dir), event)
+    if args.json:
+        print(json.dumps({"ok": True, "retired": args.id, "reason": args.reason}, indent=2, sort_keys=True))
+    else:
+        print(f"ct2-lesson: retired {args.id}")
+    return 0
+
+
+def rank_key(lesson: dict, touched: list[str]) -> tuple:
+    status_rank = 0 if lesson["status"] == "corroborated" else 1
+    overlap_rank = 0 if (touched and lesson["paths"] and _paths_overlap(lesson["paths"], touched)) else 1
+    return (status_rank, overlap_rank, _negate(lesson.get("latest_ts") or ""))
+
+
+def _negate(ts: str) -> str:
+    # Sort more-recent-first by inverting each codepoint; ts strings are fixed
+    # width ISO8601 so lexical order == chronological order.
+    return "".join(chr(0x10FFFF - ord(ch)) if ord(ch) < 0x10FFFF else ch for ch in ts)
+
+
+def cmd_digest(args: argparse.Namespace) -> int:
+    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    role_scope = f"role:{args.role}"
+    lessons = [
+        lesson
+        for lesson in fold(load_events(ct2_dir))
+        if lesson["status"] != "retired" and lesson["scope"] in ("repo", role_scope)
+    ]
+    touched = touched_files_for(ct2_dir, args.ticket, args.touched_files)
+    lessons.sort(key=lambda lesson: rank_key(lesson, touched))
+    lessons = lessons[: args.max]
+
+    if args.json:
+        print(json.dumps({"role": args.role, "lessons": lessons}, indent=2, sort_keys=True))
+        return 0
+
+    if not lessons:
+        print(f"Lessons ({args.role}): none recorded.")
+        return 0
+    out = [f"Lessons ({args.role}):"]
+    for lesson in lessons:
+        label = "corroborated" if lesson["status"] == "corroborated" else "unverified"
+        line = f"- [{label}] {lesson['category']} (×{lesson['ticket_count']}): {lesson['rule']} [{lesson['id']}]"
+        if sum(len(item) + 1 for item in out) + len(line) > DIGEST_CHAR_CAP:
+            out.append(f"- … {len(lessons) - (len(out) - 1)} more (raise --max / consult the ledger)")
+            break
+        out.append(line)
+    print("\n".join(out))
+    return 0
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    print(json.dumps({"lessons": fold(load_events(ct2_dir))}, indent=2, sort_keys=True))
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="CT2 lessons ledger")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    add = sub.add_parser("add", help="Record a lesson observation")
+    add.add_argument("--project-dir", default=".")
+    add.add_argument("--ticket", required=True)
+    add.add_argument("--round", default="0")
+    add.add_argument("--source", default="")
+    add.add_argument("--category", required=True)
+    add.add_argument("--rule", required=True)
+    add.add_argument("--scope", default="repo")
+    add.add_argument("--path", action="append", help="Path glob this lesson applies to (repeatable)")
+    add.add_argument("--json", action="store_true")
+    add.set_defaults(func=cmd_add)
+
+    retire = sub.add_parser("retire", help="Retire a lesson cluster by id")
+    retire.add_argument("--project-dir", default=".")
+    retire.add_argument("--id", required=True)
+    retire.add_argument("--reason", required=True)
+    retire.add_argument("--json", action="store_true")
+    retire.set_defaults(func=cmd_retire)
+
+    digest = sub.add_parser("digest", help="Render the consult digest for a role")
+    digest.add_argument("--project-dir", default=".")
+    digest.add_argument("--role", required=True)
+    digest.add_argument("--ticket", default=None)
+    digest.add_argument("--touched-files", default=None, help="Comma-separated override for the ticket's touched-files")
+    digest.add_argument("--max", type=int, default=10)
+    digest.add_argument("--json", action="store_true")
+    digest.set_defaults(func=cmd_digest)
+
+    listing = sub.add_parser("list", help="Dump the folded lesson state as JSON")
+    listing.add_argument("--project-dir", default=".")
+    listing.set_defaults(func=cmd_list)
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

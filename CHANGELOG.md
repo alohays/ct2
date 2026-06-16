@@ -8,6 +8,23 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Added the lessons ledger — CT2's cross-ticket operational memory (loop-design
+  roadmap T3.1, Direction C). `bin/ct2-lesson` (`add`/`retire`/`digest`/`list`)
+  writes an append-only event log at `.ct2/lessons/lessons.jsonl` via the
+  concurrency-safe `append_jsonl`; current state is folded from the events so
+  there is no read-modify-write race. Corroboration is computed over declared
+  categorical keys — `add` events cluster by `(category, scope)` plus `fnmatch`
+  path overlap, and a cluster seen across ≥2 distinct tickets is **corroborated**
+  (honestly "this failure class recurred", never execution-proven); single-ticket
+  clusters stay **candidate** and render as `[unverified]`. Promotion is
+  unsupervised (decision D5) with the documented one-line human-gate fallback,
+  `[unverified]` labels, a `retire` correction path, a closed spec-owned category
+  taxonomy, and a digest cap bounding the false-corroboration surface. The digest
+  ranks corroborated-before-candidate, scope-filtered (`repo` + `role:{role}`),
+  path-overlap then recency. New `spec/lessons.md`; `ct2-init` creates the
+  directory; `spec/directory-structure.md` gains the row. Consult wiring
+  (pickup) and planning lints follow in T3.2/T3.3.
+
 - Enriched the reconciler's round-cap escalation message (loop-design roadmap
   T0.2 / C0, Direction C). The helm inbox message now carries, per current-round
   sidecar, its path and the verbatim `### [BLOCKING]` heading lines from that
