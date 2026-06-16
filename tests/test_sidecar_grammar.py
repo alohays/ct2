@@ -109,6 +109,24 @@ class SidecarGrammarTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("graded 2 ACs but the sealed baseline has 3", result.stderr)
 
+    def test_code_fence_example_does_not_wedge(self):
+        # A reviewer pasting the documented grammar example inside a fence must
+        # NOT trip the hard rule (free prose can never wedge a ticket).
+        ac_check = "- AC1: pass — ok\nExample:\n```\n- AC2: fail — example only\n```"
+        result = self.validate(sidecar_text("approved", ac_check))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_indented_code_block_example_does_not_wedge(self):
+        ac_check = "- AC1: pass — ok\n    - AC2: fail — indented example"
+        result = self.validate(sidecar_text("approved", ac_check))
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_hyphenated_word_does_not_trip_hard_rule(self):
+        # `fail-safe` / `pass-like` are not clean grades; they warn, never wedge.
+        result = self.validate(sidecar_text("approved", "- AC1: fail-safe behaviour verified"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("unparseable AC grade line", result.stderr)
+
     def test_reconciler_wedges_approved_with_failed_ac(self):
         project = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: shutil.rmtree(project, ignore_errors=True))

@@ -82,7 +82,9 @@ exits non-zero without a state change. This is a coherence check (approving whil
 admitting an AC failed is contradictory), not a new state-moving signal:
 `verdict` remains the only field that approves or rejects, and the rule fires
 **only** on lines that already parse, so free prose and near-miss formatting can
-never wedge a ticket. Everything else the parser notices is warn-only (stderr,
+never wedge a ticket. Lines inside a fenced (`` ``` `` / `~~~`) or indented code
+block are skipped entirely, so quoting this grammar's example as a reference in
+your sidecar is always safe. Everything else the parser notices is warn-only (stderr,
 exit 0): an AC-grade-looking line that does not parse, and a graded-AC count that
 differs from the sealed baseline's checkbox count (only once grade lines are
 actually present). There is deliberately **no** rejected-with-all-pass rule —

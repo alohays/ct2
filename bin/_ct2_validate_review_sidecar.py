@@ -16,8 +16,10 @@ REQUIRED_SECTIONS = (
 # Per-AC grade grammar in `## Acceptance Criteria Check` (spec/sidecar-format.md):
 #   - AC{n}: (pass|fail) — {reason}   [optional (evidence: {claim-id})]
 # AC_GRADE_RE captures a clean grade; AC_LINE_RE catches a line that looks like
-# an AC grade but does not parse (warn-only, never wedges a ticket).
-AC_GRADE_RE = re.compile(r"^-\s+AC(\d+):\s*(pass|fail)\b", re.IGNORECASE)
+# an AC grade but does not parse (warn-only, never wedges a ticket). The
+# negative lookahead after pass|fail keeps `passed`, `fail-safe`, `pass-like`,
+# etc. out of the clean-grade set (they fall to the warn-only path).
+AC_GRADE_RE = re.compile(r"^-\s+AC(\d+):\s*(pass|fail)(?![A-Za-z0-9_-])", re.IGNORECASE)
 AC_LINE_RE = re.compile(r"^-\s+AC(\d+):", re.IGNORECASE)
 
 
@@ -51,12 +53,26 @@ def sealed_ac_count(sidecar_path: Path, ticket_id: str) -> int | None:
 
 def grade_ac_check(content: str) -> tuple[list[str], int, list[str]]:
     """Parse the `## Acceptance Criteria Check` section. Returns
-    (fail_lines, parsed_grade_count, unparseable_ac_lines)."""
+    (fail_lines, parsed_grade_count, unparseable_ac_lines).
+
+    Lines inside a fenced (``` / ~~~) or indented (>=4 spaces / a tab) code
+    block are skipped: a reviewer pasting the documented grammar example as a
+    reference must never wedge the ticket. Skipping is the conservative
+    direction — at worst the hard rule under-fires on a genuinely code-fenced
+    grade, never over-fires on documentation."""
     fail_lines: list[str] = []
     parsed = 0
     unparseable: list[str] = []
+    in_fence = False
     for raw in section_body(content, "Acceptance Criteria Check").splitlines():
         line = raw.strip()
+        if line.startswith("```") or line.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if raw.startswith("\t") or (len(raw) - len(raw.lstrip(" "))) >= 4:
+            continue  # indented code block
         grade = AC_GRADE_RE.match(line)
         if grade:
             parsed += 1
