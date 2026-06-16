@@ -560,15 +560,48 @@ class TicketAuditTest(unittest.TestCase):
                 checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
                 self.assertFalse(checks["seal_gate_verification_binding"])
 
-    def test_seal_gate_passes_without_verification_section(self):
-        # Tickets with no ## Verification section are unaffected (vacuous pass).
+    def test_sealed_baseline_removed_verification_after_seal_is_drift(self):
+        # Symmetric to the added-after-seal case: a section present in the sealed
+        # snapshot but removed from the live ticket must be drift. This exercises
+        # the right operand of the `or` in _compare_keys — a regression dropping
+        # it would silently permit post-seal removal of the grader.
         project = self.make_project()
         ct2 = project / ".ct2"
-        write_ticket(ct2 / "draft" / "001-audit-ticket.md", status="draft", ac_checked=False, verdict="pending")
-        audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--seal-gate", "--ticket", "001", project])
-        self.assertEqual(audit.returncode, 0, audit.stdout + audit.stderr)
-        checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
-        self.assertTrue(checks["seal_gate_verification_binding"])
+        ticket = ct2 / "backlog" / "001-audit-ticket.md"
+        write_ticket(ticket, status="backlog")
+        ticket.write_text(ticket.read_text(encoding="utf-8") + "\n## Verification\n- AC1: `pytest`\n", encoding="utf-8")
+        snapshot = ct2 / "reviews" / sealed_snapshot_name(ticket)
+        write_snapshot(ticket, snapshot)  # snapshot now carries verification-sha256
+        self.assertIn("verification-sha256", snapshot.read_text(encoding="utf-8"))
+
+        # Strip the section from the live ticket.
+        ticket.write_text(ticket.read_text(encoding="utf-8").split("\n## Verification")[0] + "\n", encoding="utf-8")
+        ok, evidence = compare_ticket_to_snapshot(ticket, snapshot)
+        self.assertFalse(ok)
+        self.assertIn("verification-sha256", evidence["mismatches"])
+
+    def test_seal_gate_passes_without_verification_section(self):
+        # Tickets with no ## Verification section, or a section with only
+        # comments / whitespace, pass the binding check vacuously. (The spec's
+        # canonical template leads with an HTML comment, so the comment-skip
+        # branch is real input.)
+        cases = {
+            "no-section": "",
+            "comment-only": "\n## Verification\n<!-- bindings go here -->\n",
+            "whitespace-only": "\n## Verification\n   \n\n",
+        }
+        for name, verification in cases.items():
+            with self.subTest(case=name):
+                project = self.make_project()
+                ct2 = project / ".ct2"
+                if verification:
+                    self._draft_with_verification(ct2, verification)
+                else:
+                    write_ticket(ct2 / "draft" / "001-audit-ticket.md", status="draft", ac_checked=False, verdict="pending")
+                audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-ticket-audit", "--json", "--seal-gate", "--ticket", "001", project])
+                self.assertEqual(audit.returncode, 0, audit.stdout + audit.stderr)
+                checks = {check["name"]: check["ok"] for check in json.loads(audit.stdout)["tickets"][0]["checks"]}
+                self.assertTrue(checks["seal_gate_verification_binding"])
 
 
 if __name__ == "__main__":
