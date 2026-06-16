@@ -98,6 +98,103 @@ def ensure_ct2(project_dir: Path) -> Path:
     return ct2_dir
 
 
+# ── Subsumption by ct2-goal (provider-neutral) ───────────────────────────────
+# ct2-codex-goal is a deprecated provider surface. The authoritative goal STATE
+# lives in the neutral `.ct2/goals/{slug}/` record owned by `ct2-goal`
+# (spec/goal-loop.md); the `.ct2/codex/` artifacts below are the Codex-session
+# render kept for backward compatibility during deprecation. Each invocation
+# lazily mirrors codex goals into the neutral layout (idempotent), so nothing is
+# lost and no protocol bump or data-format migration is required.
+
+NEUTRAL_STATUS = {
+    "active": "open",
+    "paused": "paused",
+    "budgetLimited": "paused",
+    "cleared": "abandoned",
+    "complete": "complete",
+}
+
+
+def mirror_codex_goal_to_neutral(ct2_dir: Path, codex_goal: dict) -> bool:
+    """Idempotently write the neutral `.ct2/goals/{slug}/` record for a codex
+    goal. Returns True when it created the record, False when it already existed."""
+    slug = str(codex_goal.get("goal_slug") or "").strip()
+    if not slug:
+        return False
+    target = ct2_dir / "goals" / slug
+    if (target / "goal.json").exists():
+        return False
+    target.mkdir(parents=True, exist_ok=True)
+    scope_id = codex_goal.get("scope_id")
+    scope_path = ct2_dir / "codex" / "scopes" / f"{scope_id}.json" if scope_id else None
+    codex_scope = load_json(scope_path) if scope_path and scope_path.exists() else {}
+    created = codex_goal.get("created") or now()
+    goal = {
+        "slug": slug,
+        "objective": codex_goal.get("objective", ""),
+        "status": NEUTRAL_STATUS.get(codex_goal.get("status"), "open"),
+        "stopping_rule": None,
+        "outcome_check": None,
+        "created": created,
+        "updated": now(),
+        "provider": "codex",
+        "role": codex_goal.get("role"),
+        "migrated_from": "ct2-codex-goal",
+    }
+    raw_tickets = codex_scope.get("tickets", []) if isinstance(codex_scope.get("tickets"), list) else []
+    scope = {
+        "slug": slug,
+        "mode": "production" if codex_scope.get("mode") == "production" else "snapshot",
+        "ticket_states": codex_scope.get("ticket_states", []),
+        "tickets": [
+            {
+                "id": ticket.get("id"),
+                "filename": Path(ticket.get("path_at_capture", "")).name,
+                "added": created,
+                "state_at_capture": ticket.get("state_at_capture"),
+                "path_at_capture": ticket.get("path_at_capture"),
+            }
+            for ticket in raw_tickets
+        ],
+        "completion_conditions": codex_scope.get("completion_conditions", []),
+    }
+    atomic_write(ct2_dir, target / "goal.json", goal)
+    atomic_write(ct2_dir, target / "scope.json", scope)
+    with (target / "ledger.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": now(), "type": "migrated_from_codex", "source_goal": slug}, sort_keys=True) + "\n")
+    return True
+
+
+def sync_neutral_status(ct2_dir: Path, slug: str, codex_status: str) -> None:
+    """Keep the neutral record in step when the codex surface changes status, so
+    `ct2-goal status` never shows a stale value (one truth, codex as render)."""
+    path = ct2_dir / "goals" / slug / "goal.json"
+    if not path.exists():
+        return
+    try:
+        goal = load_json(path)
+    except Exception:
+        return
+    goal["status"] = NEUTRAL_STATUS.get(codex_status, goal.get("status", "open"))
+    goal["updated"] = now()
+    atomic_write(ct2_dir, path, goal)
+
+
+def lazy_migrate(ct2_dir: Path) -> int:
+    """Mirror every existing codex goal into the neutral layout, fail-soft."""
+    migrated = 0
+    goals_dir = ct2_dir / "codex" / "goals"
+    if not goals_dir.is_dir():
+        return 0
+    for path in sorted(goals_dir.glob("*.json")):
+        try:
+            if mirror_codex_goal_to_neutral(ct2_dir, load_json(path)):
+                migrated += 1
+        except Exception:
+            continue
+    return migrated
+
+
 def capture_tickets(ct2_dir: Path, role: str, states: tuple[str, ...]) -> list[dict[str, str]]:
     tickets: list[dict[str, str]] = []
     for state in states:
@@ -198,6 +295,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     atomic_write(ct2_dir, ct2_dir / "codex" / "goals" / f"{goal_slug}-{role}.json", goal)
     atomic_write(ct2_dir, thread_path, thread)
     atomic_write(ct2_dir, ct2_dir / "codex" / "ledgers" / f"{goal_slug}-{role}.json", ledger)
+    mirror_codex_goal_to_neutral(ct2_dir, goal)
 
     print(f"ct2-codex-goal: started {role} goal")
     print(f"  goal:  {goal_slug}")
@@ -252,6 +350,7 @@ def cmd_set_status(args: argparse.Namespace) -> int:
         thread["wait_state"] = goal.get("wait_state")
         thread["updated"] = goal["updated"]
         atomic_write(ct2_dir, thread_path, thread)
+    sync_neutral_status(ct2_dir, args.goal_slug, args.status)
     print(f"ct2-codex-goal: {args.goal_slug} {args.role} -> {args.status}")
     return 0
 
@@ -275,6 +374,7 @@ def cmd_clear(args: argparse.Namespace) -> int:
         thread["wait_state"] = None
         thread["updated"] = goal["updated"]
         atomic_write(ct2_dir, thread_path, thread)
+    sync_neutral_status(ct2_dir, args.goal_slug, "cleared")
     print(f"ct2-codex-goal: cleared {args.goal_slug} {args.role}")
     return 0
 
@@ -415,6 +515,18 @@ def main() -> int:
     audit.set_defaults(func=cmd_audit)
 
     args = parser.parse_args()
+    print(
+        "ct2-codex-goal: deprecated — goal state now lives in the neutral "
+        "ct2-goal record (.ct2/goals/, spec/goal-loop.md); this surface mirrors "
+        "into it. Prefer ct2-goal for new goals.",
+        file=sys.stderr,
+    )
+    try:
+        ct2_dir = Path(getattr(args, "project_dir", ".")).resolve() / ".ct2"
+        if ct2_dir.is_dir():
+            lazy_migrate(ct2_dir)
+    except Exception:
+        pass  # fail-soft: mirroring never blocks a codex-goal command
     return args.func(args)
 
 

@@ -140,5 +140,74 @@ class GoalLoopTest(unittest.TestCase):
         self.assertIn("status_changed", kinds)
 
 
+class CodexGoalShimTest(unittest.TestCase):
+    CODEX = REPO_ROOT / "bin" / "ct2-codex-goal"
+
+    def make_project(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        project = Path(tmp.name)
+        init = run_cmd(["bash", REPO_ROOT / "bin" / "ct2-init", project])
+        self.assertEqual(init.returncode, 0, init.stderr)
+        return project
+
+    def test_codex_goal_lazily_migrates_existing_goal_to_neutral(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        (ct2 / "codex" / "goals").mkdir(parents=True, exist_ok=True)
+        (ct2 / "codex" / "scopes").mkdir(parents=True, exist_ok=True)
+        slug = "old-goal-forge-20260101T000000Z"
+        (ct2 / "codex" / "goals" / f"{slug}.json").write_text(
+            json.dumps({"goal_slug": slug, "scope_id": "old", "role": "ct2-forge", "objective": "Old objective", "status": "active", "created": "2026-01-01T00:00:00Z"}),
+            encoding="utf-8",
+        )
+        (ct2 / "codex" / "scopes" / "old.json").write_text(
+            json.dumps({"scope_id": "old", "mode": "snapshot", "ticket_states": ["backlog"],
+                        "tickets": [{"id": "007", "state_at_capture": "backlog", "path_at_capture": ".ct2/backlog/007-x.md"}],
+                        "completion_conditions": ["all done"]}),
+            encoding="utf-8",
+        )
+
+        result = run_cmd([PYTHON, self.CODEX, "status", "--project-dir", project])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("deprecated", result.stderr)
+        goal = json.loads((ct2 / "goals" / slug / "goal.json").read_text(encoding="utf-8"))
+        scope = json.loads((ct2 / "goals" / slug / "scope.json").read_text(encoding="utf-8"))
+        self.assertEqual("open", goal["status"], "codex active -> neutral open")
+        self.assertEqual("codex", goal["provider"])
+        self.assertEqual(["007-x.md"], [ticket["filename"] for ticket in scope["tickets"]])
+        self.assertEqual(["all done"], scope["completion_conditions"])
+
+    def test_codex_goal_start_creates_neutral_record(self):
+        project = self.make_project()
+        start = run_cmd([PYTHON, self.CODEX, "start", "ct2-forge", "Fresh", "objective", "--project-dir", project])
+        self.assertEqual(start.returncode, 0, start.stderr)
+        status = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-goal", "status", "--project-dir", project, "--json"])
+        slugs = [goal["slug"] for goal in json.loads(status.stdout)["goals"]]
+        self.assertTrue(any(slug.startswith("fresh-objective") for slug in slugs), "codex start mirrors into a neutral ct2-goal record")
+
+    def test_codex_pause_and_clear_sync_neutral_status(self):
+        project = self.make_project()
+        start = run_cmd([PYTHON, self.CODEX, "start", "ct2-forge", "Drift", "check", "--project-dir", project])
+        self.assertEqual(start.returncode, 0, start.stderr)
+        slug = json.loads(run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-goal", "status", "--project-dir", project, "--json"]).stdout)["goals"][0]["slug"]
+
+        self.assertEqual(0, run_cmd([PYTHON, self.CODEX, "pause", slug, "ct2-forge", "--project-dir", project]).returncode)
+        goal = json.loads((project / ".ct2" / "goals" / slug / "goal.json").read_text(encoding="utf-8"))
+        self.assertEqual("paused", goal["status"], "codex pause must sync the neutral record (no drift)")
+
+        self.assertEqual(0, run_cmd([PYTHON, self.CODEX, "clear", slug, "ct2-forge", "--project-dir", project]).returncode)
+        goal2 = json.loads((project / ".ct2" / "goals" / slug / "goal.json").read_text(encoding="utf-8"))
+        self.assertEqual("abandoned", goal2["status"], "codex clear -> neutral abandoned")
+
+    def test_codex_goal_mirror_is_idempotent(self):
+        project = self.make_project()
+        run_cmd([PYTHON, self.CODEX, "start", "ct2-forge", "Once", "--project-dir", project])
+        before = len(list((project / ".ct2" / "goals").glob("*/goal.json")))
+        run_cmd([PYTHON, self.CODEX, "status", "--project-dir", project])
+        after = len(list((project / ".ct2" / "goals").glob("*/goal.json")))
+        self.assertEqual(before, after, "re-running must not duplicate the neutral record")
+
+
 if __name__ == "__main__":
     unittest.main()
