@@ -6,6 +6,15 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ## [Unreleased]
 
+### Changed
+
+- Marked `docs/ct2-loop-design-strategy-2026-06.md` as **implemented** and added
+  an implementation log (§0.5): the PR map for all eleven tickets (#54–#68), the
+  three maintainer AskUserQuestion deviations (Phase-0 rescope; unsupervised
+  Direction-C promotion with a documented human-gate fallback; the
+  no-protocol-bump lazy-mirror subsumption for Direction D), and the
+  authoring-time state-of-code claim corrections found during execution.
+
 ### Added
 
 - Wired the goal-loop feedback step (loop-design roadmap T4.2, Direction D),
