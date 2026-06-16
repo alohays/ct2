@@ -1,6 +1,6 @@
 {
   "name": "ct2",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "CT2: Protocol for multi-agent code operations with dual independent review",
   "skills": [
     "ct2-helm",

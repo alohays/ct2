@@ -8,6 +8,20 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Deprecated
+
+### Removed
+
+### Security
+
+## [0.4.0] - 2026-06-16
+
+### Added
+
 - Added the `ct2-migrate-0.3-0.4` protocol-migration helper for the 0.4.0
   release. Because the protocol version is the `MAJOR.MINOR` of `VERSION`, the
   0.3.0 → 0.4.0 bump advances the ledger protocol 0.3 → 0.4, so every existing
