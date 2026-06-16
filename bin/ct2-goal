@@ -1,0 +1,300 @@
+#!/usr/bin/env python3
+"""Provider-neutral CT2 goal loop.
+
+A goal is a maintainer objective tracked across a set of CT2 tickets. The goal
+record is the single neutral source of truth (Decision Bridge precedent,
+`spec/decision-bridge.md`): provider surfaces — e.g. a Codex thread — are renders
+of it, never a second truth. This tool subsumes the provider-flavoured
+`ct2-codex-goal`.
+
+Goals are an outer loop the planner consults; they never gate or move ticket
+state. `audit` cross-references in-scope tickets against the kanban directories
+and, when an `outcome-check` command is set, records its exit through
+`ct2-evidence verifier` — evidence, never a verdict.
+
+Layout: `.ct2/goals/{slug}/` — `goal.json`, `scope.json`, `ledger.jsonl`.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+from _ct2_vao import STATE_DIRS, append_jsonl, atomic_write_json, ensure_ct2, now
+
+GOAL_STATUSES = ("open", "paused", "complete", "abandoned")
+SCOPE_MODES = ("snapshot", "production")
+TERMINAL_STATES = ("done", "escalated")
+DEFAULT_CAPTURE_STATES = ("draft", "backlog", "in-progress", "in-review", "rejected")
+
+
+def compact_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def slugify(text: str) -> str:
+    raw = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    raw = re.sub(r"-+", "-", raw)[:48].strip("-") or "goal"
+    return f"{raw}-{compact_now()}"
+
+
+def goal_dir(ct2_dir: Path, slug: str) -> Path:
+    return ct2_dir / "goals" / slug
+
+
+def load_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def require_goal(ct2_dir: Path, slug: str) -> Path:
+    path = goal_dir(ct2_dir, slug) / "goal.json"
+    if not path.exists():
+        print(f"ct2-goal: goal not found: {slug}", file=sys.stderr)
+        raise SystemExit(1)
+    return path
+
+
+def log_event(ct2_dir: Path, slug: str, event: dict) -> None:
+    append_jsonl(ct2_dir, goal_dir(ct2_dir, slug) / "ledger.jsonl", {"ts": now(), **event})
+
+
+def ticket_current(ct2_dir: Path, filename: str) -> tuple[str | None, str | None]:
+    for state in STATE_DIRS:
+        if (ct2_dir / state / filename).exists():
+            return state, f".ct2/{state}/{filename}"
+    return None, None
+
+
+def capture_tickets(ct2_dir: Path, states: tuple[str, ...]) -> list[dict[str, str]]:
+    captured = []
+    for state in states:
+        for path in sorted((ct2_dir / state).glob("*.md")):
+            match = re.match(r"^(\d+)", path.stem)
+            captured.append(
+                {
+                    "id": match.group(1) if match else path.stem,
+                    "filename": path.name,
+                    "added": now(),
+                    "state_at_capture": state,
+                    "path_at_capture": f".ct2/{state}/{path.name}",
+                }
+            )
+    return captured
+
+
+def resolve_ticket_filename(ct2_dir: Path, query: str) -> str | None:
+    needle = query[:-3] if query.endswith(".md") else query
+    for state in STATE_DIRS:
+        for path in sorted((ct2_dir / state).glob("*.md")):
+            ticket_id = path.stem.split("-", 1)[0]
+            if needle in {path.name, path.stem, ticket_id} or path.name.startswith(f"{needle}-"):
+                return path.name
+    return None
+
+
+def cmd_start(args: argparse.Namespace) -> int:
+    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    objective = " ".join(args.objective).strip()
+    if not objective:
+        print("ct2-goal: objective is required", file=sys.stderr)
+        return 1
+    slug = args.slug or slugify(objective)
+    target = goal_dir(ct2_dir, slug)
+    if (target / "goal.json").exists():
+        print(f"ct2-goal: goal already exists: {slug}", file=sys.stderr)
+        return 1
+    target.mkdir(parents=True, exist_ok=True)
+    created = now()
+    states = tuple(args.ticket_state or DEFAULT_CAPTURE_STATES)
+    captured = [] if args.mode == "production" else capture_tickets(ct2_dir, states)
+
+    goal = {
+        "slug": slug,
+        "objective": objective,
+        "status": "open",
+        "stopping_rule": args.stopping_rule,
+        "outcome_check": args.outcome_check,
+        "created": created,
+        "updated": created,
+    }
+    scope = {
+        "slug": slug,
+        "mode": args.mode,
+        "ticket_states": list(states),
+        "tickets": captured,
+        "completion_conditions": args.completion_condition or [],
+    }
+    atomic_write_json(ct2_dir, target / "goal.json", goal, "goal-")
+    atomic_write_json(ct2_dir, target / "scope.json", scope, "goal-scope-")
+    log_event(ct2_dir, slug, {"type": "goal_started", "objective": objective, "mode": args.mode, "tickets_captured": len(captured)})
+
+    print(f"ct2-goal: started {slug} ({args.mode}, tickets={len(captured)})")
+    return 0
+
+
+def cmd_add_ticket(args: argparse.Namespace) -> int:
+    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    require_goal(ct2_dir, args.slug)
+    scope_path = goal_dir(ct2_dir, args.slug) / "scope.json"
+    scope = load_json(scope_path)
+    filename = resolve_ticket_filename(ct2_dir, args.ticket)
+    if filename is None:
+        print(f"ct2-goal: ticket not found: {args.ticket}", file=sys.stderr)
+        return 1
+    if any(ticket.get("filename") == filename for ticket in scope.get("tickets", [])):
+        print(f"ct2-goal: {filename} already in scope of {args.slug}")
+        return 0
+    state, current = ticket_current(ct2_dir, filename)
+    scope.setdefault("tickets", []).append(
+        {
+            "id": filename.split("-", 1)[0],
+            "filename": filename,
+            "added": now(),
+            "state_at_capture": state,
+            "path_at_capture": current,
+        }
+    )
+    atomic_write_json(ct2_dir, scope_path, scope, "goal-scope-")
+    log_event(ct2_dir, args.slug, {"type": "ticket_added", "ticket": filename, "state": state})
+    print(f"ct2-goal: added {filename} to {args.slug} (now {len(scope['tickets'])} in scope)")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    goals = sorted((ct2_dir / "goals").glob("*/goal.json"))
+    records = [load_json(path) for path in goals]
+    if args.json:
+        print(json.dumps({"goals": records}, indent=2, sort_keys=True))
+        return 0
+    if not records:
+        print("ct2-goal: no goals")
+        return 0
+    for goal in records:
+        print(f"{goal.get('slug')} status={goal.get('status')} :: {goal.get('objective')}")
+    return 0
+
+
+def record_outcome_check(ct2_dir: Path, project_dir: Path, slug: str, command: str) -> dict:
+    try:
+        proc = subprocess.run(command, shell=True, cwd=str(project_dir), capture_output=True, text=True, timeout=300)
+        exit_code = proc.returncode
+    except subprocess.TimeoutExpired:
+        exit_code = 124
+    helper = Path(__file__).resolve().parent / "ct2-evidence"
+    subprocess.run(
+        [
+            sys.executable, str(helper), "verifier",
+            "--project-dir", str(project_dir),
+            "--ticket", slug,
+            "--name", "goal-outcome-check",
+            "--exit-code", str(exit_code),
+            "--summary", f"goal {slug} outcome-check",
+        ],
+        cwd=str(project_dir),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return {"command": command, "exit_code": exit_code, "ok": exit_code == 0}
+
+
+def cmd_audit(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir).resolve()
+    ct2_dir = ensure_ct2(project_dir)
+    require_goal(ct2_dir, args.slug)
+    target = goal_dir(ct2_dir, args.slug)
+    goal = load_json(target / "goal.json")
+    scope = load_json(target / "scope.json")
+
+    entries = []
+    complete = True
+    for ticket in scope.get("tickets", []):
+        filename = ticket.get("filename") or Path(ticket.get("path_at_capture", "")).name
+        state, current = ticket_current(ct2_dir, filename)
+        terminal = state in TERMINAL_STATES
+        if state is None or not terminal:
+            complete = False
+        entries.append({"ticket": filename, "state": state, "current_path": current, "terminal": terminal})
+
+    outcome = None
+    if goal.get("outcome_check"):
+        outcome = record_outcome_check(ct2_dir, project_dir, args.slug, goal["outcome_check"])
+        if not outcome["ok"]:
+            complete = False
+
+    report = {
+        "slug": args.slug,
+        "objective": goal.get("objective"),
+        "status": goal.get("status"),
+        "completion_conditions": scope.get("completion_conditions", []),
+        "outcome_check": outcome,
+        "complete": complete,
+        "tickets": entries,
+        "audited": now(),
+    }
+    atomic_write_json(ct2_dir, target / "audit.json", report, "goal-audit-")
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0 if complete else 1
+
+
+def set_status(args: argparse.Namespace, status: str) -> int:
+    ct2_dir = ensure_ct2(Path(args.project_dir).resolve())
+    path = require_goal(ct2_dir, args.slug)
+    goal = load_json(path)
+    goal["status"] = status
+    goal["updated"] = now()
+    atomic_write_json(ct2_dir, path, goal, "goal-")
+    log_event(ct2_dir, args.slug, {"type": "status_changed", "status": status})
+    print(f"ct2-goal: {args.slug} -> {status}")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Provider-neutral CT2 goal loop")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    start = sub.add_parser("start", help="Start a goal")
+    start.add_argument("objective", nargs="+")
+    start.add_argument("--project-dir", default=".")
+    start.add_argument("--slug")
+    start.add_argument("--mode", choices=SCOPE_MODES, default="snapshot")
+    start.add_argument("--stopping-rule", default=None)
+    start.add_argument("--outcome-check", default=None, help="Shell command audit runs; its exit is recorded as evidence")
+    start.add_argument("--ticket-state", action="append", choices=STATE_DIRS)
+    start.add_argument("--completion-condition", action="append")
+    start.set_defaults(func=cmd_start)
+
+    add_ticket = sub.add_parser("add-ticket", help="Register a ticket in a production-mode goal's scope")
+    add_ticket.add_argument("slug")
+    add_ticket.add_argument("ticket")
+    add_ticket.add_argument("--project-dir", default=".")
+    add_ticket.set_defaults(func=cmd_add_ticket)
+
+    status = sub.add_parser("status", help="List goals")
+    status.add_argument("--project-dir", default=".")
+    status.add_argument("--json", action="store_true")
+    status.set_defaults(func=cmd_status)
+
+    audit = sub.add_parser("audit", help="Audit in-scope tickets and the outcome-check")
+    audit.add_argument("slug")
+    audit.add_argument("--project-dir", default=".")
+    audit.set_defaults(func=cmd_audit)
+
+    for command, status_value in (("pause", "paused"), ("complete", "complete"), ("abandon", "abandoned")):
+        p = sub.add_parser(command, help=f"Mark a goal {status_value}")
+        p.add_argument("slug")
+        p.add_argument("--project-dir", default=".")
+        p.set_defaults(func=lambda a, _s=status_value: set_status(a, _s))
+
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

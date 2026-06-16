@@ -232,6 +232,7 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-release sync\|prepare ...` | Synchronize release metadata or prepare a SemVer release commit |
 | `ct2-vao-pilot [--report-file <path>]` | Run the local VAO phase-completion pilot and preserve runtime evidence |
 | `ct2-vao-self-verify [--run-checks]` | Measure VAO completion gates from the self-verification criteria |
+| `ct2-goal start\|add-ticket\|status\|audit\|pause\|complete\|abandon` | Provider-neutral goal loop: track an objective across tickets; `audit` cross-references scope + runs an optional outcome-check as evidence (`spec/goal-loop.md`) |
 | `ct2-codex-goal ...` | Create, inspect, pause, resume, and clear CT2-local Codex goal metadata |
 | `ct2-codex-app-driver ...` | Drive Codex app-server thread, goal, turn, request-input, approvals, logs, and metadata |
 | `ct2-reconcile <ticket-id> <round>` | Reconcile independent review sidecars into terminal review state |
