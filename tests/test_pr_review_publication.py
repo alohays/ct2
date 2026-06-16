@@ -271,6 +271,32 @@ sys.exit(1)
         todo = project / ".ct2" / ".meta" / "001.pr-review-todo.md"
         self.assertIn("comment 100", todo.read_text(encoding="utf-8"))
 
+    def test_pr_respond_mark_addressed_drops_comment_from_next_todo(self):
+        project = self.make_project()
+        env, _state_file = self.install_fake_gh(project)
+        ticket = project / ".ct2" / "in-review" / "001-publish-pr-review.md"
+        todo = project / ".ct2" / ".meta" / "001.pr-review-todo.md"
+
+        first = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pr-respond", ticket, project, "--json"], project, env=env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertIn("comment 100", todo.read_text(encoding="utf-8"))
+
+        marked = run_cmd(
+            [PYTHON, REPO_ROOT / "bin" / "ct2-pr-respond", ticket, project, "--mark-addressed", "100", "--json"],
+            project,
+            env=env,
+        )
+        self.assertEqual(marked.returncode, 0, marked.stderr)
+        result = json.loads(marked.stdout)
+        self.assertEqual("marked-addressed", result["status"])
+        self.assertIn("100", result["added"])
+        addressed = json.loads((project / ".ct2" / ".meta" / "001.pr-addressed.json").read_text(encoding="utf-8"))
+        self.assertIn("100", addressed["addressed"])
+
+        second = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-pr-respond", ticket, project, "--json"], project, env=env)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertNotIn("comment 100", todo.read_text(encoding="utf-8"))
+
     def test_pr_review_is_idempotent_and_does_not_double_publish(self):
         project = self.make_project()
         env, state_file = self.install_fake_gh(project)

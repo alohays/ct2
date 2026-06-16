@@ -8,6 +8,14 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Wired the dangling PR-addressed writer (loop-design roadmap T0.4, relocated to
+  the reject→rework joint). `ct2-pr-respond --mark-addressed {comment-id}`
+  (repeatable) records a PR review comment id in `.meta/{id}.pr-addressed.json`
+  so the next `ct2-pr-respond` drops it from the TODO. Previously the
+  addressed-tracking backend existed but nothing ever *added* ids — the file was
+  only ever rewritten with its prior contents, so the PR review TODO regenerated
+  identically every round.
+
 - Added a per-AC grade grammar to review sidecars (loop-design roadmap T2.1,
   Direction B). Lines in `## Acceptance Criteria Check` may use
   ``- AC{n}: (pass|fail) — {reason}`` with an optional `(evidence: {claim-id})`.
