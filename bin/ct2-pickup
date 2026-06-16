@@ -137,13 +137,17 @@ def lessons_digest(project_dir: Path, ticket_id: str, role: str) -> str:
     helper = Path(__file__).resolve().parent / "ct2-lesson"
     if not helper.exists():
         return ""
-    proc = subprocess.run(
-        [sys.executable, str(helper), "digest", "--project-dir", str(project_dir), "--role", role, "--ticket", ticket_id],
-        cwd=str(project_dir),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        proc = subprocess.run(
+            [sys.executable, str(helper), "digest", "--project-dir", str(project_dir), "--role", role, "--ticket", ticket_id],
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,  # bounded: this runs inside the lifecycle lock; never let it hang
+        )
+    except subprocess.TimeoutExpired:
+        return ""
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
 
