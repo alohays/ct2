@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from _ct2_vao import STATE_DIRS, ensure_ct2, now, read_frontmatter, read_jsonl, ticket_id_from_name
-from _ct2_sealed_baseline import compare_ticket_to_snapshot, sealed_snapshot_name
+from _ct2_sealed_baseline import compare_ticket_to_snapshot, sealed_snapshot_name, verification_lines
 
 
 PLAN_STATES = {"in-progress", "in-review", "done"}
@@ -170,21 +170,14 @@ def checkbox_items(section: str) -> list[tuple[str, str]]:
     ]
 
 
-VERIFICATION_BINDING_RE = re.compile(r"^-\s+AC(\d+):\s*`([^`]+)`\s*$")
-
-
 def verification_binding_issues(path: Path, ac_count: int) -> list[dict[str, str]]:
     """Every non-empty line of the optional ## Verification section must parse as
     ``- AC{n}: `cmd` `` with a non-empty command and an n referencing an existing
     AC checkbox. Returns offending lines (empty list == ok, including no section)
-    so a typo'd binding cannot silently degrade to unverified prose."""
-    section = body_section(path, "Verification")
+    so a typo'd binding cannot silently degrade to unverified prose. The grammar
+    is shared with ct2-ac-verify via _ct2_sealed_baseline.verification_lines."""
     issues: list[dict[str, str]] = []
-    for raw in section.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("<!--"):
-            continue
-        match = VERIFICATION_BINDING_RE.match(line)
+    for line, match in verification_lines(body_section(path, "Verification")):
         if not match:
             issues.append({"line": line, "reason": "does-not-parse-as-AC{n}:`cmd`"})
             continue

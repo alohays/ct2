@@ -21,6 +21,12 @@ from _ct2_vao import atomic_write_text, ensure_ct2, now, ticket_id_from_name
 # a submission precondition. Gating on the exit code would brick those projects.
 SUBMIT_GATE_CHECKS = ("submit_gate_state", "acceptance_criteria_checked", "plan_evidence")
 
+# Hardness of the ac-verify backstop lives in code, versioned per
+# spec/versioning.md — never in tamper-evident-free runtime config (§2.5). It
+# ships advisory (records evidence + prints failures, does not block) and is
+# promoted to hard by a release once the §2.5 criteria are met (T1.4).
+AC_VERIFY_GATE_HARD = False
+
 
 def resolve_ticket(ct2_dir: Path, arg: str) -> Path | None:
     root = ct2_dir / "in-progress"
@@ -44,6 +50,27 @@ def replace_frontmatter_value(text: str, key: str, value: str) -> str:
 def mirror_issue(project_dir: Path, ticket: Path) -> None:
     helper = Path(__file__).resolve().parent / "ct2-issue-mirror"
     subprocess.run([sys.executable, str(helper), str(ticket), str(project_dir)], cwd=str(project_dir), check=False)
+
+
+def ac_verify_backstop(project_dir: Path, ticket_id: str) -> tuple[bool, list[str]]:
+    """Submit-time backstop: run the ticket's sealed ## Verification bindings and
+    record round-tagged evidence (recording mode). Returns (ok, failing_acs).
+    Fail-soft when the runner cannot produce parseable JSON — a broken backstop
+    must not block submission while the gate is advisory."""
+    helper = Path(__file__).resolve().parent / "ct2-ac-verify"
+    proc = subprocess.run(
+        [sys.executable, str(helper), ticket_id, str(project_dir), "--json"],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    try:
+        report = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return True, []
+    failing = [str(item.get("ac")) for item in report.get("results", []) if not item.get("ok")]
+    return bool(report.get("ok", True)), failing
 
 
 def submit_gate(project_dir: Path, ticket_id: str) -> tuple[bool, list[dict[str, object]]]:
@@ -100,6 +127,17 @@ def main() -> int:
             if not item.get("ok"):
                 print(f"  fail: {item.get('name')} — {item.get('evidence')}", file=sys.stderr)
         return 2
+
+    # ac-verify backstop: re-run the sealed AC→command bindings at the submit
+    # boundary, recording round-tagged evidence. Advisory by default (records +
+    # warns, does not block); promoted to hard by release (no runtime knob).
+    ac_ok, failing_acs = ac_verify_backstop(project_dir, ticket_id)
+    if not ac_ok:
+        detail = f": {', '.join(failing_acs)}" if failing_acs else ""
+        verb = "blocks" if AC_VERIFY_GATE_HARD else "advisory — not blocking"
+        print(f"ct2-review-enter: ac-verify backstop reports failing bound AC(s){detail} ({verb})", file=sys.stderr)
+        if AC_VERIFY_GATE_HARD:
+            return 4
 
     dest = ct2_dir / "in-review" / ticket.name
     if dest.exists():

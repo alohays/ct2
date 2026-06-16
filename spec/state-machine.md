@@ -161,6 +161,18 @@ follows. The AC-checkbox half has teeth mainly on round 1 (boxes stay `[x]`
 across a rejection); per-round teeth on rework come from `plan_evidence`
 requiring the `r{n}` plan for each new round.
 
+### Verification backstop (advisory)
+
+After the hard submit gate passes, `ct2-review-enter` runs `ct2-ac-verify`
+against the ticket's sealed `## Verification` bindings (if any) and records one
+round-tagged evidence claim per bound AC. This is the mechanical backstop to
+forge's iterate-until-green loop. It ships **advisory** — it records evidence and
+prints any failing AC ordinals but does not block the move — and is promoted to a
+hard gate (exit 4, no move) by a release per `spec/balanced-scorecard.md`'s
+gate-hardness policy, never by runtime config. Hardness lives in the
+`AC_VERIFY_GATE_HARD` code constant, versioned per `spec/versioning.md`. Tickets
+without a sealed `## Verification` section are unaffected.
+
 ## File-Based State Representation
 
 State is represented by the **directory containing the ticket file**:

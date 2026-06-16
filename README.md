@@ -221,6 +221,7 @@ ct2-codex-app-driver ct2-forge "Complete current tickets" --resume --turn '$ct2:
 | `ct2-role-run --role <role> -- <cmd>` | Run a role command and append cost/latency telemetry |
 | `ct2-cost [dir]` | Summarize `.ct2/telemetry/cost.jsonl` |
 | `ct2-evidence ...` | Record stable command, artifact, screenshot, verifier, and hook-event evidence claims |
+| `ct2-ac-verify <ticket>` | Run a ticket's sealed `## Verification` AC→command bindings; record round-tagged evidence (`--no-record` for the lens re-run) |
 | `ct2-decision ...` | Create, format, and answer provider-neutral decision bridge records |
 | `ct2-policy-compile [dir]` | Emit provider hook declarations and shell validator metadata |
 | `ct2-bridge notify ...` | Send notify-only external advisory messages into CT2 inboxes |

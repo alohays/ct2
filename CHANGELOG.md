@@ -8,6 +8,28 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Added `bin/ct2-ac-verify`, the deterministic iterate-until-green runner for a
+  ticket's sealed `## Verification` AC→command bindings (loop-design roadmap
+  T1.2, Direction A). It reads bindings from the sealed snapshot (never the live
+  ticket), runs each command with a timeout from the optional
+  `verification.command_timeout_sec` harness.yaml key (default 300s), and records
+  one evidence claim per bound AC. `--no-record` is the lens / advisory mode;
+  `--json` emits per-AC results; a ticket with no bindings exits 0.
+- Added append-compatible `ac` and `round` fields to evidence claims
+  (`ct2-evidence command|verifier --ac/--round`, documented in
+  `spec/evidence-graph.md`). Like `parent_id`/`produced_by_agent` they are
+  omitted when empty, so legacy ledgers are byte-identical; `round` (not a claim
+  timestamp) is the staleness key a done gate uses.
+- `ct2-review-enter` now runs `ct2-ac-verify` as an **advisory** backstop after
+  the submit gate — it records this round's evidence and prints any failing bound
+  AC ordinals but does not block the move. Hardness lives in the
+  `AC_VERIFY_GATE_HARD` code constant (versioned, never runtime config) and is
+  promoted to a hard gate by a later release. Both forge SKILLs gain the
+  iterate-until-green loop (run `ct2-ac-verify --no-record` until green before
+  requesting review); both lens roles re-run `ct2-ac-verify --json --no-record`
+  independently and treat non-zero as BLOCKING rather than trusting
+  forge-appended claims.
+
 - Added an optional `## Verification` ticket body section that binds acceptance
   criteria to deterministic check commands (loop-design roadmap T1.1,
   Direction A). The grammar is ``- AC{n}: `command` `` (helm-authored at draft
