@@ -17,6 +17,15 @@ HASH_KEYS = {
     "Acceptance Criteria": "acceptance-criteria-sha256",
 }
 
+# `## Verification` is sealed as a *conditional* fourth section: it is hashed
+# only when the ticket carries it, and a snapshot records its hash key only when
+# the sealed ticket carried it. The drift rule is "absent-in-both = ok" so the
+# millions of legacy baselines sealed before this section existed never flag
+# drift, while one-sided presence (added or removed after seal) is caught.
+VERIFICATION_TITLE = "Verification"
+VERIFICATION_HASH_KEY = "verification-sha256"
+RECOGNIZED_TITLES = SECTION_TITLES + (VERIFICATION_TITLE,)
+
 
 def now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -39,7 +48,7 @@ def extract_sections(text: str) -> dict[str, str]:
     sections: dict[str, str] = {}
     for index, match in enumerate(matches):
         title = match.group(1).strip()
-        if title not in SECTION_TITLES:
+        if title not in RECOGNIZED_TITLES:
             continue
         start = match.end()
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
@@ -49,7 +58,11 @@ def extract_sections(text: str) -> dict[str, str]:
 
 def ticket_hashes(ticket_path: Path) -> dict[str, str]:
     sections = extract_sections(ticket_path.read_text(encoding="utf-8"))
-    return {HASH_KEYS[title]: section_hash(sections.get(title, "")) for title in SECTION_TITLES}
+    hashes = {HASH_KEYS[title]: section_hash(sections.get(title, "")) for title in SECTION_TITLES}
+    # Conditional: only present when the ticket actually carries the section.
+    if VERIFICATION_TITLE in sections:
+        hashes[VERIFICATION_HASH_KEY] = section_hash(sections[VERIFICATION_TITLE])
+    return hashes
 
 
 def sealed_snapshot_name(ticket_path: Path) -> str:
@@ -60,6 +73,10 @@ def write_snapshot(ticket_path: Path, dest: Path) -> None:
     text = ticket_path.read_text(encoding="utf-8")
     sections = extract_sections(text)
     hashes = {HASH_KEYS[title]: section_hash(sections.get(title, "")) for title in SECTION_TITLES}
+    titles = list(SECTION_TITLES)
+    if VERIFICATION_TITLE in sections:
+        hashes[VERIFICATION_HASH_KEY] = section_hash(sections[VERIFICATION_TITLE])
+        titles.append(VERIFICATION_TITLE)
     fm = read_frontmatter(ticket_path)
     ticket_stem = ticket_path.stem
     body = [
@@ -71,7 +88,7 @@ def write_snapshot(ticket_path: Path, dest: Path) -> None:
     for key, value in hashes.items():
         body.append(f"{key}: {value}")
     body.append("---\n")
-    for title in SECTION_TITLES:
+    for title in titles:
         body.append(f"## {title}\n")
         body.append((sections.get(title, "")).strip() + "\n")
     dest.write_text("\n".join(body), encoding="utf-8")
@@ -79,7 +96,20 @@ def write_snapshot(ticket_path: Path, dest: Path) -> None:
 
 def snapshot_hashes(snapshot_path: Path) -> dict[str, str]:
     fm = read_frontmatter(snapshot_path)
-    return {key: str(fm.get(key, "")) for key in HASH_KEYS.values()}
+    hashes = {key: str(fm.get(key, "")) for key in HASH_KEYS.values()}
+    # Conditional: only present when the snapshot was sealed with the section.
+    if fm.get(VERIFICATION_HASH_KEY) is not None:
+        hashes[VERIFICATION_HASH_KEY] = str(fm.get(VERIFICATION_HASH_KEY))
+    return hashes
+
+
+def _compare_keys(live: dict[str, str], sealed: dict[str, str]) -> list[str]:
+    """Keys to compare: the three required, plus Verification only when present
+    in the ticket or the snapshot. Absent-in-both = no Verification check."""
+    keys = list(HASH_KEYS.values())
+    if VERIFICATION_HASH_KEY in live or VERIFICATION_HASH_KEY in sealed:
+        keys.append(VERIFICATION_HASH_KEY)
+    return [key for key in keys if live.get(key) != sealed.get(key)]
 
 
 def compare_ticket_to_snapshot(ticket_path: Path, snapshot_path: Path) -> tuple[bool, dict[str, object]]:
@@ -87,7 +117,7 @@ def compare_ticket_to_snapshot(ticket_path: Path, snapshot_path: Path) -> tuple[
         return False, {"snapshot": str(snapshot_path), "missing": True}
     live = ticket_hashes(ticket_path)
     sealed = snapshot_hashes(snapshot_path)
-    mismatches = [key for key in HASH_KEYS.values() if live.get(key) != sealed.get(key)]
+    mismatches = _compare_keys(live, sealed)
     return not mismatches, {"snapshot": str(snapshot_path), "mismatches": mismatches, "live": live, "sealed": sealed}
 
 
@@ -103,7 +133,7 @@ def baseline_status(ticket_path: Path, snapshot_path: Path) -> tuple[str, dict[s
         return "missing", {"snapshot": str(snapshot_path), "missing": True}
     live = ticket_hashes(ticket_path)
     sealed = snapshot_hashes(snapshot_path)
-    mismatches = [key for key in HASH_KEYS.values() if live.get(key) != sealed.get(key)]
+    mismatches = _compare_keys(live, sealed)
     if mismatches:
         return "drift", {"snapshot": str(snapshot_path), "mismatches": mismatches, "live": live, "sealed": sealed}
     return "ok", {"snapshot": str(snapshot_path)}

@@ -113,6 +113,7 @@ The current checks are:
 | `seal_gate_context_complete` | Context section has at least 20 meaningful characters and no unambiguous placeholder markers. |
 | `seal_gate_acceptance_criteria_verifiable` | At least one AC checkbox exists, none are weak, and none are pre-checked at seal time. |
 | `seal_gate_no_static_contradictions` | Constraints and goals do not contradict on a short list of patterns (forbidding *adding* tests / docs while ACs require them; declaring stdlib-only while requiring `pip install`). Retention-style constraints (e.g. "no tests may be removed") are not contradictions. |
+| `seal_gate_verification_binding` | When an optional `## Verification` section is present, every non-comment line parses as ``- AC{n}: `cmd` `` with a non-empty command and an `n` referencing an existing AC checkbox. Tickets without the section pass vacuously. Prevents a typo'd binding from silently degrading to unverified prose. |
 
 Placeholder detection deliberately uses two scopes: a substring scanner
 restricted to unambiguous markers (`tbd`, `todo`, `fixme`, `placeholder`,

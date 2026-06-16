@@ -114,6 +114,11 @@ The current hard-coded pool size (10) is a bottleneck under production load.
 - [ ] All unit tests pass
 - [ ] Pool size configurable with default 10, maximum 50
 - [ ] No regressions in existing integration tests
+
+## Verification
+<!-- Optional: bind ACs to deterministic check commands (helm-authored at draft time) -->
+- AC1: `python -m unittest discover -s tests`
+- AC2: `python -m mytool --config-check`
 ```
 
 ### Section Rules
@@ -122,19 +127,37 @@ The current hard-coded pool size (10) is a bottleneck under production load.
 - **Constraints**: Hard limits forge must not violate. Violations are automatic rejection.
 - **Context**: Background explanation for forge. Not a requirement — informational only.
 - **Acceptance Criteria**: The authoritative completion checklist. All items must be checked before forge moves the ticket to `in-review/`. Reviewers verify these items.
+- **Verification** *(optional)*: Binds individual acceptance criteria to
+  deterministic check commands, one per line, in the grammar
+  ``- AC{n}: `command` `` where `n` is the 1-indexed ordinal of an existing
+  `## Acceptance Criteria` checkbox and `command` is a non-empty shell command.
+  Helm authors this section at draft time. ACs without a binding remain
+  manual / reviewer-judged, and tickets without the section behave exactly as
+  before. The bound commands are the substrate for the `ct2-ac-verify`
+  iterate-until-green loop; the section is the single canonical AC→command
+  binding syntax (no inline directives, no frontmatter list).
 - At `ct2-seal`, Requirements, Constraints, and Acceptance Criteria are hashed
-  into `.ct2/reviews/{id}-sealed.md`. Later checkbox completion is allowed, but
-  text drift in these sections is a conformance failure unless helm revises and
-  reseals the ticket.
+  into `.ct2/reviews/{id}-sealed.md`. When a `## Verification` section is
+  present it is hashed as a **conditional fourth section** (`verification-sha256`):
+  legacy baselines sealed without it never flag drift (absent in both ticket
+  and snapshot = ok), but adding, removing, or editing the section after seal —
+  including weakening a bound command — surfaces as sealed-baseline drift, so
+  forge cannot weaken its own grader mid-loop. Later checkbox completion is
+  allowed, but text drift in the sealed sections is a conformance failure unless
+  helm revises and reseals the ticket. (Sealing freezes the *commands*, not the
+  test files they invoke — a forge can still gut a test post-seal, which is why
+  lenses independently judge whether each bound command proves its AC.)
 - `ct2-seal` also runs `ct2-ticket-audit --seal-gate --ticket {id}` as a
   static-quality precondition. The seal gate verifies that the four ticket
   sections exist with meaningful text, that `touched-files` is specific,
   that the Requirements/Constraints/AC items are not whole-field
-  placeholders, that ACs are unchecked and verifiable, and that
+  placeholders, that ACs are unchecked and verifiable, that
   Constraints do not contradict Requirements/ACs on a small set of
-  patterns. See `spec/state-machine.md` § *Seal Gate* for the full
-  pass conditions. A failing seal gate leaves the draft in place and
-  exits non-zero from `ct2-seal`.
+  patterns, and — when a `## Verification` section is present — that every
+  binding parses as ``- AC{n}: `cmd` `` with a non-empty command and an `n`
+  referencing an existing AC checkbox (`seal_gate_verification_binding`). See
+  `spec/state-machine.md` § *Seal Gate* for the full pass conditions. A failing
+  seal gate leaves the draft in place and exits non-zero from `ct2-seal`.
 
 ## Review Sidecar Format
 
