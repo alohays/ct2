@@ -6,6 +6,18 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ## [Unreleased]
 
+### Added
+
+- Wired the goal-loop feedback step (loop-design roadmap T4.2, Direction D),
+  closing the outer loop so the planner hears each terminal ticket's outcome.
+  The planner **pulls**, the reconciler never pushes: `helm-auto-cx` (and the
+  interactive helm goal workflow) now, at the top of every planning iteration,
+  run `ct2-goal audit`, read the final-round sidecars of any in-scope ticket
+  newly in done/rejected/escalated to learn *why*, pause + surface an escalated
+  ticket, and stop on the stopping rule / outcome-check — before drafting the
+  next ticket. `ct2-goal audit` records an `audited` event to the goal ledger.
+  `ct2-reconcile` is untouched — escalation remains its only helm push.
+
 ### Changed
 
 - Deprecated `ct2-codex-goal` in favour of the provider-neutral `ct2-goal`

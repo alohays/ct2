@@ -139,6 +139,16 @@ class GoalLoopTest(unittest.TestCase):
         self.assertIn("goal_started", kinds)
         self.assertIn("status_changed", kinds)
 
+    def test_audit_appends_outcome_event_to_ledger(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2, "done", "001")
+        self.start(project, "--ticket-state", "done")
+        self.audit(project)
+        ledger = [json.loads(line) for line in (ct2 / "goals" / "demo" / "ledger.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+        audited = [event for event in ledger if event["type"] == "audited"]
+        self.assertTrue(audited and audited[-1]["complete"] is True and audited[-1]["terminal"] == 1)
+
 
 class CodexGoalShimTest(unittest.TestCase):
     CODEX = REPO_ROOT / "bin" / "ct2-codex-goal"
