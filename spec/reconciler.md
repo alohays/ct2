@@ -61,6 +61,16 @@ process that acquired it.
 
 Single-reviewer approval is never enough for `done/`.
 
+## Escalation Message
+
+When the round cap escalates a ticket, the helm inbox message body carries, for
+each current-round sidecar, its path and the verbatim `### [BLOCKING]` heading
+lines extracted from that sidecar's `## Issues Found` section. The sidecars are
+still live at escalation time, so this copies nothing and creates no new
+directory — it makes the escalation carry *why* the ticket failed, not only
+"failed after round N". Prior-round sidecars remain in `.ct2/reviews/` until
+`ct2-revise` archives them to `.ct2/reviews/.archive/{ts}-{id}/`.
+
 ## Done Gate
 
 Dual approval is necessary but no longer sufficient for `done/`. When both

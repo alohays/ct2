@@ -221,7 +221,11 @@ with an incremented `round`.
 ## Responding to Escalation Messages
 
 When you display an `escalation` message from forge or lens:
-1. Show the user the full message content
+1. Show the user the full message content. A round-cap escalation now carries,
+   per current-round sidecar, its path and the verbatim `### [BLOCKING]` heading
+   lines — use these to explain *why* the ticket failed. Those sidecars are live
+   in `.ct2/reviews/`; prior-round sidecars live at
+   `.ct2/reviews/.archive/{ts}-{id}/` once `ct2-revise` archives them.
 2. Explain what happened (circuit breaker triggered, max review rounds exceeded)
 3. Offer the user options:
    - **Revise the ticket**: Help the user rewrite the ticket requirements or ACs,

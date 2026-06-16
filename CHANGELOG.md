@@ -8,6 +8,15 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Enriched the reconciler's round-cap escalation message (loop-design roadmap
+  T0.2 / C0, Direction C). The helm inbox message now carries, per current-round
+  sidecar, its path and the verbatim `### [BLOCKING]` heading lines from that
+  sidecar's `## Issues Found` — so an escalation explains *why* a ticket failed,
+  not only "failed after round N". Sidecars are live at escalation time, so this
+  copies nothing and adds no directory. `spec/reconciler.md` documents the
+  message body; the helm SKILL escalation-response notes that prior-round
+  sidecars live at `.ct2/reviews/.archive/{ts}-{id}/` after `ct2-revise`.
+
 - Added rework-resolution accounting that closes the reject→rework joint
   (loop-design roadmap T2.2, Direction B). `### [BLOCKING] {title}` is promoted
   from convention to a machine-parsed sidecar form (mandatory title). The submit

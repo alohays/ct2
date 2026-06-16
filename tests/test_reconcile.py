@@ -201,6 +201,26 @@ class ReconcileTest(unittest.TestCase):
         self.assertEqual(1, len(inbox))
         self.assertIn("type: escalation", inbox[0].read_text(encoding="utf-8"))
 
+    def test_escalation_message_carries_blocking_digest(self):
+        project = self.make_project()
+        ct2 = project / ".ct2"
+        write_ticket(ct2 / "in-review" / "001-reconcile-smoke.md", review_round=2)
+        for side, reviewer in (("cc", "ct2-lens-cc"), ("cx", "ct2-lens-cx")):
+            (ct2 / "reviews" / f"001-{side}-r2.md").write_text(
+                f'---\nticket: 001-reconcile-smoke\nreviewer: {reviewer}\nround: 2\n'
+                "verdict: rejected\ntimestamp: 2026-05-13T00:10:00Z\n---\n\n"
+                "## Summary\ns\n\n## Acceptance Criteria Check\n- AC1: fail\n\n"
+                "## Issues Found\n### [BLOCKING] Missing input validation on upload\nreject oversized\n\n"
+                "## Recommendation\nrejected - fixture.\n",
+                encoding="utf-8",
+            )
+
+        proc = self.reconcile(project, round_num=2)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        message = list((ct2 / "inbox" / "ct2-helm").glob("*.md"))[0].read_text(encoding="utf-8")
+        self.assertIn(".ct2/reviews/001-cc-r2.md", message)
+        self.assertIn("### [BLOCKING] Missing input validation on upload", message)
+
     def test_invalid_sidecar_verdict_does_not_move_ticket(self):
         project = self.make_project()
         ct2 = project / ".ct2"
