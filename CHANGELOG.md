@@ -6,15 +6,6 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ## [Unreleased]
 
-### Changed
-
-- Marked `docs/ct2-loop-design-strategy-2026-06.md` as **implemented** and added
-  an implementation log (§0.5): the PR map for all eleven tickets (#54–#68), the
-  three maintainer AskUserQuestion deviations (Phase-0 rescope; unsupervised
-  Direction-C promotion with a documented human-gate fallback; the
-  no-protocol-bump lazy-mirror subsumption for Direction D), and the
-  authoring-time state-of-code claim corrections found during execution.
-
 ### Added
 
 - Added the `ct2-migrate-0.3-0.4` protocol-migration helper for the 0.4.0
@@ -37,22 +28,6 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   ticket, and stop on the stopping rule / outcome-check — before drafting the
   next ticket. `ct2-goal audit` records an `audited` event to the goal ledger.
   `ct2-reconcile` is untouched — escalation remains its only helm push.
-
-### Changed
-
-- Deprecated `ct2-codex-goal` in favour of the provider-neutral `ct2-goal`
-  (loop-design roadmap T4.1b, Direction D — subsumption). The authoritative goal
-  STATE now lives in the neutral `.ct2/goals/{slug}/` record; the `.ct2/codex/`
-  artifacts `ct2-codex-goal` still writes are the Codex-session render, kept for
-  backward compatibility. Every invocation prints a deprecation notice and
-  **lazily mirrors** codex goals into the neutral layout, idempotently — mapping
-  the codex status (`active → open`, `cleared → abandoned`, …) and preserving the
-  captured ticket scope and completion conditions. This is a deliberate
-  no-protocol-bump migration: goal records are untracked `.ct2/` state, not
-  protocol-surface fields, so relocating them needs no version change and no
-  compatibility-gate churn for existing projects.
-
-### Added
 
 - Added the provider-neutral goal loop `bin/ct2-goal` (loop-design roadmap
   T4.1, Direction D). A goal tracks a maintainer objective across CT2 tickets in
@@ -183,11 +158,13 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   `verification.command_timeout_sec` harness.yaml key (default 300s), and records
   one evidence claim per bound AC. `--no-record` is the lens / advisory mode;
   `--json` emits per-AC results; a ticket with no bindings exits 0.
+
 - Added append-compatible `ac` and `round` fields to evidence claims
   (`ct2-evidence command|verifier --ac/--round`, documented in
   `spec/evidence-graph.md`). Like `parent_id`/`produced_by_agent` they are
   omitted when empty, so legacy ledgers are byte-identical; `round` (not a claim
   timestamp) is the staleness key a done gate uses.
+
 - `ct2-review-enter` now runs `ct2-ac-verify` as an **advisory** backstop after
   the submit gate — it records this round's evidence and prints any failing bound
   AC ordinals but does not block the move. Hardness lives in the
@@ -227,6 +204,7 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   where the declared "all ACs checked `[x]`" precondition was unenforced.
   Documented as a new "Submit Gate" section in `spec/state-machine.md`; both
   forge SKILLs now treat a gate failure as a return-to-work signal.
+
 - Documented and surfaced the `first_pass_approval` Trust diagnostic
   (loop-design roadmap T0.3). `ct2-baseline` already computed it inside the
   `trust` scorecard block — the fraction of done tickets dual-approved at
@@ -236,6 +214,7 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   honesty rule), and `ct2-status` renders it on the Trust line so the planner
   sees it at init. This makes the metric's end-to-end channel real, closing
   the gap the loop-design doc's planning-digest kill-reason relied on.
+
 - Added `docs/ct2-loop-design-strategy-2026-06.md`, the loop-design strategy
   derived from "Designing loops with Fable 5" (R. Lance Martin) via a
   26-agent adversarial analysis (15 proposals, 13 surviving with corrections,
@@ -250,6 +229,7 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   maintainer decision log, gate-hardness policy (advisory-to-hard by
   release, never runtime config), killed-proposal constraints, and scorecard
   absorption into the Evidence axis.
+
 - Added spec ingest and render-side guardrails for the helm canvas. New
   helpers `parse_spec` and `validate_spec` in `bin/_ct2_canvas.py` give
   malformed canvas specs an actionable error (line/column, an excerpt of
@@ -259,6 +239,7 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   and rich-HTML injection; a JS render error surfaces a visible banner
   next to the JSON preview instead of silently blanking the AI judgment
   panel.
+
 - Release commits prepared by `release.yml` now include a `Co-Authored-By`
   trailer pointing at the workflow trigger user. A new repeatable
   `--co-author "Name <user@example.com>"` flag on `ct2-release prepare`
@@ -266,17 +247,20 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   brackets/`@`) and dedupes repeats; the workflow wires it through
   `${{ github.actor }}` and `${{ github.actor_id }}` via env-var
   indirection.
+
 - Added the 2026-06 dynamic-workflow-era strategy set: the flagship
   position note `docs/ct2-dynamic-workflow-strategy-2026-06.md` (with its
   HTML decision report), the 2026-06 agent-platform feature radar, and the
   agentic-harness trends survey. CT2 is positioned as the verification
   kernel that native workflows must re-enter; the README product-planning
   index links all four.
+
 - Added the runtime-workflow row to the protocol reframe's Boundary
   Decision Table and a Native Workflows rule to `spec/adapter-format.md`:
   adapters may author or invoke native workflows as executors, but a
   workflow never holds terminal authority and the contract is
   vendor-neutral.
+
 - Added the workflow re-entry contract to `spec/conformance.md`: a
   CT2-wrapped workflow run names a ticket, writes only into an isolated
   write target, returns as a patch, PR, inbox message, or evidence
@@ -285,31 +269,40 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   Runtimes section in `spec/role-contracts.md` sanctions native fan-out
   only for read-only discovery and isolated-branch forge implementation,
   with CT2 state writes remaining parent-owned one-shot operations.
+
 - Added the reviewer-independence prompt-construction invariant to
   `spec/conformance.md` — a verifier subagent's prompt must not contain
   any sibling reviewer's output — with a conformance fixture that fails a
   leaky verify workflow.
+
 - Added the vendor-symmetry guard: the dual-review quorum floor is
   cross-vendor (lens-cc AND lens-cx), never any-2, with a conformance
   check that flags Claude-primary drift.
+
 - Added a CT2-blessed adversarial-verify workflow template under
   `templates/workflows/` that wires reviewer independence by construction.
+
 - Added a network-free workflow-class hint to `ct2-runtime-doctor` —
   version-derived (`authority: hint`) pending a directly observable
   workflow surface; absence degrades to the serial fallback and never
   errors.
+
 - Added optional `parent_id`/`produced_by_agent` attribution to
   `claims.jsonl` evidence records so fan-out findings roll up to the
   orchestrating role and ticket.
+
 - Added per-run agent count and a fan-out-vs-serial speedup signal to the
   Cost-Latency scorecard axis; budget directives are recorded as advisory
   fan-out width, never enforced as token ceilings.
+
 - Added the M-of-N reviewer-quorum specification with cross-vendor 2-of-2
   (cc AND cx) as the immovable floor; extra same-vendor skeptics are
   advisory unless explicitly promoted.
+
 - Added the workflow determinism boundary: CT2 time/round circuit breakers
   and ID generation run outside deterministic workflows, and CT2-emitted
   scripts derive IDs from stable inputs.
+
 - Added fail-soft native-surface delegation: lens-cc may cite
   `/code-review ultra` in-sidecar and helm discovery may invoke
   `/deep-research`, as evidence only — neither can move a ticket. Forge
@@ -319,6 +312,13 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Changed
 
+- Marked `docs/ct2-loop-design-strategy-2026-06.md` as **implemented** and added
+  an implementation log (§0.5): the PR map for all eleven tickets (#54–#68), the
+  three maintainer AskUserQuestion deviations (Phase-0 rescope; unsupervised
+  Direction-C promotion with a documented human-gate fallback; the
+  no-protocol-bump lazy-mirror subsumption for Direction D), and the
+  authoring-time state-of-code claim corrections found during execution.
+
 - `ct2-helm-canvas generate` now validates the spec shape at the
   boundary; specs with an unknown `priority`, out-of-enum scope state,
   or wrong types for list-shaped fields (`scope`, `tickets`,
@@ -327,16 +327,43 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   tightening — any helm session that was emitting non-canonical
   priorities or scope states will need to align with the documented
   enums.
+
 - Re-pinned documented runtime baselines to observed capability rather
   than guessed versions; Codex stable is 0.137.0 (2026-06-04) and CT2's
   serial-by-default, no-fan-out-for-state-writes stance is unchanged
   against Codex multi-agent v2.
+
 - Translated all remaining Korean content to English for OSS readiness:
   specs, docs, skill files, templates, and inline comments are now
   English-only. Behavior is unchanged; this is a content-language pass
   with no protocol-surface edits.
 
+### Deprecated
+
+- Deprecated `ct2-codex-goal` in favour of the provider-neutral `ct2-goal`
+  (loop-design roadmap T4.1b, Direction D — subsumption). The authoritative goal
+  STATE now lives in the neutral `.ct2/goals/{slug}/` record; the `.ct2/codex/`
+  artifacts `ct2-codex-goal` still writes are the Codex-session render, kept for
+  backward compatibility. Every invocation prints a deprecation notice and
+  **lazily mirrors** codex goals into the neutral layout, idempotently — mapping
+  the codex status (`active → open`, `cleared → abandoned`, …) and preserving the
+  captured ticket scope and completion conditions. This is a deliberate
+  no-protocol-bump migration: goal records are untracked `.ct2/` state, not
+  protocol-surface fields, so relocating them needs no version change and no
+  compatibility-gate churn for existing projects.
+
 ### Fixed
+
+- Closed the reconcile lock create→pid-stamp race (found mid-roadmap once the
+  T1.3 done gate lengthened the lock holder's critical section and surfaced it as
+  intermittent CI flakiness in `test_concurrent_invocations`). The lock is
+  created `O_EXCL` and pid-stamped a moment later; in that window a concurrent
+  reconciler read an empty pid, judged the lock stale, stole it, and both holders
+  then raced to `dest.exists()` — the loser exiting 2 instead of 0. `lock_is_live`
+  now treats a *fresh* unstamped lock (younger than a 5s grace) as live so the
+  second reconciler waits, while an old unstamped lock is still reclaimable as a
+  crashed writer; the `O_EXCL` create path is unchanged. Adds deterministic
+  fresh/old/live-pid/dead-pid unit coverage.
 
 - Hardened the conformance reference validator's quorum checks: a hostile
   non-string binding `key` (list/object) no longer crashes validation and
@@ -345,6 +372,7 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   `malformed-manifest` as code 6 promises; the threshold and
   rejection-rule halves of code 5 and the non-dict-quorum branch gained
   independent regression tests.
+
 - Inverted violation code 7 to default-protected: any `.ct2/` child not
   on the justified exempt list (`evidence/`, `inbox/`, `runtime/`,
   `logs/`, `telemetry/`, `worktrees/`) now reports
@@ -352,35 +380,34 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
   workflow subagent could write `.ct2/config/harness.yaml` (the live
   reconciler verdict table and skeptic-promotion surface) or
   `.ct2/.protocol-version` and validate clean.
+
 - Code 2 normalization now strips Unicode format code points (Cf), so a
   zero-width separator inserted into a leaked sibling output no longer
   defeats the reviewer-independence check.
+
 - Reconciled re-entry rule 1's launch-state clause with the flows this
   release sanctions: `backlog/`/`rejected/` for work-producing runs,
   `in-progress/` for forge-as-workflow implementation, `in-review/` for
   verification-only runs (spec, strategy doc, and template README now
   agree).
+
 - The shared fan-out reader now skips records carrying non-finite numbers
   (`1e400`, `NaN`) and files that are not valid UTF-8, instead of crashing
   `ct2-cost` or writing literal `NaN`/`Infinity` into the baseline
   scorecard JSON; consumers gained coverage for width-only records.
+
 - The blessed adversarial-verify template now invokes `ct2-evidence` and
   `ct2-bridge` by bare name (with a `$HOME/.ct2/bin` fallback) so the
   re-entry channel works in host projects, and records `ok=false`
   evidence when any skeptic fails to report instead of letting a
   zero-verifier run land as passing evidence.
+
 - Scoped reconciler-authority wording in `spec/adapter-format.md`, the
   template README, and the strategy doc to "sole automatic mover to
   `done/`" (the watchdog and duration circuit breakers may still
   escalate), matching conformance kernel rule 8; corrected the Faros AI
   figure to +98% merged PRs and annotated the remaining superseded
   0.136.0 re-pin rows with the 2026-06-10 decision.
-
-### Deprecated
-
-### Removed
-
-### Security
 
 ## [0.3.0] - 2026-05-25
 
