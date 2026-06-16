@@ -455,7 +455,11 @@ def round_fresh_evidence(
     return True, {"round": round_num, "fresh_claims": fresh, "covered_acs": sorted(covered, key=lambda value: int(value) if value.isdigit() else 0)}
 
 
-BLOCKING_HEADING_RE = re.compile(r"^###\s+\[BLOCKING\]\s+(\S.*?)\s*$", re.MULTILINE)
+# Same-line title only: `\s+` would let `### [BLOCKING]\n{next line}` absorb the
+# following body line (even `## Recommendation`) as a phantom title, contradicting
+# the spec ("a blocking issue without a title is not parsed"). Use non-newline
+# whitespace so a title-less heading matches nothing.
+BLOCKING_HEADING_RE = re.compile(r"^###[ \t]+\[BLOCKING\][ \t]+(\S[^\n]*?)[ \t]*$", re.MULTILINE)
 
 
 def _normalize_text(text: str) -> str:
