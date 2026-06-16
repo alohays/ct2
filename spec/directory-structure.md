@@ -75,6 +75,8 @@ This directory is excluded from git via `.git/info/exclude` (never via `.gitigno
 │       └── expired/                   # superseded or abandoned canvases
 ├── watchers/                          # Notify-only watcher definitions
 ├── postmortems/                       # Kill criteria/postmortem records
+├── lessons/                           # Cross-ticket operational memory (spec/lessons.md)
+│   └── lessons.jsonl                  # Append-only lesson event log (ct2-lesson)
 ├── evals/                             # Role eval fixtures and results
 │   ├── ct2-helm/
 │   ├── ct2-forge/
