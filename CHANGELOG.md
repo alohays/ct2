@@ -8,6 +8,21 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Added an optional `## Verification` ticket body section that binds acceptance
+  criteria to deterministic check commands (loop-design roadmap T1.1,
+  Direction A). The grammar is ``- AC{n}: `command` `` (helm-authored at draft
+  time); `spec/ticket-format.md` documents it as the single canonical
+  AC→command binding syntax. `_ct2_sealed_baseline.py` now seals it as a
+  **conditional fourth section** (`verification-sha256`): it is hashed only when
+  present, with absent-in-both-ticket-and-snapshot treated as ok so legacy
+  baselines never flag drift, while adding, removing, or weakening a bound
+  command after seal surfaces as sealed-baseline drift — forge cannot weaken its
+  own grader mid-loop. `ct2-ticket-audit` gains a `seal_gate_verification_binding`
+  seal-gate check that rejects bindings which do not parse, carry an empty
+  command, or reference a non-existent AC ordinal, so a typo'd binding cannot
+  silently degrade to unverified prose. The bound commands are the substrate for
+  the forthcoming `ct2-ac-verify` iterate-until-green loop (T1.2).
+
 - Added a hard **submit gate** on the `in-progress → in-review` transition
   (loop-design roadmap T0.1, Direction A). `ct2-ticket-audit` gains a
   `--submit-gate` mode, symmetric with `--seal-gate`, that adds a

@@ -170,6 +170,33 @@ def checkbox_items(section: str) -> list[tuple[str, str]]:
     ]
 
 
+VERIFICATION_BINDING_RE = re.compile(r"^-\s+AC(\d+):\s*`([^`]+)`\s*$")
+
+
+def verification_binding_issues(path: Path, ac_count: int) -> list[dict[str, str]]:
+    """Every non-empty line of the optional ## Verification section must parse as
+    ``- AC{n}: `cmd` `` with a non-empty command and an n referencing an existing
+    AC checkbox. Returns offending lines (empty list == ok, including no section)
+    so a typo'd binding cannot silently degrade to unverified prose."""
+    section = body_section(path, "Verification")
+    issues: list[dict[str, str]] = []
+    for raw in section.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("<!--"):
+            continue
+        match = VERIFICATION_BINDING_RE.match(line)
+        if not match:
+            issues.append({"line": line, "reason": "does-not-parse-as-AC{n}:`cmd`"})
+            continue
+        ordinal = int(match.group(1))
+        command = match.group(2).strip()
+        if not command:
+            issues.append({"line": line, "reason": "empty-command"})
+        elif not (1 <= ordinal <= ac_count):
+            issues.append({"line": line, "reason": f"AC{ordinal}-out-of-range-1..{ac_count}"})
+    return issues
+
+
 def useful_item(item: str) -> bool:
     item = item.strip()
     if len(item) < 8:
@@ -275,6 +302,7 @@ def seal_gate_checks(path: Path, fm: dict[str, Any]) -> list[dict[str, Any]]:
     weak_acs = [item for _mark, item in ac_items if not useful_item(item)]
     checked_acs = [item for mark, item in ac_items if mark.lower() == "x"]
     contradictions = static_contradictions(sections["Requirements"], sections["Constraints"], sections["Acceptance Criteria"])
+    binding_issues = verification_binding_issues(path, len(ac_items))
 
     return [
         check("seal_gate_required_sections", not missing_sections, {"required": list(TICKET_SECTIONS), "missing": missing_sections}),
@@ -300,6 +328,7 @@ def seal_gate_checks(path: Path, fm: dict[str, Any]) -> list[dict[str, Any]]:
             {"items": [item for _mark, item in ac_items], "weak": weak_acs, "prechecked": checked_acs},
         ),
         check("seal_gate_no_static_contradictions", not contradictions, contradictions or "no simple contradictions detected"),
+        check("seal_gate_verification_binding", not binding_issues, {"invalid": binding_issues} if binding_issues else "no ## Verification bindings, or all well-formed"),
     ]
 
 
