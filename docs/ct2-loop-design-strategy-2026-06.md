@@ -1,9 +1,10 @@
 ---
 type: strategy
 title: "CT2 Loop Design — Executable Completion, Structured Signals, and the Memory Outer Loop"
-version: "0.1.0"
+version: "0.2.0"
 authored: 2026-06-12
-status: proposal
+status: implemented
+implemented: 2026-06-16
 composes_with:
   - docs/ct2-dynamic-workflow-strategy-2026-06.md   # kernel-above-workflows position; this doc fills the kernel's loop-signal whitespace
   - docs/ct2-verified-autonomy-os-strategy-2026-05.md # balanced scorecard + advisory-plane authority model (inherited)
@@ -66,6 +67,69 @@ These decisions were made by the maintainer on 2026-06-11/12 (AskUserQuestion ro
 ### 0.4 The Dependency Order Is the Strategy
 
 A is first not because it is the flashiest but because every other direction consumes its output: unverified `done/` poisons C's lessons and D's outcome feedback, and B's structured grades are only as meaningful as the execution evidence behind them. B is second because it is the cheapest (~50 lines of validator + grammar) and converts the raw material of C from cross-model free prose — which the adversarial round showed mines as count=1 noise — into grep-able structure. C builds the ladder consult-first because both killed proposals died as reader-less ledgers. D is last because an outer loop fed by self-reported completion would automate the propagation of unverified claims into planning.
+
+### 0.5 Implementation Status (2026-06-16)
+
+All eleven tickets landed across 15 dependency-ordered PRs (#54–#68), each
+adversarially self-reviewed to merge-ready. The sections below stand as the
+authored design rationale; this subsection records what shipped, the
+maintainer-approved deviations, and the corrections to the authoring-time
+state-of-code claims.
+
+**PR map (A→B→C→D):**
+
+| Ticket | PR | What shipped |
+|---|---|---|
+| T0.1 | #54 | Hard submit gate (`--submit-gate`, named-check gating, `branch:null` trap designed out) |
+| T0.3 | #55 | `first_pass_approval` documented **and surfaced** in `ct2-status` |
+| T1.1 | #56 | Sealed `## Verification` AC→command bindings (conditional 4th section, `seal_gate_verification_binding`) |
+| T1.2 | #57 | `ct2-ac-verify` iterate-until-green + `ac`/`round` claim fields + advisory review-enter backstop |
+| T1.3 | #58 | Reconciler done gate (round-fresh evidence) + watchdog approved-but-unverified |
+| T2.1 | #59 | Per-AC grade grammar + the one approved-but-failed coherence rule (code-fence-safe) |
+| T2.2 + T0.4 | #60 | Rework-resolution accounting + `ct2-pr-respond --mark-addressed` writer |
+| T0.2 / C0 | #61 | Enriched escalation messages carrying the `### [BLOCKING]` digest |
+| — | #64 | Reconcile lockfile create→pid-stamp race fix (found mid-roadmap) |
+| T3.1 | #62 | `ct2-lesson` ledger (append-only event log folded to state; unsupervised recurrence promotion) |
+| T3.2 | #63 | Pickup-stdout consult digest + plan-audit WARN tier + `Lessons consulted` line |
+| T3.3 | #65 | Advisory planning lints at the seal gate |
+| T4.1a | #66 | Provider-neutral `ct2-goal` loop |
+| T4.1b | #67 | `ct2-codex-goal` subsumed by lazy mirror into the neutral record |
+| T4.2 | #68 | Planner pull step (`helm-auto-cx` + interactive helm) |
+
+**Maintainer deviations from this doc (AskUserQuestion, 2026-06-16):**
+
+- **Phase 0 rescope** — T0.1 + a widened T0.3 (which also closes the `ct2-status`
+  surfacing gap §4.1 relied on) stayed in Phase 0; T0.2 was sequenced after B (it
+  needs B's `[BLOCKING]` grammar) and T0.4 moved beside the rework joint.
+- **Direction C** built in full with **unsupervised** recurrence promotion (D5)
+  plus a documented one-line human-gate fallback (`spec/lessons.md`).
+- **Direction D / D8** — the codex→goals migration ships as a **lazy in-shim
+  mirror with no protocol bump**, not the protocol-bump `ct2-migrate` path:
+  `ct2-codex-goal` has zero live callers, and a 0.3→0.4 bump would cascade
+  through the release machinery and every project's compatibility gate. Same
+  subsumption outcome, far lower blast radius.
+
+**Authoring-time claim corrections (verified against code during execution):**
+
+- §4.1 / §6: `first_pass_approval` was *computed* by `ct2-baseline` but **not**
+  surfaced by `ct2-status` — the kill-reason's "channel exists end-to-end" was
+  half-true. T0.3 closed the surfacing gap.
+- §3.2 / T0.4: `ct2-pr-respond --mark-addressed` did **not** exist; only the
+  read-side backend did. It is now wired.
+- §4.3: the lessons ledger uses `append_jsonl` (flock append) folded to state,
+  **not** the `claims.jsonl` "tmpfile + os.replace" idiom the doc named (which
+  was itself a mis-citation — `claims.jsonl` already uses `append_jsonl`). The
+  WARN tier the doc assumed in `ct2-plan-audit` was new work, now built.
+- §2.3 / §4.3: `spec/reconciler.md` gained the Recovery section + exit code 3,
+  and `spec/plan-evidence.md`'s should-include list gained the
+  `## Rework Resolutions` and `Lessons consulted` lines — these were new spec
+  content, not edits to existing text.
+
+**Gate hardness (§2.5):** the submit gate is hard from day one; the `ac-verify`
+and done gates ship **advisory** behind versioned code constants
+(`AC_VERIFY_GATE_HARD`, `DONE_GATE_HARD`). Their promotion to hard (T1.4) is a
+release-time decision gated on the §2.5 field-test criteria and is deliberately
+**not** flipped here.
 
 ---
 
