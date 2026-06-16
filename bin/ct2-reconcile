@@ -167,12 +167,51 @@ def validate_review_sidecar(script_dir: Path, sidecar: Path, reviewer: str, roun
     return proc.returncode
 
 
+BLOCKING_LINE_RE = re.compile(r"^###[ \t]+\[BLOCKING\][ \t]+\S.*$", re.MULTILINE)
+
+
+def issues_found_section(text: str) -> str:
+    match = re.search(r"^##\s+Issues Found\s*$", text, re.MULTILINE)
+    if not match:
+        return ""
+    return re.split(r"\n##\s+", text[match.end():], maxsplit=1)[0]
+
+
+def escalation_blocking_digest(ct2_dir: Path, ticket_id: str, round_num: str) -> str:
+    """For each current-round sidecar, its path and the verbatim
+    `### [BLOCKING]` heading lines from `## Issues Found`. Sidecars are still
+    live at escalation time, so this copies nothing and creates no directory —
+    it just makes the escalation carry *why*, not only "failed after round N"."""
+    lines: list[str] = []
+    for side in ("cc", "cx"):
+        rel = f".ct2/reviews/{ticket_id}-{side}-r{round_num}.md"
+        sidecar = ct2_dir / "reviews" / f"{ticket_id}-{side}-r{round_num}.md"
+        if not sidecar.exists():
+            lines.append(f"- {side}: {rel} (missing)")
+            continue
+        try:
+            text = sidecar.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            lines.append(f"- {side}: {rel} (unreadable)")
+            continue
+        blocking = [match.strip() for match in BLOCKING_LINE_RE.findall(issues_found_section(text))]
+        lines.append(f"- {side}: {rel}")
+        if blocking:
+            lines.extend(f"    {heading}" for heading in blocking)
+        else:
+            lines.append("    (no parsed ### [BLOCKING] headings; read the sidecar body)")
+    return "\n".join(lines)
+
+
 def send_escalation(ct2_dir: Path, actor: str, ticket_name: str, round_num: str, max_rounds: int) -> None:
     inbox = ct2_dir / "inbox" / "ct2-helm"
     tmp_dir = ct2_dir / ".tmp"
     inbox.mkdir(parents=True, exist_ok=True)
     tmp_dir.mkdir(parents=True, exist_ok=True)
     msgid = f"msg-{compact_now()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    id_match = re.match(r"^(\d+)", ticket_name)
+    ticket_id = id_match.group(1) if id_match else ticket_name
+    digest = escalation_blocking_digest(ct2_dir, ticket_id, round_num)
     text = f"""---
 id: {msgid}
 from: {actor}
@@ -187,6 +226,10 @@ Ticket {ticket_name} - Circuit Breaker Triggered (max_review_rounds={max_rounds}
 
 ## Body
 Ticket {ticket_name} failed to pass review after round {round_num}.
+
+Round {round_num} reviewer sidecars and their blocking issues:
+{digest}
+
 Please inspect the ticket manually and either revise requirements or close it.
 """
     fd, tmp_name = tempfile.mkstemp(prefix=f"{msgid}-", dir=str(tmp_dir))
