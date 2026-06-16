@@ -130,6 +130,11 @@ def migrate_0_3_to_0_4(ct2_dir: Path) -> list[str]:
     changed: list[str] = []
     for name in ("lessons", "goals"):
         target = ct2_dir / name
+        if target.exists() and not target.is_dir():
+            raise RuntimeError(
+                f"{target} exists but is not a directory; move or remove it before "
+                "migrating (existing project data is left untouched)."
+            )
         if not target.is_dir():
             target.mkdir(parents=True, exist_ok=True)
             changed.append(str(target.relative_to(ct2_dir.parent)))

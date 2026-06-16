@@ -276,6 +276,38 @@ class ProtocolCompatibilityTest(unittest.TestCase):
         self.assertEqual(rerun.returncode, 0, rerun.stderr)
         self.assertEqual("already-current", json.loads(rerun.stdout)["state"])
 
+    def test_migrate_0_3_to_0_4_dry_run_reports_target_without_mutating(self):
+        project = self.fixture_project("0.3-to-0.4")
+        ct2 = project / ".ct2"
+
+        dry = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-migrate-0.3-0.4", "--dry-run", "--json", project])
+
+        self.assertEqual(dry.returncode, 0, dry.stderr)
+        report = json.loads(dry.stdout)
+        self.assertEqual("dry-run", report["state"])
+        self.assertEqual("0.4", report["target"])
+        self.assertEqual([], report["changed"])
+        # Dry-run provisions nothing and never advances the protocol marker.
+        self.assertEqual("0.3", (ct2 / ".protocol-version").read_text(encoding="utf-8").strip())
+        self.assertFalse((ct2 / "lessons").exists())
+        self.assertFalse((ct2 / "goals").exists())
+        self.assertFalse((ct2 / "config" / "planning-lints.json").exists())
+        self.assertEqual([], list((ct2 / ".migrations").glob("*-0.3-to-0.4.tar.gz")))
+        self.assertEqual([], list((ct2 / ".migrations").glob("*-0.3-to-0.4.log")))
+
+    def test_migrate_0_3_to_0_4_rejects_non_directory_collision(self):
+        project = self.fixture_project("0.3-to-0.4")
+        ct2 = project / ".ct2"
+        (ct2 / "lessons").write_text("not a directory\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(RuntimeError, "exists but is not a directory"):
+            _ct2_migrate.run_migration(project, "0.3", "0.4")
+
+        # Failed migration leaves the project on the old protocol and the
+        # colliding file untouched.
+        self.assertEqual("0.3", (ct2 / ".protocol-version").read_text(encoding="utf-8").strip())
+        self.assertEqual("not a directory\n", (ct2 / "lessons").read_text(encoding="utf-8"))
+
     def test_migrate_0_3_to_0_4_preserves_existing_planning_lints(self):
         project = self.fixture_project("0.3-to-0.4")
         ct2 = project / ".ct2"
@@ -290,6 +322,15 @@ class ProtocolCompatibilityTest(unittest.TestCase):
         self.assertNotIn(".ct2/config/planning-lints.json", report["changed"])
         self.assertIn(".ct2/lessons", report["changed"])
         self.assertIn(".ct2/goals", report["changed"])
+
+        # The pre-migration backup is recoverable: it captures the original
+        # bytes, so a rollback restores the operator's customized lints.
+        backups = list((ct2 / ".migrations").glob("*-0.3-to-0.4.tar.gz"))
+        self.assertEqual(1, len(backups))
+        with _ct2_migrate.tarfile.open(backups[0], "r:gz") as archive:
+            member = archive.extractfile(".ct2/config/planning-lints.json")
+            self.assertIsNotNone(member)
+            self.assertEqual('{"custom": true}\n', member.read().decode("utf-8"))
 
     def test_protocol_audit_covers_cataloged_fields(self):
         audit = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-protocol-audit", "--json", REPO_ROOT])
