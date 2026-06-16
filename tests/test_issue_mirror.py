@@ -276,6 +276,17 @@ sys.exit(1)
         self.assertEqual(pickup.returncode, 0, pickup.stderr)
         self.assertEqual(["ct2/in-progress"], self.read_state(state_file)["issues"]["142"]["labels"])
 
+        # Satisfy the in-progress -> in-review submit gate: all ACs checked and
+        # this round's plan evidence present (checkbox flips are baseline-safe).
+        in_progress = project / ".ct2" / "in-progress" / ticket.name
+        in_progress.write_text(
+            in_progress.read_text(encoding="utf-8").replace(
+                "- [ ] Issue labels match the CT2 state.", "- [x] Issue labels match the CT2 state."
+            ),
+            encoding="utf-8",
+        )
+        (project / ".ct2" / "plans" / "001-r0.md").write_text("# Plan\n", encoding="utf-8")
+
         review = run_cmd([PYTHON, REPO_ROOT / "bin" / "ct2-review-enter", "001", project], REPO_ROOT, env=env)
         self.assertEqual(review.returncode, 0, review.stderr)
         self.assertEqual(["ct2/in-review"], self.read_state(state_file)["issues"]["142"]["labels"])

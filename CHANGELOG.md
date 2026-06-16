@@ -8,6 +8,20 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Added
 
+- Added a hard **submit gate** on the `in-progress → in-review` transition
+  (loop-design roadmap T0.1, Direction A). `ct2-ticket-audit` gains a
+  `--submit-gate` mode, symmetric with `--seal-gate`, that adds a
+  `submit_gate_state` check and forces `acceptance_criteria_checked` for
+  `in-progress/` tickets, listing the still-unchecked AC labels in its
+  evidence. `ct2-review-enter` now runs that audit as a subprocess before the
+  state move and gates on exactly three named checks — `submit_gate_state`,
+  `acceptance_criteria_checked`, `plan_evidence` — never the audit's exit code,
+  so legitimate `branch: null` (direct-to-main) and legacy-baseline tickets are
+  not bricked. A failure exits 2 with no state move and no `--force`. This ends
+  the long-standing `spec/state-machine.md` ↔ `ct2-review-enter` divergence
+  where the declared "all ACs checked `[x]`" precondition was unenforced.
+  Documented as a new "Submit Gate" section in `spec/state-machine.md`; both
+  forge SKILLs now treat a gate failure as a return-to-work signal.
 - Added `docs/ct2-loop-design-strategy-2026-06.md`, the loop-design strategy
   derived from "Designing loops with Fable 5" (R. Lance Martin) via a
   26-agent adversarial analysis (15 proposals, 13 surviving with corrections,
