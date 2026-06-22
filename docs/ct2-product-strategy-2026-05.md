@@ -203,6 +203,8 @@ Each bet uses the following format: **problem → hypothesis → shape → succe
 
 ### Bet 1: Cost-aware role contracts
 
+> **Status update (2026-06-23) — partially superseded.** The *measurable contract* portion of Bet 1 shipped: per-role contracts in `config/harness.yaml`, the `bin/ct2-role-run` cost-telemetry wrapper, and `bin/ct2-cost` folded into `ct2-status`. The **automatic budget-violation enforcement** described below — passing `--max-budget-usd`/`--effort` to the provider and acting on `on_budget_exceeded: hard_deny`/`bounce` — was **not implemented, and is now superseded** by the later [dynamic-workflow strategy (2026-06)](ct2-dynamic-workflow-strategy-2026-06.md) §4, which adopts the position that *CT2 does not enforce a token budget*: a budget directive is recorded only as an **advisory fan-out width**, and blast radius is bounded by the existing time/round circuit breakers (`ct2-duration-check`, `ct2-review-watchdog`, `max_review_rounds`) plus agent-count/isolation/scope — not by a cost gate. Treat the `budget_per_*_usd` / `on_budget_exceeded` design below as historical (won't-do), and the cost axis as advisory observability only.
+
 #### 4.1.1 Problem
 
 CT2 currently has all roles using (effectively) *the same model, the same effort, and the same personality*. This creates four problems at once: (a) cost inefficiency, (b) quality variance, (c) latency blowups, (d) impossibility of post-hoc measurement.
