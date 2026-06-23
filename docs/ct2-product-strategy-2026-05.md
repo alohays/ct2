@@ -29,7 +29,7 @@ Recommended reading order: **the final integrated document §0–§5 first (cano
 
 This framing makes five product bets follow naturally:
 
-1. **Cost-aware role contracts** — bundle the surfaces "vendors shipped as stable but CT2 has barely touched," like `--max-budget-usd`, `--effort`, `enable_request_compression`, `fast_mode`, and `personality`, into SLO/error-budget form to make per-role cost, latency, and quality a *measurable contract*.
+1. **Cost-aware role contracts** — bundle the surfaces "vendors shipped as stable but CT2 has barely touched," like `--max-budget-usd`, `--effort`, `enable_request_compression`, `fast_mode`, and `personality`, into SLO/error-budget form to make per-role cost, latency, and quality a *measurable contract*. *(2026-06-23: the measurable-contract half shipped; the budget-**enforcement** half is superseded — see the Bet 1 status note.)*
 2. **Plan-mode-first forge** — combine Claude `EnterPlanMode/ExitPlanMode` with Codex `goals` + `tool_search` to flip the structure so that forge *always seals a plan first* and that plan lives as part of the ticket sidecar.
 3. **Ambient CT2 over async channels** — using Discord/Slack/MCP channels + `PushNotification`/`RemoteTrigger`, lift CT2 from "a tool that starts only when you open a terminal" to "an always-on background colleague that flows in like email and can be delegated to."
 4. **Eval harness for roles** — using `skill-creator`'s evals pattern + `claude --json-schema` + `/ultrareview`, treat role definitions (skill MD, role MD, prompt) themselves as regression-testable code.
@@ -150,7 +150,7 @@ Feature Radar touched almost every vendor surface. But on the *cost/quality trad
 | Codex `personality` (stable) | feature flag stable enabled | Easy to think "tone" is unrelated to protocol | Bet 1: enforce a personality preset per role (e.g., lens as "skeptical/short", helm as "interrogative") — reduces *style variance* in outputs, raising evaluability ↑ |
 | Codex `fast_mode` (stable) | flag stable enabled | Easy to think latency optimization is not a product decision | Bet 1: pin `fast_mode` on *judgment-light roles* like status/reconciler |
 | Codex `enable_request_compression` (stable) | flag stable enabled | "Token compression" looks like internal optimization | Bet 1: force it on long-thread roles (like helm-auto-cx) — the single largest lever on token cost |
-| Codex `guardian_approval` (stable) + Claude `auto-mode hard_deny` (2.1.136) | both stable | Covered under Hook Guardrails, but coupling with *role policy* is undefined | Bet 1: lens role *always* hard_deny on auto admin actions; helm hard_deny on budget overrun |
+| Codex `guardian_approval` (stable) + Claude `auto-mode hard_deny` (2.1.136) | both stable | Covered under Hook Guardrails, but coupling with *role policy* is undefined | Bet 1: lens role *always* hard_deny on auto admin actions; ~~helm hard_deny on budget overrun~~ *(budget enforcement superseded — see Bet 1 status note)* |
 | Claude `--max-budget-usd` (CLI) + Claude `--effort` (CLI/`/effort` slash) | both stable | Easy to think "cost is the user's problem" | Bet 1: map ticket priority (p0/p1/p2) to effort/budget pins |
 | Claude `--bare` (CLI) | stable since 2.1.x | Looks like a debug mode | Bet 4: the eval harness runs every regression with `--bare` — isolates experiments from external variables like hooks and auto-memory |
 | Claude `EnterPlanMode/ExitPlanMode` (tool) | stable | "Plan mode looks like an optional UX" | Core of Bet 2 — make plan mode the *default forge entrypoint* |
@@ -446,7 +446,7 @@ Notification triggers (PushNotification):
 - escalated reached (human intervention required)
 - a blocked message arrived in the helm inbox → unresolved for a threshold (e.g., 30 minutes)
 - ultrareview finds a critical issue
-- budget hard_deny fires
+- ~~budget hard_deny fires~~ *(superseded — CT2 does not enforce token budgets; see Bet 1 status note)*
 - nightly summary (optional)
 
 #### 4.3.4 Success metrics
