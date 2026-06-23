@@ -10,6 +10,13 @@ the pre-1.0 compatibility rules documented in `spec/versioning.md`.
 
 ### Changed
 
+- Marked Bet 1 (cost-aware role contracts) budget-violation **enforcement** as
+  superseded in `docs/ct2-product-strategy-2026-05.md`. The measurable-contract
+  half shipped (role contracts, `ct2-role-run`, `ct2-cost`); the
+  `--max-budget-usd` / `on_budget_exceeded` gating was never built and is
+  superseded by the dynamic-workflow-2026-06 stance that CT2 does not enforce a
+  token budget (budget = advisory fan-out width). Docs-only.
+
 ### Fixed
 
 ### Deprecated
